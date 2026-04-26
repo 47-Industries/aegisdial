@@ -24,7 +24,7 @@ final class CallerIDExtension: LiveCallerIDLookupExtension {
   // Read the JWT from the shared Keychain access group (not App Group
   // UserDefaults — that's disk-plaintext at CompleteUntilFirstUserAuth).
   // Requires `keychain-access-groups` entitlement with
-  // "$(AppIdentifierPrefix)com.aegisdial.app.shared".
+  // "$(AppIdentifierPrefix)com.aegisdial.ios.shared".
   //
   // No fallback: if the user isn't signed in or the entitlement is missing
   // the extension returns an unknown-verdict label rather than firing a
@@ -35,12 +35,12 @@ final class CallerIDExtension: LiveCallerIDLookupExtension {
   private static func readSharedKeychainToken() -> String? {
     var q: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
-      kSecAttrAccount as String: "com.aegisdial.app.authToken",
+      kSecAttrAccount as String: "com.aegisdial.ios.authToken",
       kSecReturnData as String: true,
       kSecMatchLimit as String: kSecMatchLimitOne,
     ]
     #if !targetEnvironment(simulator)
-    q[kSecAttrAccessGroup as String] = "com.aegisdial.app.shared"
+    q[kSecAttrAccessGroup as String] = "com.aegisdial.ios.shared"
     #endif
     var out: AnyObject?
     guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess,

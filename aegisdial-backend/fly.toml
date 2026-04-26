@@ -17,10 +17,10 @@ primary_region = "sjc"  # San Jose. Swap to iad / ord / lhr as needed.
   # Point StoreKit verification at production. Change to "sandbox" when
   # running TestFlight-only builds.
   APPLE_STOREKIT_ENV = "production"
-  APPLE_BUNDLE_ID = "com.aegisdial.app"
-  APP_ATTEST_BUNDLE_ID = "com.aegisdial.app"
+  APPLE_BUNDLE_ID = "com.aegisdial.ios"
+  APP_ATTEST_BUNDLE_ID = "com.aegisdial.ios"
   APP_ATTEST_ENV = "production"
-  APPLE_CLIENT_ID = "com.aegisdial.app"
+  APPLE_CLIENT_ID = "com.aegisdial.ios"
 
 [http_service]
   internal_port = 3000

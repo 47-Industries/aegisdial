@@ -29,6 +29,6 @@
   <key>WKApplication</key>
   <true/>
   <key>WKCompanionAppBundleIdentifier</key>
-  <string>com.aegisdial.app</string>
+  <string>com.aegisdial.ios</string>
 </dict>
 </plist>

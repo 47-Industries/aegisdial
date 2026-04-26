@@ -4,7 +4,7 @@ import SwiftUI
 //   - WatchRootView — shows active-shield status + unseen guardian count
 //   - WatchGuardianListView — tap-through to see individual guardian alerts
 //
-// Data sync: reads from the shared App Group (`group.com.aegisdial.app`)
+// Data sync: reads from the shared App Group (`group.com.aegisdial.ios`)
 // where the phone app writes the current user's auth token + last-known
 // state. We don't hit the backend directly from the watch — watchOS
 // network is flaky and battery-expensive. The phone does the heavy
