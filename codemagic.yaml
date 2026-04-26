@@ -22,7 +22,7 @@ workflows:
       vars:
         BUNDLE_ID: "com.aegisdial.app"
         APP_STORE_APP_ID: "REPLACE_WITH_NUMERIC_APP_ID"
-        API_URL: "https://aegisdial-api.fly.dev"
+        API_URL: "https://aegisdial-api-production.up.railway.app"
       flutter: stable
       xcode: latest
       cocoapods: default
@@ -71,7 +71,7 @@ workflows:
     instance_type: mac_mini_m2
     environment:
       vars:
-        API_URL: "https://aegisdial-api.fly.dev"
+        API_URL: "https://aegisdial-api-production.up.railway.app"
       flutter: stable
     scripts:
       - name: Get Flutter packages

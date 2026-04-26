@@ -38,5 +38,8 @@ COMMENT ON COLUMN phone_lookups.owner_name_ct IS
 COMMENT ON COLUMN phone_lookups.raw_payload IS
   'Last raw provider responses for debugging. Never expose to the client API.';
 
+-- Postgres rejects NOW() in partial-index predicates (not IMMUTABLE).
+-- Migration 029 also recreates this without the WHERE clause; we apply
+-- the fix here directly so fresh DBs apply 028 cleanly.
 CREATE INDEX IF NOT EXISTS idx_phone_lookups_expires
-  ON phone_lookups (expires_at) WHERE expires_at > NOW();
+  ON phone_lookups (expires_at);

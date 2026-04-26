@@ -5,7 +5,7 @@ import 'package:http/http.dart' as http;
 /// Compile-time-injected API URL. Codemagic passes via --dart-define=API_URL=...
 const String kApiUrl = String.fromEnvironment(
   'API_URL',
-  defaultValue: 'https://aegisdial-production.fly.dev',
+  defaultValue: 'https://aegisdial-api-production.up.railway.app',
 );
 
 class ApiException implements Exception {

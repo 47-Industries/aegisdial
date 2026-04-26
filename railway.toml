@@ -1,0 +1,7 @@
+# Top-level Railway config (informational only — actual deploys run from
+# aegisdial-backend/ where there is also a railway.toml).
+#
+# Mirrors integrity-network's pattern of having the deployable code in a
+# subdirectory; Railway is pointed at that subdirectory at deploy time
+# either via `cd aegisdial-backend && railway up` or via the dashboard
+# "Root Directory" setting on the service.
