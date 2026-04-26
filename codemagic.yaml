@@ -1,0 +1,87 @@
+# AegisDial — Codemagic CI config.
+#
+# Mirrors the working pattern from 47-Industries/integrity-network.
+# Before first run, set up in Codemagic UI:
+#   1. Connect this GitHub repo
+#   2. Create an App Store Connect integration named "AegisDial"
+#      (Issuer ID + Key ID + .p8 from App Store Connect → Users and Access → Keys)
+#   3. Create env group "codemagic" with: CERT_PRIVATE_KEY (App Store Connect API key contents)
+#   4. Replace APP_STORE_APP_ID below with your real numeric App ID after creating the
+#      app record in App Store Connect.
+
+workflows:
+  ios-testflight:
+    name: iOS — TestFlight
+    max_build_duration: 60
+    instance_type: mac_mini_m2
+    integrations:
+      app_store_connect: AegisDial
+    environment:
+      groups:
+        - codemagic
+      vars:
+        BUNDLE_ID: "com.aegisdial.app"
+        APP_STORE_APP_ID: "REPLACE_WITH_NUMERIC_APP_ID"
+        API_URL: "https://aegisdial-production.fly.dev/api"
+      flutter: stable
+      xcode: latest
+      cocoapods: default
+    scripts:
+      - name: Get Flutter packages
+        script: |
+          cd aegisdial-app
+          flutter pub get
+      - name: Install CocoaPods
+        script: |
+          cd aegisdial-app/ios
+          pod install
+      - name: Set up code signing
+        script: |
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --type IOS_APP_STORE \
+            --create \
+            --certificate-key="$CERT_PRIVATE_KEY"
+          keychain add-certificates
+          xcode-project use-profiles
+      - name: Set build number
+        script: |
+          BUILD_NUMBER=$(($(app-store-connect get-latest-testflight-build-number "$APP_STORE_APP_ID" 2>/dev/null || echo 0) + 1))
+          echo "BUILD_NUMBER=$BUILD_NUMBER" >> $CM_ENV
+      - name: Build iOS
+        script: |
+          cd aegisdial-app
+          flutter build ipa --release \
+            --build-name=1.0.0 \
+            --build-number=$BUILD_NUMBER \
+            --dart-define=API_URL=$API_URL \
+            --export-options-plist=/Users/builder/export_options.plist
+    artifacts:
+      - aegisdial-app/build/ios/ipa/*.ipa
+    publishing:
+      app_store_connect:
+        auth: integration
+        submit_to_testflight: true
+        beta_groups:
+          - Internal Testing
+
+  android-apk:
+    name: Android — APK
+    max_build_duration: 30
+    instance_type: mac_mini_m2
+    environment:
+      vars:
+        API_URL: "https://aegisdial-production.fly.dev/api"
+      flutter: stable
+    scripts:
+      - name: Get Flutter packages
+        script: |
+          cd aegisdial-app
+          flutter pub get
+      - name: Build APK
+        script: |
+          cd aegisdial-app
+          flutter build apk --release \
+            --dart-define=API_URL=$API_URL
+    artifacts:
+      - aegisdial-app/build/app/outputs/flutter-apk/app-release.apk
