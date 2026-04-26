@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  CallerIDExtension — privacy manifest.
+
+  This extension runs in a tight sandbox. Its only job: receive a
+  phone number from iOS, hit our /v1/verdict endpoint with a
+  Bearer token read from the shared Keychain, and return a label
+  for iOS to display on the incoming-call screen.
+
+  It does NOT collect any new data — the phone number is passed
+  in by iOS, never stored, never sent to analytics. The main app's
+  manifest covers all user-level data collection; extensions
+  declare only what THEY do.
+-->
+<dict>
+
+  <!-- Tracking: we do not track across apps. -->
+  <key>NSPrivacyTracking</key>
+  <false/>
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+
+  <!-- No data types collected by this extension itself. The inbound
+       phone number is handed in by iOS for the duration of the call
+       and is not persisted or forwarded to analytics. -->
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array/>
+
+  <!-- Required Reason APIs actually used by the extension code path. -->
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <!-- UserDefaults: the extension reads the shared App Group defaults
+         (e.g. backend base URL, feature flags) at lookup time.
+         CA92.1 = "access info from same app, per documentation". -->
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>CA92.1</string>
+      </array>
+    </dict>
+  </array>
+
+</dict>
+</plist>

@@ -1,0 +1,45 @@
+## Xcode
+build/
+DerivedData/
+*.xcodeproj/*
+!*.xcodeproj/project.xcworkspace/
+!*.xcodeproj/xcshareddata/
+*.xcworkspace/xcuserdata/
+*.pbxuser
+*.mode1v3
+*.mode2v3
+*.perspectivev3
+xcuserdata/
+
+## Swift Package Manager
+.build/
+.swiftpm/
+Package.resolved
+
+## CocoaPods
+Pods/
+
+## Carthage
+Carthage/Build/
+
+## fastlane
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots
+fastlane/test_output
+
+## macOS
+.DS_Store
+.AppleDouble
+
+## Secrets — never commit
+*.mobileprovision
+*.p12
+*.p8
+*.cer
+*.certSigningRequest
+.env
+.env.*
+Secrets.swift
+Secrets.plist
+GoogleService-Info.plist

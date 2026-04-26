@@ -1,0 +1,47 @@
+# Fly.io application config for the AegisDial backend. Picked Fly because it
+# cleanly runs our Docker image with per-region volumes, TLS-terminated
+# hostnames, and a reasonable free/cheap tier. Adjust `primary_region` to
+# wherever the majority of users live.
+
+app = "aegisdial-api"
+primary_region = "sjc"  # San Jose. Swap to iad / ord / lhr as needed.
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  NODE_ENV = "production"
+  PORT = "3000"
+  LOG_LEVEL = "info"
+  ENABLE_CRAWLERS = "true"
+  # Point StoreKit verification at production. Change to "sandbox" when
+  # running TestFlight-only builds.
+  APPLE_STOREKIT_ENV = "production"
+  APPLE_BUNDLE_ID = "com.aegisdial.app"
+  APP_ATTEST_BUNDLE_ID = "com.aegisdial.app"
+  APP_ATTEST_ENV = "production"
+  APPLE_CLIENT_ID = "com.aegisdial.app"
+
+[http_service]
+  internal_port = 3000
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 200
+    soft_limit = 150
+
+  [[http_service.checks]]
+    interval = "15s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "get"
+    path = "/health"
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 512

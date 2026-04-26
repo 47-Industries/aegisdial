@@ -1,0 +1,104 @@
+-- Drop legacy plaintext columns that were superseded by AES-256-GCM
+-- envelope-encrypted `_ct` companions in migrations 018, 020, 021, 022,
+-- 023, and 026.
+--
+-- ─────────────────────────────────────────────────────────────────────
+-- WHY THIS IS SAFE TO RUN (mostly)
+-- ─────────────────────────────────────────────────────────────────────
+-- Every column dropped below has a `_ct` sibling that has been the sole
+-- source of truth for new writes since its encryption migration shipped.
+-- The plaintext columns were kept around transitionally so that (a) the
+-- old INSERT statements with NOT NULL constraints didn't break before
+-- we dropped those constraints, and (b) readers could fall back to the
+-- plaintext column for rows written before the encryption migration.
+--
+-- All reader code in src/ uses the null-safe fallback pattern:
+--
+--     readMaybeEncrypted(row.foo_ct) ?? row.foo          (strings)
+--     decryptInt(row.bar_ct ?? null) ?? row.bar ?? null  (ints)
+--     row.baz_ct ? readMaybeEncryptedJSON(row.baz_ct) : row.baz  (JSON)
+--
+-- With the plaintext column gone, `row.foo` comes back as `undefined`
+-- and the `??` fallback evaluates to the ciphertext-decrypted value.
+-- That is correct behaviour.
+--
+-- ─────────────────────────────────────────────────────────────────────
+-- ORDERING REQUIREMENT — READ BEFORE RUNNING
+-- ─────────────────────────────────────────────────────────────────────
+-- This migration is NOT safe-to-run-immediately the way the additive
+-- encryption migrations (018/020/021/022/023/026) were. Those added
+-- columns; this one removes them. If a server that still SELECTs the
+-- plaintext columns is live while this migration runs, those queries
+-- will raise `column "foo" does not exist` at runtime and crash the
+-- route.
+--
+-- REQUIRED DEPLOY ORDER:
+--   1. Deploy a code revision that no longer SELECTs the plaintext
+--      columns (reads `_ct` only; the fallback to plaintext is removed
+--      or the plaintext column is removed from the SELECT list).
+--   2. Verify that deploy is fully rolled out across all Fly regions
+--      and no old workers are still running.
+--   3. THEN apply this migration.
+--
+-- OPERATOR (Kyle) MUST EXPLICITLY CONFIRM step 1 and step 2 are done
+-- before applying 029. Do not run this migration as part of a routine
+-- `npm run migrate` on the current code revision — the current code
+-- still SELECTs the plaintext columns for the fallback path. You must
+-- ship the code-cleanup PR first.
+--
+-- ─────────────────────────────────────────────────────────────────────
+-- COLUMNS WE ARE *NOT* DROPPING (intentional)
+-- ─────────────────────────────────────────────────────────────────────
+-- monitored_identifiers.display_value  — Kept. This column does NOT hold
+--   legacy plaintext; it holds the MASKED form of the identifier
+--   ("ky***@gmail.com") that is shown in the UI list. The full plaintext
+--   lives only in display_value_ct and is only decrypted server-side
+--   during rescans. `display_value` is still a first-class active column
+--   (see src/routes/breach.ts `displayMask(r.kind, r.display_value)` and
+--   src/services/breachScan.ts scanAllForUser). Dropping it would break
+--   the Pro breach-monitor list view and the background rescan worker.
+--
+-- ─────────────────────────────────────────────────────────────────────
+-- IDEMPOTENCY
+-- ─────────────────────────────────────────────────────────────────────
+-- Every DROP is `DROP COLUMN IF EXISTS`, so re-running this migration
+-- after a successful first run is a no-op. Dependent indexes/constraints
+-- on these columns were never created (all are plain TEXT/INT columns
+-- with no unique/foreign-key references) so CASCADE is not required.
+-- ─────────────────────────────────────────────────────────────────────
+
+BEGIN;
+
+-- recovery_evidence: payload JSON → payload_ct
+ALTER TABLE recovery_evidence
+  DROP COLUMN IF EXISTS payload;
+
+-- recovery_sessions: free-form user input → _ct columns
+ALTER TABLE recovery_sessions
+  DROP COLUMN IF EXISTS scam_e164,
+  DROP COLUMN IF EXISTS description,
+  DROP COLUMN IF EXISTS amount_lost_cents;
+
+-- recovery_outcomes: notes + recovered amount → _ct columns
+ALTER TABLE recovery_outcomes
+  DROP COLUMN IF EXISTS notes,
+  DROP COLUMN IF EXISTS recovered_cents;
+
+-- recovery_companion_messages: chat content → content_ct
+ALTER TABLE recovery_companion_messages
+  DROP COLUMN IF EXISTS content;
+
+-- transcript_events: Live Shield transcript text → text_ct
+ALTER TABLE transcript_events
+  DROP COLUMN IF EXISTS text;
+
+-- scam_phrase_hits: matched phrase substring → matched_text_ct
+ALTER TABLE scam_phrase_hits
+  DROP COLUMN IF EXISTS matched_text;
+
+-- support_tickets: user-submitted subject + body → _ct columns
+ALTER TABLE support_tickets
+  DROP COLUMN IF EXISTS subject,
+  DROP COLUMN IF EXISTS body;
+
+COMMIT;

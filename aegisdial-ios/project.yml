@@ -1,0 +1,81 @@
+name: AegisDial
+options:
+  bundleIdPrefix: com.aegisdial
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: "" # fill in your Apple Developer team ID
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    SWIFT_STRICT_CONCURRENCY: complete
+
+targets:
+  AegisDial:
+    type: application
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: AegisDial
+      - path: Assets.xcassets
+      - path: AegisDial/Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aegisdial.app
+        INFOPLIST_FILE: AegisDial/Info.plist
+        SWIFT_EMIT_LOC_STRINGS: YES
+        CODE_SIGN_ENTITLEMENTS: AegisDial/AegisDial.entitlements
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # String Catalog (Localizable.xcstrings) is in AegisDial/Resources.
+        # Add additional localizations in Xcode → Project → Info → Localizations.
+        DEVELOPMENT_LANGUAGE: en
+    dependencies:
+      - target: CallerIDExtension
+      - target: SMSFilterExtension
+      - target: AegisDialWatch
+
+  CallerIDExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: CallerIDExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aegisdial.app.CallerID
+        INFOPLIST_FILE: CallerIDExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: CallerIDExtension/CallerIDExtension.entitlements
+        SWIFT_EMIT_LOC_STRINGS: YES
+
+  SMSFilterExtension:
+    type: app-extension
+    platform: iOS
+    deploymentTarget: "18.0"
+    sources:
+      - path: SMSFilterExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aegisdial.app.SMSFilter
+        INFOPLIST_FILE: SMSFilterExtension/Info.plist
+        CODE_SIGN_ENTITLEMENTS: SMSFilterExtension/SMSFilterExtension.entitlements
+        SWIFT_EMIT_LOC_STRINGS: YES
+
+  AegisDialWatch:
+    type: application
+    platform: watchOS
+    deploymentTarget: "11.0"
+    sources:
+      - path: AegisDialWatch
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.aegisdial.app.watchkitapp
+        INFOPLIST_FILE: AegisDialWatch/Info.plist
+        CODE_SIGN_ENTITLEMENTS: AegisDialWatch/AegisDialWatch.entitlements
+        TARGETED_DEVICE_FAMILY: "4"
+        SWIFT_EMIT_LOC_STRINGS: YES

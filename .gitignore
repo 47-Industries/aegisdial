@@ -1,0 +1,100 @@
+# --- Secrets (never commit) ---
+.env
+.env.*
+!.env.example
+!.env.production.template
+*.p8
+*.p12
+*.pem
+*.key
+*.keystore
+*.jks
+secrets/
+**/AuthKey_*.p8
+
+# --- macOS / Linux / Windows junk ---
+.DS_Store
+Thumbs.db
+*.swp
+*~
+
+# --- Node / TS backend ---
+node_modules/
+dist/
+build/
+coverage/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn-integrity
+.cache/
+
+# --- Flutter / Dart ---
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub-cache/
+.pub/
+build/
+**/build/
+*.iml
+.idea/
+.vscode/
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/ephemeral/
+ios/Runner/GeneratedPluginRegistrant.*
+android/.gradle/
+android/captures/
+android/gradlew
+android/gradlew.bat
+android/gradle-wrapper.jar
+android/local.properties
+android/**/GeneratedPluginRegistrant.java
+android/key.properties
+**/*.g.dart
+**/*.freezed.dart
+**/*.mocks.dart
+
+# --- Xcode / iOS native ---
+xcuserdata/
+*.xcuserstate
+*.xcworkspace/xcuserdata/
+DerivedData/
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+ios/Runner.xcworkspace/xcshareddata/IDEWorkspaceChecks.plist
+
+# --- CodeMagic / CI ---
+codemagic.yaml.local
+.fvm/
+fvm_config.json
+
+# --- DB / dump junk ---
+*.sqlite
+*.sqlite-journal
+*.db-journal
+pgdata/
+redisdata/
+
+# --- Editor / OS ---
+.idea/
+.vscode/*
+!.vscode/settings.json
+!.vscode/extensions.json
+*.tmproj
+*.tmproject
+
+# --- Misc ---
+.tmp/
+tmp/
+*.bak
+.git.bak/
+**/.git.bak/

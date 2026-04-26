@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AegisDial — Live protection for every call</title>
+<meta name="description" content="Bank-grade live call protection. AegisDial listens on-device for scam phrases and warns you in real time. No call recording. Audio never leaves your phone.">
+<meta property="og:title" content="AegisDial — Live call protection">
+<meta property="og:description" content="We don't teach you about scams. We stop them.">
+<meta property="og:image" content="https://aegisdial.com/og.png">
+<meta property="og:url" content="https://aegisdial.com">
+<link rel="icon" href="/favicon.png">
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 0;
+    font: 16px/1.55 -apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    background: #06080F;
+    color: #f2f4fa;
+    overflow-x: hidden;
+  }
+  .glow {
+    position: absolute; pointer-events: none;
+    width: 900px; height: 900px; border-radius: 50%;
+    background: radial-gradient(circle, rgba(107,168,255,0.35) 0%, transparent 60%);
+    filter: blur(60px);
+    top: -200px; right: -200px; z-index: 0;
+  }
+  .glow.green {
+    background: radial-gradient(circle, rgba(55,217,138,0.18) 0%, transparent 60%);
+    top: auto; bottom: -400px; right: auto; left: -200px; width: 800px; height: 800px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 72px 32px; position: relative; z-index: 1; }
+  .logo { width: 44px; height: 44px; margin-bottom: 48px; }
+  h1 {
+    font-size: clamp(42px, 6vw, 68px);
+    line-height: 1.06; letter-spacing: -1.4px;
+    margin: 0 0 24px; font-weight: 700;
+  }
+  h1 .accent { color: #6ba8ff; }
+  .lede {
+    font-size: 20px; line-height: 1.5; color: #b8bfce;
+    max-width: 640px; margin: 0 0 48px;
+  }
+  .cta-row { display: flex; flex-wrap: wrap; gap: 14px; margin-bottom: 96px; }
+  .cta {
+    display: inline-flex; align-items: center; gap: 10px;
+    padding: 16px 24px; border-radius: 14px;
+    font-weight: 600; font-size: 16px; text-decoration: none;
+    transition: transform 0.15s ease;
+  }
+  .cta:hover { transform: translateY(-2px); }
+  .cta.primary { background: #6ba8ff; color: #000; }
+  .cta.ghost {
+    background: transparent; color: #b8bfce; border: 1px solid rgba(255,255,255,0.12);
+  }
+  .grid {
+    display: grid; gap: 20px;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    margin-bottom: 96px;
+  }
+  .card {
+    padding: 28px; border-radius: 18px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .card h3 { margin: 0 0 12px; font-size: 18px; color: #f2f4fa; }
+  .card p { margin: 0; font-size: 15px; color: #9097a3; line-height: 1.6; }
+  .card .icon {
+    width: 36px; height: 36px; margin-bottom: 16px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 10px; background: rgba(107,168,255,0.14); color: #6ba8ff;
+    font-size: 18px;
+  }
+  h2 { font-size: 32px; letter-spacing: -0.6px; margin: 0 0 24px; font-weight: 700; }
+  blockquote {
+    margin: 0 0 48px; padding: 28px 32px;
+    border-left: 3px solid #6ba8ff;
+    background: rgba(107,168,255,0.05);
+    border-radius: 0 14px 14px 0;
+    font-size: 19px; line-height: 1.55;
+  }
+  blockquote cite { display: block; margin-top: 12px; font-style: normal; font-size: 14px; color: #9097a3; }
+  .price-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); margin-bottom: 96px; }
+  .price { padding: 32px 24px; border-radius: 18px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); text-align: center; }
+  .price.featured { border-color: #6ba8ff; background: rgba(107,168,255,0.08); }
+  .price .amount { font-size: 32px; font-weight: 700; letter-spacing: -0.4px; }
+  .price .period { font-size: 14px; color: #9097a3; margin-bottom: 16px; }
+  .price .label { font-size: 14px; color: #b8bfce; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1.2px; font-weight: 600; }
+  .price .savings { display: inline-block; margin-top: 8px; font-size: 12px; padding: 4px 10px; border-radius: 99px; background: rgba(55,217,138,0.15); color: #37d98a; font-weight: 600; }
+  footer {
+    padding: 48px 32px; text-align: center;
+    color: #6c717f; font-size: 13px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+  }
+  footer a { color: #9097a3; text-decoration: none; margin: 0 12px; }
+  footer a:hover { color: #f2f4fa; }
+  @media (max-width: 600px) {
+    .wrap { padding: 48px 20px; }
+    .glow { width: 600px; height: 600px; top: -100px; right: -100px; }
+    h1 { font-size: 38px; }
+  }
+</style>
+</head>
+<body>
+<div class="glow"></div>
+<div class="glow green"></div>
+
+<main class="wrap">
+  <img src="/og.png" class="logo" alt="AegisDial" onerror="this.style.display='none'">
+
+  <h1>We don't teach you about scams.<br><span class="accent">We stop them.</span></h1>
+  <p class="lede">AegisDial listens on-device during the call and warns you the moment the caller says something that matches a known scam script — "safe account," "don't hang up," "gift cards," "grandma it's me." Audio never leaves your phone.</p>
+
+  <div class="cta-row">
+    <a href="https://apps.apple.com/app/aegisdial" class="cta primary">
+      Download for iPhone
+    </a>
+    <a href="#how-it-works" class="cta ghost">How it works →</a>
+  </div>
+
+  <h2 id="how-it-works">How it works</h2>
+  <div class="grid">
+    <div class="card">
+      <div class="icon">🛡️</div>
+      <h3>Live Shield</h3>
+      <p>On-device speech recognition spots scam phrases during the call and warns you in real time. Never records, never uploads audio.</p>
+    </div>
+    <div class="card">
+      <div class="icon">📵</div>
+      <h3>SMS Filter</h3>
+      <p>Package redelivery, unpaid toll, and Apple ID lockout smishing routed to junk before your phone rings.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🔑</div>
+      <h3>Safe Words</h3>
+      <p>Register a shared safe word with each family member. A voice-clone scam won't know it — the real grandson will.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🕵️</div>
+      <h3>Breach Monitor</h3>
+      <p>We watch your email and phone for dark-web leaks that scammers use. You hear about it the same day.</p>
+    </div>
+    <div class="card">
+      <div class="icon">👪</div>
+      <h3>Guardian Alerts</h3>
+      <p>If mom's shielded call goes critical or a new breach hits, you get a push in seconds. Check in before they send money.</p>
+    </div>
+    <div class="card">
+      <div class="icon">🚑</div>
+      <h3>Recovery Concierge</h3>
+      <p>If a scam happens anyway, our 15-minute flow freezes your credit, files the FTC report, and alerts your bank.</p>
+    </div>
+  </div>
+
+  <blockquote>
+    "LifeLock reimburses you after you lose money. AegisDial stops you from losing money — and if it happens anyway, we help you recover it in 15 minutes, which stops more loss than their insurance ever pays out."
+    <cite>— Kyle Rivers, AegisDial founder</cite>
+  </blockquote>
+
+  <h2>Pricing</h2>
+  <div class="price-grid">
+    <div class="price">
+      <div class="label">Monthly</div>
+      <div class="amount">$49.99</div>
+      <div class="period">per month · 3 lines</div>
+    </div>
+    <div class="price featured">
+      <div class="label">Annual</div>
+      <div class="amount">$299</div>
+      <div class="period">per year · 3 lines</div>
+      <div class="savings">SAVE 50%</div>
+    </div>
+    <div class="price">
+      <div class="label">Family+</div>
+      <div class="amount">$69.99</div>
+      <div class="period">per month · 5 lines</div>
+    </div>
+  </div>
+
+  <h2>Frequently asked</h2>
+  <div class="grid">
+    <div class="card">
+      <h3>Does AegisDial record my calls?</h3>
+      <p>No. Live Shield uses Apple's on-device speech recognizer. Audio is processed on your phone and never transmitted or stored.</p>
+    </div>
+    <div class="card">
+      <h3>Is there a free trial?</h3>
+      <p>No. Scams are a psychological event, not a utility. Free users churn. We'd rather you pay $49.99 and stay protected for seven years than try us for a week and forget.</p>
+    </div>
+    <div class="card">
+      <h3>Why not Truecaller or Hiya?</h3>
+      <p>Those services identify callers. AegisDial identifies SCRIPTS — the actual language a scammer uses. Very different.</p>
+    </div>
+    <div class="card">
+      <h3>Can I cancel anytime?</h3>
+      <p>Yes. iPhone Settings → Apple ID → Subscriptions → AegisDial → Cancel. Takes 10 seconds.</p>
+    </div>
+  </div>
+</main>
+
+<footer>
+  <a href="/privacy">Privacy</a> ·
+  <a href="/terms">Terms</a> ·
+  <a href="/support">Support</a> ·
+  <a href="mailto:support@aegisdial.com">support@aegisdial.com</a>
+  <div style="margin-top: 16px;">© 2026 AegisDial</div>
+</footer>
+</body>
+</html>

@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AegisDial — Privacy Policy</title>
+<style>
+  :root { color-scheme: light dark; }
+  body { font: 16px/1.55 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif; max-width: 720px; margin: 40px auto; padding: 0 24px; color: #1c1c1e; background: #fff; }
+  @media (prefers-color-scheme: dark) { body { background: #000; color: #f2f2f7; } a { color: #6aa9ff; } h1,h2 { color: #f2f2f7; } }
+  h1 { font-size: 28px; letter-spacing: -0.5px; }
+  h2 { font-size: 20px; margin-top: 32px; }
+  .updated { color: #666; font-size: 13px; }
+  .key { background: rgba(106,169,255,0.1); padding: 12px 16px; border-radius: 8px; margin: 16px 0; }
+  a { color: #0a84ff; }
+  ul { padding-left: 20px; }
+</style>
+</head>
+<body>
+
+<h1>AegisDial Privacy Policy</h1>
+<p class="updated">Last updated: April 19, 2026</p>
+
+<div class="key">
+<b>The one-line summary:</b> your call audio never leaves your phone, your transcripts are encrypted at rest and auto-deleted after 30 days, you can export or delete everything any time from Settings, and we never sell anything about you.
+</div>
+
+<h2>Who we are</h2>
+<p>AegisDial is operated by the AegisDial team, contactable at
+<a href="mailto:privacy@aegisdial.com">privacy@aegisdial.com</a>.</p>
+
+<h2>What we collect, and why</h2>
+<ul>
+  <li><b>Account</b> — your email or Apple ID, a display name you provide. Used to sign you in and let family-plan invites reach you.</li>
+  <li><b>Phone numbers you look up</b> — stored so we can improve our verdict engine and show you your lookup history.</li>
+  <li><b>Numbers you report as scams</b> — stored to protect other AegisDial users.</li>
+  <li><b>Family contacts</b> — names and phone numbers you save for deepfake defense. Safe words and challenge answers are stored as one-way bcrypt hashes — we cannot read them, only verify a guess.</li>
+  <li><b>Monitored identifiers</b> — email addresses and phone numbers you ask us to watch for breaches. Stored so the weekly re-scan knows what to check.</li>
+  <li><b>Push tokens</b> — the APNs device token that lets iOS deliver our alerts.</li>
+  <li><b>Analytics</b> — anonymized usage events (e.g., "user opened the shield") sent to PostHog. We do NOT send scam-call content, transcripts, or personal identifiers.</li>
+  <li><b>Crash reports</b> — if the app crashes, the stack trace and a device identifier go to Sentry.</li>
+  <li><b>Subscription status</b> — whether you have an active Pro plan.</li>
+</ul>
+
+<h2>What we DON'T collect</h2>
+<ul>
+  <li><b>Call audio.</b> Live Shield uses Apple's on-device speech recognizer with <code>requiresOnDeviceRecognition = true</code>. Audio is processed in-process on your phone and is never transmitted, stored, or recorded to disk.</li>
+  <li><b>SMS content you haven't flagged.</b> The SMS filter extension works inside iOS's sandboxed message filter API. We only see messages from senders not in your Contacts, and only for the classification decision — nothing is stored in plaintext.</li>
+  <li><b>Your contact list.</b> AegisDial only knows about contacts you manually add to Family Contacts.</li>
+  <li><b>Your location.</b></li>
+  <li><b>Your browsing history.</b></li>
+</ul>
+
+<h2>Live call transcription</h2>
+<p>When you tap "Shield this call," we ask your permission to use the microphone and Apple's on-device speech recognizer. Short text snippets from that recognizer are sent to our servers to check against known scam phrases. The audio itself never leaves your phone.</p>
+<p>Transcripts are stored <b>encrypted at rest</b> (AES-256-GCM) on our servers so we can show you your shield history and so staff can investigate a disputed scam match if you ask us to. They are automatically deleted after <b>30 days</b>, and you can export or delete them any time from Settings &rarr; Privacy in the app. We never send your transcript to any third party.</p>
+
+<h2>Who we share data with</h2>
+<p>We share the minimum needed with our vendors:</p>
+<ul>
+  <li><b>Neon</b> — managed Postgres (where account and app data lives).</li>
+  <li><b>Upstash</b> — managed Redis (verdict cache, session data).</li>
+  <li><b>Fly.io</b> — hosting.</li>
+  <li><b>Sentry</b> — crash and error tracking.</li>
+  <li><b>PostHog</b> — product analytics.</li>
+  <li><b>Resend</b> — transactional email.</li>
+  <li><b>Enzoic</b> — dark-web breach monitoring. We hash your email or phone with SHA-256 before sending it to Enzoic.</li>
+  <li><b>Google Safe Browsing</b> — URL reputation for SMS filtering. URLs are sent as-is per Google's API.</li>
+  <li><b>Apple</b> — Sign in with Apple, APNs push, StoreKit subscriptions.</li>
+</ul>
+<p>We do not sell your data. Ever.</p>
+
+<h2>Your rights</h2>
+<p>You can at any time:</p>
+<ul>
+  <li>See everything we have on you — email <a href="mailto:privacy@aegisdial.com">privacy@aegisdial.com</a>.</li>
+  <li>Delete your account and all its data — Settings → Account → Delete Account (or email us).</li>
+  <li>Export your data as JSON — email us.</li>
+  <li>Opt out of analytics — Settings → Privacy → Analytics.</li>
+</ul>
+
+<h2>Children</h2>
+<p>AegisDial is not directed to children under 13 and we do not knowingly collect data from them.</p>
+
+<h2>Security</h2>
+<p>All data is encrypted in transit (TLS 1.2+). Passwords and safe words are stored as bcrypt hashes — we cannot read them. We operate under a least-privilege model internally.</p>
+
+<h2>Changes</h2>
+<p>If we materially change this policy we'll notify you in the app and by email at least 30 days before the change takes effect.</p>
+
+<h2>Contact</h2>
+<p>Questions: <a href="mailto:privacy@aegisdial.com">privacy@aegisdial.com</a></p>
+
+</body>
+</html>

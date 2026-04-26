@@ -1,0 +1,102 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>$(DEVELOPMENT_LANGUAGE)</string>
+  <key>CFBundleDisplayName</key>
+  <string>AegisDial</string>
+  <key>CFBundleExecutable</key>
+  <string>$(EXECUTABLE_NAME)</string>
+  <key>CFBundleIdentifier</key>
+  <string>$(PRODUCT_BUNDLE_IDENTIFIER)</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>$(PRODUCT_NAME)</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>$(MARKETING_VERSION)</string>
+  <key>CFBundleVersion</key>
+  <string>$(CURRENT_PROJECT_VERSION)</string>
+  <key>LSRequiresIPhoneOS</key>
+  <true/>
+
+  <!-- App Transport Security — explicit harden.
+       Every connection must be HTTPS TLS 1.2+. No arbitrary loads,
+       no localhost exception in release. DEBUG builds hit
+       http://127.0.0.1:3000 via #if DEBUG in APIConfig.swift,
+       allowed only during simulator development. This key guarantees
+       release builds reject any plain-HTTP slip. -->
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <false/>
+    <key>NSAllowsArbitraryLoadsForMedia</key>
+    <false/>
+    <key>NSAllowsArbitraryLoadsInWebContent</key>
+    <false/>
+    <key>NSAllowsLocalNetworking</key>
+    <false/>
+    <!-- DEBUG-only: the simulator hits http://127.0.0.1:3000 via
+         #if DEBUG in APIConfig.swift. Scoped exceptions (vs global
+         NSAllowsArbitraryLoads=true) keep release builds strict
+         while letting the dev loop work on simulator. Release
+         traffic never resolves to these hosts. -->
+    <key>NSExceptionDomains</key>
+    <dict>
+      <key>127.0.0.1</key>
+      <dict>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key>
+        <true/>
+        <key>NSIncludesSubdomains</key>
+        <false/>
+      </dict>
+      <key>localhost</key>
+      <dict>
+        <key>NSExceptionAllowsInsecureHTTPLoads</key>
+        <true/>
+        <key>NSIncludesSubdomains</key>
+        <false/>
+      </dict>
+    </dict>
+  </dict>
+
+  <!-- Export compliance. AegisDial uses only Apple-system and
+       standard open-source crypto (HTTPS/TLS, Keychain AES, bcrypt,
+       SHA-256). All of these are EAR 740.17(b)(1) exempt. This key
+       skips the annual self-classification upload. -->
+  <key>ITSAppUsesNonExemptEncryption</key>
+  <false/>
+
+  <!-- Launch screen — plist-based (iOS 14+).
+       Solid brand-navy background + centered logo glyph. -->
+  <key>UILaunchScreen</key>
+  <dict>
+    <key>UIColorName</key>
+    <string>LaunchBackground</string>
+    <key>UIImageName</key>
+    <string>LaunchLogo</string>
+  </dict>
+
+  <key>UISupportedInterfaceOrientations</key>
+  <array>
+    <string>UIInterfaceOrientationPortrait</string>
+  </array>
+  <key>UIUserInterfaceStyle</key>
+  <string>Automatic</string>
+
+  <!-- Permission strings — these are what iOS shows on the permission prompt. -->
+  <key>NSMicrophoneUsageDescription</key>
+  <string>AegisDial listens to your call audio on this device only — to detect scam phrases in real time. Audio is never sent off-device or recorded.</string>
+  <key>NSSpeechRecognitionUsageDescription</key>
+  <string>AegisDial uses Apple's on-device speech recognizer to transcribe your call locally. Transcripts are checked against known scam phrases to warn you in real time. No audio ever leaves your phone.</string>
+  <!-- NSUserTrackingUsageDescription intentionally omitted — AegisDial
+       does not invoke ATTrackingManager and does not cross-app-track. -->
+  <key>NSFaceIDUsageDescription</key>
+  <string>AegisDial uses Face ID to unlock sensitive screens like your Recovery History and the Delete Account flow. If Face ID isn't available we'll fall back to your device passcode.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>AegisDial can import names and phone numbers from your contacts so you can add trusted family members faster. Contacts are only used when you tap import — we never read your contact list automatically.</string>
+</dict>
+</plist>

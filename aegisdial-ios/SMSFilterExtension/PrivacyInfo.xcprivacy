@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!--
+  SMSFilterExtension — privacy manifest.
+
+  iOS hands the extension an incoming SMS body + sender identifier.
+  The extension classifies it locally / via our backend and returns
+  a filter verdict (promotional / transactional / junk). When the
+  user opts into server-side scoring, the message body is sent to
+  /v1/sms/classify over TLS; this is the one user-content path
+  the extension declares.
+-->
+<dict>
+
+  <!-- Tracking: we do not track across apps. -->
+  <key>NSPrivacyTracking</key>
+  <false/>
+  <key>NSPrivacyTrackingDomains</key>
+  <array/>
+
+  <!-- Only the message body can leave the extension (and only when
+       server-side scoring is enabled). Sender phone number never
+       leaves the device. -->
+  <key>NSPrivacyCollectedDataTypes</key>
+  <array>
+    <!-- Other user content: the SMS message body forwarded to our
+         scam classifier. Encrypted at rest server-side. -->
+    <dict>
+      <key>NSPrivacyCollectedDataType</key>
+      <string>NSPrivacyCollectedDataTypeOtherUserContent</string>
+      <key>NSPrivacyCollectedDataTypeLinked</key>
+      <true/>
+      <key>NSPrivacyCollectedDataTypeTracking</key>
+      <false/>
+      <key>NSPrivacyCollectedDataTypePurposes</key>
+      <array>
+        <string>NSPrivacyCollectedDataTypePurposeAppFunctionality</string>
+      </array>
+    </dict>
+  </array>
+
+  <!-- Required Reason APIs used by the extension. -->
+  <key>NSPrivacyAccessedAPITypes</key>
+  <array>
+    <!-- UserDefaults: App Group shared prefs (e.g. server-scoring opt-in). -->
+    <dict>
+      <key>NSPrivacyAccessedAPIType</key>
+      <string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+      <key>NSPrivacyAccessedAPITypeReasons</key>
+      <array>
+        <string>CA92.1</string>
+      </array>
+    </dict>
+  </array>
+
+</dict>
+</plist>
