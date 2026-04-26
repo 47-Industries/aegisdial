@@ -117,7 +117,7 @@ class _SplashScreenState extends State<SplashScreen>
                     center: Alignment.center,
                     radius: 0.95,
                     colors: [
-                      const Color(0xFF1FE08A)
+                      AegisColors.turquoise
                           .withValues(alpha: 0.28 * _logoOpacity.value),
                       Colors.transparent,
                     ],
@@ -157,7 +157,7 @@ class _SplashScreenState extends State<SplashScreen>
                                   shape: BoxShape.circle,
                                   boxShadow: [
                                     BoxShadow(
-                                      color: const Color(0xFF1FE08A)
+                                      color: AegisColors.turquoise
                                           .withValues(alpha: 0.55),
                                       blurRadius: 60,
                                       spreadRadius: 6,
@@ -250,7 +250,7 @@ class _SonarPainter extends CustomPainter {
         Paint()
           ..style = PaintingStyle.stroke
           ..strokeWidth = 1.5
-          ..color = const Color(0xFF1FE08A).withValues(alpha: alpha),
+          ..color = AegisColors.turquoise.withValues(alpha: alpha),
       );
     }
 
@@ -265,7 +265,7 @@ class _SonarPainter extends CustomPainter {
     );
 
     final tickPaint = Paint()
-      ..color = const Color(0xFF1FE08A).withValues(alpha: 0.7 * sweep)
+      ..color = AegisColors.turquoise.withValues(alpha: 0.7 * sweep)
       ..strokeWidth = 1.5
       ..strokeCap = StrokeCap.round;
     for (var i = 0; i < 12; i++) {

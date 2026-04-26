@@ -7,10 +7,10 @@ class AegisColors {
   static const Color surfaceElevated = Color(0xFF12181F);
   static const Color border = Color(0xFF1F2832);
 
-  static const Color turquoise = Color(0xFF00E5D1);
-  static const Color turquoiseDim = Color(0xFF0FA89A);
-  static const Color blue = Color(0xFF2D7CFF);
-  static const Color blueAccent = Color(0xFF5BA8FF);
+  static const Color turquoise = Color(0xFF1FE08A);
+  static const Color turquoiseDim = Color(0xFF15A864);
+  static const Color blue = Color(0xFF0F9E5B);
+  static const Color blueAccent = Color(0xFF3FE890);
 
   static const Color textPrimary = Color(0xFFFFFFFF);
   static const Color textSecondary = Color(0xFFB8C2CC);
@@ -28,7 +28,7 @@ class AegisColors {
   static const RadialGradient ambientGlow = RadialGradient(
     center: Alignment.center,
     radius: 0.9,
-    colors: [Color(0x4000E5D1), Color(0x00000000)],
+    colors: [Color(0x401FE08A), Color(0x00000000)],
   );
 }
 
