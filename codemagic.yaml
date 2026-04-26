@@ -5,7 +5,11 @@
 #   1. Connect this GitHub repo
 #   2. Create an App Store Connect integration named "AegisDial"
 #      (Issuer ID + Key ID + .p8 from App Store Connect → Users and Access → Keys)
-#   3. Create env group "codemagic" with: CERT_PRIVATE_KEY (App Store Connect API key contents)
+#   3. Create env group "codemagic" with CERT_PRIVATE_KEY = the iOS Distribution
+#      certificate's private key in PEM format (RSA, ~1700 bytes). NOT the .p8 — the
+#      .p8 is the App Store Connect API key, used by the team integration above,
+#      and lives in Codemagic UI under Teams → Integrations, not in this env group.
+#      For 47 Industries' setup, the existing key is at ~/.codemagic_cert_private_key.pem
 #   4. Replace APP_STORE_APP_ID below with your real numeric App ID after creating the
 #      app record in App Store Connect.
 
