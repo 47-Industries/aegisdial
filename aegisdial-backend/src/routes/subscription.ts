@@ -44,7 +44,7 @@ const APPLE_NOTIFICATION_SCHEMA = z.object({
 
 const DEV_GRANT_SCHEMA = z.object({
   days: z.number().int().min(1).max(365).default(30),
-  product_id: z.string().default('com.aegisdial.ios.pro.monthly'),
+  product_id: z.string().default('com.fortyseven.aegisdial.pro.monthly'),
 });
 
 export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {

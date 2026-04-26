@@ -28,7 +28,7 @@ const RECOVERY_GRANT_SCHEMA = z
     { message: 'exactly_one_of_email_or_user_id' },
   );
 
-const RECOVERY_GRANT_PRODUCT_ID = 'com.aegisdial.ios.recovery.session';
+const RECOVERY_GRANT_PRODUCT_ID = 'com.fortyseven.aegisdial.recovery.session';
 
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // Metric counters dashboard — supports ?hours=1 and ?name=foo.

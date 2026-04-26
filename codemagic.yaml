@@ -20,8 +20,8 @@ workflows:
       groups:
         - codemagic
       vars:
-        BUNDLE_ID: "com.aegisdial.ios"
-        APP_STORE_APP_ID: "REPLACE_WITH_NUMERIC_APP_ID"
+        BUNDLE_ID: "com.fortyseven.aegisdial"
+        APP_STORE_APP_ID: "6763865098"
         API_URL: "https://aegisdial-api-production.up.railway.app"
       flutter: stable
       xcode: latest

@@ -11,7 +11,7 @@ enum APIConfig {
   #endif
 
   static let timeout: TimeInterval = 10
-  static let bundleID = "com.aegisdial.ios"
+  static let bundleID = "com.fortyseven.aegisdial"
 
   // APNs topic environment. DEBUG builds use sandbox (development push
   // key), release builds use production.

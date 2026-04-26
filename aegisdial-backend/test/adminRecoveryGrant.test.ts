@@ -191,7 +191,7 @@ describe('POST /admin/recovery/grant', () => {
     // One subscription row exists.
     assert.equal(dbState.subscriptions.length, 1);
     assert.equal(dbState.subscriptions[0].provider, 'admin_grant');
-    assert.equal(dbState.subscriptions[0].provider_product_id, 'com.aegisdial.ios.recovery.session');
+    assert.equal(dbState.subscriptions[0].provider_product_id, 'com.fortyseven.aegisdial.recovery.session');
     assert.equal(dbState.subscriptions[0].auto_renew, false);
     // User's tier got reconciled to 'pro'.
     assert.equal(dbState.users.get(USER_ID_A)?.tier, 'pro');

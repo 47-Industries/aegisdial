@@ -20,7 +20,7 @@ struct AboutView: View {
       Section("Version") {
         LabeledContent("Marketing version") { Text(marketingVersion) }
         LabeledContent("Build") { Text(buildNumber) }
-        LabeledContent("Bundle ID") { Text("com.aegisdial.ios").font(AegisType.mono) }
+        LabeledContent("Bundle ID") { Text("com.fortyseven.aegisdial").font(AegisType.mono) }
       }
 
       Section("Legal") {

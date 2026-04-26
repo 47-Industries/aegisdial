@@ -25,7 +25,7 @@ actor AppAttestService {
   static let shared = AppAttestService()
 
   private var cachedKeyID: String?
-  private let keyIDUserDefaultsKey = "com.aegisdial.ios.appAttestKeyID"
+  private let keyIDUserDefaultsKey = "com.fortyseven.aegisdial.appAttestKeyID"
 
   func prepareIfNeeded(challenge: Data) async throws {
     guard DCAppAttestService.shared.isSupported else { return }

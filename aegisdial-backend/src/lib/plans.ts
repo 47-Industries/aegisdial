@@ -26,24 +26,24 @@ export interface Plan {
 }
 
 export const PLANS: Record<string, Plan> = {
-  'com.aegisdial.ios.pro.monthly': {
-    product_id: 'com.aegisdial.ios.pro.monthly',
+  'com.fortyseven.aegisdial.pro.monthly': {
+    product_id: 'com.fortyseven.aegisdial.pro.monthly',
     included_lines: 3,
     addon_lines: 0,
     period: 'monthly',
     display_name: 'AegisDial Pro',
     price_usd_cents: 4999,
   },
-  'com.aegisdial.ios.pro.yearly': {
-    product_id: 'com.aegisdial.ios.pro.yearly',
+  'com.fortyseven.aegisdial.pro.yearly': {
+    product_id: 'com.fortyseven.aegisdial.pro.yearly',
     included_lines: 3,
     addon_lines: 0,
     period: 'yearly',
     display_name: 'AegisDial Pro — Annual',
     price_usd_cents: 29900,
   },
-  'com.aegisdial.ios.pro.family_plus.monthly': {
-    product_id: 'com.aegisdial.ios.pro.family_plus.monthly',
+  'com.fortyseven.aegisdial.pro.family_plus.monthly': {
+    product_id: 'com.fortyseven.aegisdial.pro.family_plus.monthly',
     included_lines: 3,
     addon_lines: 2,
     period: 'monthly',
@@ -56,8 +56,8 @@ export const PLANS: Record<string, Plan> = {
   // (not auto-renewable subscription). The Apple verify path detects
   // period='one_time_30d' and writes auto_renew=FALSE on the
   // subscriptions row; current_period_end is set 30 days out.
-  'com.aegisdial.ios.recovery.session': {
-    product_id: 'com.aegisdial.ios.recovery.session',
+  'com.fortyseven.aegisdial.recovery.session': {
+    product_id: 'com.fortyseven.aegisdial.recovery.session',
     included_lines: 1, // single-user, no family seats
     addon_lines: 0,
     period: 'one_time_30d',
@@ -68,12 +68,12 @@ export const PLANS: Record<string, Plan> = {
 
 // All monthly-tier product IDs, ordered low→high for UI sorting.
 export const MONTHLY_SKUS = [
-  'com.aegisdial.ios.pro.monthly',
-  'com.aegisdial.ios.pro.family_plus.monthly',
+  'com.fortyseven.aegisdial.pro.monthly',
+  'com.fortyseven.aegisdial.pro.family_plus.monthly',
 ];
 
 // All annual-tier product IDs.
-export const YEARLY_SKUS = ['com.aegisdial.ios.pro.yearly'];
+export const YEARLY_SKUS = ['com.fortyseven.aegisdial.pro.yearly'];
 
 export function planForProductId(productId: string): Plan | null {
   return PLANS[productId] ?? null;

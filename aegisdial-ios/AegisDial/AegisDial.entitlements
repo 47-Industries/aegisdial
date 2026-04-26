@@ -10,11 +10,11 @@
   <string>development</string>
   <key>com.apple.security.application-groups</key>
   <array>
-    <string>group.com.aegisdial.ios</string>
+    <string>group.com.fortyseven.aegisdial</string>
   </array>
   <key>keychain-access-groups</key>
   <array>
-    <string>$(AppIdentifierPrefix)com.aegisdial.ios.shared</string>
+    <string>$(AppIdentifierPrefix)com.fortyseven.aegisdial.shared</string>
   </array>
 </dict>
 </plist>
