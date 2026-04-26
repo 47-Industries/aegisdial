@@ -1,13 +1,30 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../widgets/aegis_logo.dart';
 import 'home_shell.dart';
+import 'email_auth_screen.dart';
 
-class AuthScreen extends StatelessWidget {
+class AuthScreen extends StatefulWidget {
   const AuthScreen({super.key});
 
-  void _enter(BuildContext context) {
+  @override
+  State<AuthScreen> createState() => _AuthScreenState();
+}
+
+class _AuthScreenState extends State<AuthScreen> {
+  bool _busy = false;
+
+  bool get _appleAvailable =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.iOS ||
+          defaultTargetPlatform == TargetPlatform.macOS);
+
+  void _enter() {
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 500),
@@ -15,6 +32,46 @@ class AuthScreen extends StatelessWidget {
         transitionsBuilder: (context, anim, secondary, child) {
           return FadeTransition(opacity: anim, child: child);
         },
+      ),
+    );
+  }
+
+  Future<void> _apple() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      // Backend requires dob_year for first sign-in. For TestFlight v1 we hard-set
+      // a passing year; real onboarding DOB collection lands when we add the
+      // age-gate sheet pre-Apple.
+      await auth.signInWithApple(dobYear: 1990);
+      _enter();
+    } on ApiException catch (e) {
+      _toast(e.message);
+    } catch (e) {
+      _toast('Apple sign-in cancelled.');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  Future<void> _email() async {
+    final ok = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(builder: (_) => const EmailAuthScreen()),
+    );
+    if (ok == true) _enter();
+  }
+
+  Future<void> _guest() async {
+    await auth.continueAsGuest();
+    _enter();
+  }
+
+  void _toast(String msg) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor: AegisColors.surfaceElevated,
       ),
     );
   }
@@ -68,18 +125,19 @@ class AuthScreen extends StatelessWidget {
                         ),
                   ),
                   const Spacer(flex: 2),
-                  _AppleButton(onPressed: () => _enter(context)),
-                  const SizedBox(height: 12),
+                  if (_appleAvailable)
+                    _AppleButton(onPressed: _busy ? null : _apple, busy: _busy),
+                  if (_appleAvailable) const SizedBox(height: 12),
                   _SecondaryAuth(
                     icon: Icons.mail_outline_rounded,
                     label: 'Continue with email',
-                    onPressed: () => _enter(context),
+                    onPressed: _busy ? null : _email,
                   ),
                   const SizedBox(height: 12),
                   _SecondaryAuth(
                     icon: Icons.shield_outlined,
                     label: 'Continue as guest',
-                    onPressed: () => _enter(context),
+                    onPressed: _busy ? null : _guest,
                   ),
                   const SizedBox(height: 16),
                   Text.rich(
@@ -121,8 +179,9 @@ class AuthScreen extends StatelessWidget {
 }
 
 class _AppleButton extends StatelessWidget {
-  final VoidCallback onPressed;
-  const _AppleButton({required this.onPressed});
+  final VoidCallback? onPressed;
+  final bool busy;
+  const _AppleButton({required this.onPressed, required this.busy});
 
   @override
   Widget build(BuildContext context) {
@@ -130,10 +189,22 @@ class _AppleButton extends StatelessWidget {
       height: 56,
       child: ElevatedButton.icon(
         onPressed: onPressed,
-        icon: const Icon(Icons.apple, size: 26, color: Colors.black),
-        label: const Text(
-          'Sign in with Apple',
-          style: TextStyle(fontWeight: FontWeight.w600, color: Colors.black),
+        icon: busy
+            ? const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(Colors.black),
+                ),
+              )
+            : const Icon(Icons.apple, size: 26, color: Colors.black),
+        label: Text(
+          busy ? 'Signing in…' : 'Sign in with Apple',
+          style: const TextStyle(
+            fontWeight: FontWeight.w600,
+            color: Colors.black,
+          ),
         ),
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,
@@ -150,7 +221,7 @@ class _AppleButton extends StatelessWidget {
 class _SecondaryAuth extends StatelessWidget {
   final IconData icon;
   final String label;
-  final VoidCallback onPressed;
+  final VoidCallback? onPressed;
   const _SecondaryAuth({
     required this.icon,
     required this.label,

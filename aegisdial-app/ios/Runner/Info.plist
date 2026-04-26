@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Aegisdial App</string>
+	<string>AegisDial</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -66,5 +66,17 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>AegisDial uses your microphone only when Live Shield is active during a phone call to detect scam patterns on-device. Audio never leaves your phone.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>AegisDial uses your contacts to recognize trusted callers and protect family members on your plan.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>AegisDial uses your photos so you can attach evidence (screenshots, receipts) to a scam recovery report.</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>AegisDial uses Face ID to securely unlock sensitive recovery sessions and family controls.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>AegisDial uses your camera to capture evidence (e.g. fake check, scam letter) for your recovery report.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

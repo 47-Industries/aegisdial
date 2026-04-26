@@ -1,0 +1,158 @@
+import 'dart:async';
+import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
+import 'api_service.dart';
+
+class AuthSession {
+  final String token;
+  final String userId;
+  final String tier;
+  const AuthSession({
+    required this.token,
+    required this.userId,
+    required this.tier,
+  });
+
+  Map<String, dynamic> toJson() =>
+      {'token': token, 'user_id': userId, 'tier': tier};
+  factory AuthSession.fromJson(Map<String, dynamic> j) => AuthSession(
+        token: j['token'] as String,
+        userId: j['user_id'] as String,
+        tier: (j['tier'] as String?) ?? 'free',
+      );
+}
+
+class AuthService extends ChangeNotifier {
+  AuthService._();
+  static final AuthService instance = AuthService._();
+
+  static const _kToken = 'auth_token';
+  static const _kUserId = 'auth_user_id';
+  static const _kTier = 'auth_tier';
+  static const _kOnboarded = 'onboarded_v1';
+
+  AuthSession? _session;
+  bool _onboarded = false;
+  bool _booted = false;
+
+  AuthSession? get session => _session;
+  bool get isSignedIn => _session != null;
+  bool get hasOnboarded => _onboarded;
+  bool get isBooted => _booted;
+
+  Future<void> boot() async {
+    final p = await SharedPreferences.getInstance();
+    final token = p.getString(_kToken);
+    final userId = p.getString(_kUserId);
+    if (token != null && userId != null) {
+      _session = AuthSession(
+        token: token,
+        userId: userId,
+        tier: p.getString(_kTier) ?? 'free',
+      );
+      api.setToken(token);
+    }
+    _onboarded = p.getBool(_kOnboarded) ?? false;
+    _booted = true;
+    notifyListeners();
+  }
+
+  Future<void> markOnboarded() async {
+    _onboarded = true;
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_kOnboarded, true);
+    notifyListeners();
+  }
+
+  Future<AuthSession> signInWithApple({int? dobYear}) async {
+    final cred = await SignInWithApple.getAppleIDCredential(
+      scopes: const [
+        AppleIDAuthorizationScopes.email,
+        AppleIDAuthorizationScopes.fullName,
+      ],
+    );
+    final idToken = cred.identityToken;
+    if (idToken == null) {
+      throw ApiException(0, 'Apple did not return an identity token.');
+    }
+    final fullName = [
+      cred.givenName,
+      cred.familyName,
+    ].where((s) => s != null && s.isNotEmpty).join(' ').trim();
+
+    final body = <String, dynamic>{
+      'id_token': idToken,
+      if (fullName.isNotEmpty) 'display_name': fullName,
+      if (dobYear != null) 'dob_year': dobYear,
+    };
+
+    final res = await api.post('/auth/apple', body);
+    final session = AuthSession.fromJson(res);
+    await _persist(session);
+    return session;
+  }
+
+  Future<AuthSession> signInWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    final res = await api.post('/auth/email/login', {
+      'email': email,
+      'password': password,
+    });
+    final session = AuthSession.fromJson(res);
+    await _persist(session);
+    return session;
+  }
+
+  Future<AuthSession> signUpWithEmail({
+    required String email,
+    required String password,
+    required int dobYear,
+    String? displayName,
+  }) async {
+    final res = await api.post('/auth/email/signup', {
+      'email': email,
+      'password': password,
+      'dob_year': dobYear,
+      if (displayName != null) 'display_name': displayName,
+    });
+    final session = AuthSession.fromJson(res);
+    await _persist(session);
+    return session;
+  }
+
+  /// Local-only "guest" session. Useful for visual demos / TestFlight reviewers.
+  /// Real device-bound anonymous auth lands later via App Attest backend flow.
+  Future<void> continueAsGuest() async {
+    _session = const AuthSession(
+      token: 'guest',
+      userId: 'guest',
+      tier: 'guest',
+    );
+    notifyListeners();
+  }
+
+  Future<void> signOut() async {
+    final p = await SharedPreferences.getInstance();
+    await p.remove(_kToken);
+    await p.remove(_kUserId);
+    await p.remove(_kTier);
+    _session = null;
+    api.setToken(null);
+    notifyListeners();
+  }
+
+  Future<void> _persist(AuthSession s) async {
+    _session = s;
+    api.setToken(s.token);
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kToken, s.token);
+    await p.setString(_kUserId, s.userId);
+    await p.setString(_kTier, s.tier);
+    notifyListeners();
+  }
+}
+
+final auth = AuthService.instance;

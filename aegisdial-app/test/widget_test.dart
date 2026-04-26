@@ -1,12 +1,17 @@
 import 'package:flutter_test/flutter_test.dart';
-
-import 'package:aegisdial_app/main.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'package:aegisdial_app/services/auth_service.dart';
 
 void main() {
-  testWidgets('Welcome screen renders brand', (WidgetTester tester) async {
-    await tester.pumpWidget(const AegisDialApp());
-    await tester.pump();
-    expect(find.text('AegisDial'), findsOneWidget);
-    expect(find.text('Get Started'), findsOneWidget);
+  TestWidgetsFlutterBinding.ensureInitialized();
+
+  setUp(() {
+    SharedPreferences.setMockInitialValues({});
+  });
+
+  test('AuthService boots without throwing', () async {
+    await auth.boot();
+    expect(auth.isBooted, isTrue);
+    expect(auth.isSignedIn, isFalse);
   });
 }

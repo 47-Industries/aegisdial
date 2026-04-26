@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'theme/app_theme.dart';
-import 'screens/welcome_screen.dart';
+import 'services/auth_service.dart';
+import 'screens/splash_screen.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   SystemChrome.setSystemUIOverlayStyle(
     const SystemUiOverlayStyle(
@@ -13,6 +14,7 @@ void main() {
       systemNavigationBarIconBrightness: Brightness.light,
     ),
   );
+  await auth.boot();
   runApp(const AegisDialApp());
 }
 
@@ -26,7 +28,7 @@ class AegisDialApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       themeMode: ThemeMode.dark,
       darkTheme: AppTheme.dark(),
-      home: const WelcomeScreen(),
+      home: const SplashScreen(),
     );
   }
 }
