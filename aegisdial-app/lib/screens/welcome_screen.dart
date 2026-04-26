@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../widgets/aegis_logo.dart';
-import 'globe_screen.dart';
+import 'auth_screen.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -87,7 +87,7 @@ class WelcomeScreen extends StatelessWidget {
                         PageRouteBuilder(
                           transitionDuration: const Duration(milliseconds: 600),
                           pageBuilder: (context, anim, secondary) =>
-                              const GlobeScreen(),
+                              const AuthScreen(),
                           transitionsBuilder:
                               (context, anim, secondary, child) {
                             return FadeTransition(opacity: anim, child: child);
