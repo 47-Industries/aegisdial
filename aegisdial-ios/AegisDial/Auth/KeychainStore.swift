@@ -10,14 +10,14 @@ import Security
 // Watch) read the same JWT without it ever hitting the App Group
 // UserDefaults (which is disk-plaintext at CompleteUntilFirstUserAuth).
 // Requires `keychain-access-groups` entitlement with value
-// "$(AppIdentifierPrefix)com.fortyseven.aegisdial.shared" on every target.
+// "$(AppIdentifierPrefix)com.aegiadial.ios.shared" on every target.
 
 enum KeychainKey: String {
-  case authToken = "com.fortyseven.aegisdial.authToken"
-  case deviceId = "com.fortyseven.aegisdial.deviceId"
-  case authMethod = "com.fortyseven.aegisdial.authMethod"
-  case userId = "com.fortyseven.aegisdial.userId"
-  case displayName = "com.fortyseven.aegisdial.displayName"
+  case authToken = "com.aegiadial.ios.authToken"
+  case deviceId = "com.aegiadial.ios.deviceId"
+  case authMethod = "com.aegiadial.ios.authMethod"
+  case userId = "com.aegiadial.ios.userId"
+  case displayName = "com.aegiadial.ios.displayName"
 }
 
 enum KeychainStore {
@@ -25,7 +25,7 @@ enum KeychainStore {
   /// team ID prefix Xcode inserts at sign time; we don't hardcode it.
   /// The entitlement file includes the team-prefix token so the OS
   /// expands it at install time.
-  static let accessGroup = "com.fortyseven.aegisdial.shared"
+  static let accessGroup = "com.aegiadial.ios.shared"
 
   static func set(_ key: KeychainKey, _ value: String?) {
     delete(key)

@@ -194,7 +194,7 @@ async function upsertStripeSubscription(userId: string, sub: Stripe.Subscription
   if (!item) return;
   const priceId = item.price.id;
   // Translate the opaque Stripe price ID back to our internal SKU
-  // (e.g. 'com.fortyseven.aegisdial.pro.monthly') so downstream consumers —
+  // (e.g. 'com.aegiadial.ios.pro.monthly') so downstream consumers —
   // linesForProductId, family-seat sync, the iOS paywall reading
   // provider_product_id — keep seeing the same catalog keys regardless of
   // whether the purchase came through Apple or Stripe. Fall back to the raw
@@ -287,14 +287,14 @@ function extractUserId(obj: Stripe.Checkout.Session | Stripe.Subscription): stri
 
 // Map a Stripe price ID back to our internal SKU. Stripe price IDs are
 // opaque (price_xxx) and live in the env config; our catalog in plans.ts is
-// keyed on the App Store-style product ID ('com.fortyseven.aegisdial.pro.monthly',
+// keyed on the App Store-style product ID ('com.aegiadial.ios.pro.monthly',
 // etc). This function is the glue so Stripe-originated rows land in the
 // subscriptions table with the same product_id shape as Apple rows.
 function priceToProductId(priceId: string): string | null {
   const mapping: Array<[string | undefined, string]> = [
-    [config.STRIPE_MONTHLY_PRICE_ID, 'com.fortyseven.aegisdial.pro.monthly'],
-    [config.STRIPE_YEARLY_PRICE_ID, 'com.fortyseven.aegisdial.pro.yearly'],
-    [config.STRIPE_FAMILY_PLUS_MONTHLY_PRICE_ID, 'com.fortyseven.aegisdial.pro.family_plus.monthly'],
+    [config.STRIPE_MONTHLY_PRICE_ID, 'com.aegiadial.ios.pro.monthly'],
+    [config.STRIPE_YEARLY_PRICE_ID, 'com.aegiadial.ios.pro.yearly'],
+    [config.STRIPE_FAMILY_PLUS_MONTHLY_PRICE_ID, 'com.aegiadial.ios.pro.family_plus.monthly'],
   ];
   for (const [envPrice, productId] of mapping) {
     if (envPrice && envPrice === priceId) {

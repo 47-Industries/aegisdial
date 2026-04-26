@@ -24,7 +24,7 @@ workflows:
       groups:
         - codemagic
       vars:
-        BUNDLE_ID: "com.fortyseven.aegisdial"
+        BUNDLE_ID: "com.aegiadial.ios"
         APP_STORE_APP_ID: "6763865098"
         API_URL: "https://aegisdial-api-production.up.railway.app"
       flutter: stable

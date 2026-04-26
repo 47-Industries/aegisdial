@@ -42,10 +42,10 @@ final class SubscriptionStore {
   // want guided recovery WITHOUT a subscription commitment. Configured in
   // App Store Connect as a NON-CONSUMABLE in-app purchase, NOT an
   // auto-renewable subscription. Backend grants 30-day Pro on verify.
-  static let monthlyID = "com.fortyseven.aegisdial.pro.monthly"
-  static let yearlyID = "com.fortyseven.aegisdial.pro.yearly"
-  static let familyPlusMonthlyID = "com.fortyseven.aegisdial.pro.family_plus.monthly"
-  static let recoverySessionID = "com.fortyseven.aegisdial.recovery.session"
+  static let monthlyID = "com.aegiadial.ios.pro.monthly"
+  static let yearlyID = "com.aegiadial.ios.pro.yearly"
+  static let familyPlusMonthlyID = "com.aegiadial.ios.pro.family_plus.monthly"
+  static let recoverySessionID = "com.aegiadial.ios.recovery.session"
 
   static let allIDs: Set<String> = [
     monthlyID, yearlyID, familyPlusMonthlyID, recoverySessionID,

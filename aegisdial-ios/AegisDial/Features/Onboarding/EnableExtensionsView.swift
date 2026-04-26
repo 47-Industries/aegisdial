@@ -135,7 +135,7 @@ struct EnableExtensionsView: View {
     // Caller ID status via CXCallDirectoryManager. Bundle id for the
     // extension matches what's declared in project.yml.
     let callerId = await withCheckedContinuation { (cont: CheckedContinuation<Bool, Never>) in
-      let bundleId = (Bundle.main.bundleIdentifier ?? "com.fortyseven.aegisdial") + ".CallerID"
+      let bundleId = (Bundle.main.bundleIdentifier ?? "com.aegiadial.ios") + ".CallerID"
       CXCallDirectoryManager.sharedInstance.getEnabledStatusForExtension(withIdentifier: bundleId) { status, _ in
         cont.resume(returning: status == .enabled)
       }

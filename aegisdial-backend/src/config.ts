@@ -79,12 +79,12 @@ const schema = z.object({
     .string()
     .default('ZGV2LW9ubHkta2V5LWRvLW5vdC11c2UtaW4tcHJvZC1lbnYtMzI='),
   JWT_SECRET: z.string().min(32).default('dev-only-jwt-secret-change-me-immediately-in-production-12345'),
-  APPLE_CLIENT_ID: z.string().default('com.fortyseven.aegisdial'),
-  APP_ATTEST_BUNDLE_ID: z.string().default('com.fortyseven.aegisdial'),
+  APPLE_CLIENT_ID: z.string().default('com.aegiadial.ios'),
+  APP_ATTEST_BUNDLE_ID: z.string().default('com.aegiadial.ios'),
   APP_ATTEST_ENV: z.enum(['development', 'production']).default('development'),
 
   // Apple StoreKit verification — all optional until App Store Connect is wired.
-  APPLE_BUNDLE_ID: z.string().default('com.fortyseven.aegisdial'),
+  APPLE_BUNDLE_ID: z.string().default('com.aegiadial.ios'),
   APPLE_APP_APPLE_ID: z.coerce.number().int().optional(),
   APPLE_STOREKIT_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
 

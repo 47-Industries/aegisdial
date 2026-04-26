@@ -10,7 +10,7 @@ import { requireAppUser } from '../lib/auth.js';
 
 const REGISTER_SCHEMA = z.object({
   apns_token: z.string().min(32).max(200),
-  bundle_id: z.string().optional().default('com.fortyseven.aegisdial'),
+  bundle_id: z.string().optional().default('com.aegiadial.ios'),
   environment: z.enum(['sandbox', 'production']).optional().default('sandbox'),
   device_model: z.string().max(80).optional(),
   app_version: z.string().max(40).optional(),
