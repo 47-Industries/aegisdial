@@ -15,13 +15,6 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   int _index = 0;
 
-  static const _tabs = <Widget>[
-    HomeDashboard(),
-    RecoveryScreen(),
-    FamilyScreen(),
-    SettingsScreen(),
-  ];
-
   static const _items = <_NavItem>[
     _NavItem(Icons.shield_moon_outlined, Icons.shield_moon, 'Shield'),
     _NavItem(Icons.healing_outlined, Icons.healing, 'Recovery'),
@@ -29,11 +22,19 @@ class _HomeShellState extends State<HomeShell> {
     _NavItem(Icons.settings_outlined, Icons.settings, 'Settings'),
   ];
 
+  void _select(int i) => setState(() => _index = i);
+
   @override
   Widget build(BuildContext context) {
+    final tabs = <Widget>[
+      HomeDashboard(onOpenRecovery: () => _select(1)),
+      const RecoveryScreen(),
+      const FamilyScreen(),
+      const SettingsScreen(),
+    ];
     return Scaffold(
       backgroundColor: AegisColors.background,
-      body: IndexedStack(index: _index, children: _tabs),
+      body: IndexedStack(index: _index, children: tabs),
       bottomNavigationBar: Container(
         decoration: const BoxDecoration(
           color: AegisColors.surface,
@@ -48,7 +49,7 @@ class _HomeShellState extends State<HomeShell> {
                 final selected = i == _index;
                 return Expanded(
                   child: InkWell(
-                    onTap: () => setState(() => _index = i),
+                    onTap: () => _select(i),
                     child: Column(
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [

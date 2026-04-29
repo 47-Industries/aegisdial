@@ -15,20 +15,6 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
   late final AnimationController _pulse;
   late final AnimationController _wave;
 
-  // Mock transcript stream — what real on-device STT would surface.
-  final List<_Line> _lines = const [
-    _Line('caller', 'Hello, this is Officer Martinez with the IRS.'),
-    _Line('caller', 'There is a warrant for your arrest for tax evasion.'),
-    _Line('aegis',
-        '⚠ Authority impersonation detected. IRS does NOT call about warrants.'),
-    _Line('caller',
-        'You need to pay \$4,200 in gift cards to avoid prosecution today.'),
-    _Line('aegis',
-        '⚠ Gift card payment request — 99% scam confidence. Recommend hang up.'),
-  ];
-
-  int _shown = 0;
-
   @override
   void initState() {
     super.initState();
@@ -40,15 +26,6 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1100),
     )..repeat();
-    _scheduleLines();
-  }
-
-  void _scheduleLines() async {
-    for (int i = 0; i < _lines.length; i++) {
-      await Future.delayed(Duration(milliseconds: 1200 + i * 900));
-      if (!mounted) return;
-      setState(() => _shown = i + 1);
-    }
   }
 
   @override
@@ -99,12 +76,13 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
             ),
           ),
           SafeArea(
-            child: Column(
+            child: ListView(
+              padding: const EdgeInsets.only(top: 8, bottom: 28),
               children: [
-                const SizedBox(height: 8),
-                _CallHeader(),
+                _StatusHeader(),
                 const SizedBox(height: 16),
-                Expanded(
+                SizedBox(
+                  height: 240,
                   child: AnimatedBuilder(
                     animation: _pulse,
                     builder: (context, _) {
@@ -155,84 +133,119 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                 const SizedBox(height: 16),
                 Container(
                   margin: const EdgeInsets.symmetric(horizontal: 20),
-                  padding: const EdgeInsets.all(16),
-                  constraints: const BoxConstraints(maxHeight: 200),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 22,
+                    horizontal: 18,
+                  ),
                   decoration: BoxDecoration(
                     color: AegisColors.surface.withValues(alpha: 0.85),
                     borderRadius: BorderRadius.circular(18),
                     border: Border.all(color: AegisColors.border, width: 0.6),
                   ),
-                  child: ListView.builder(
-                    reverse: true,
-                    itemCount: _shown,
-                    itemBuilder: (context, idx) {
-                      final realIdx = _shown - 1 - idx;
-                      final line = _lines[realIdx];
-                      final isAegis = line.who == 'aegis';
-                      return Padding(
-                        padding: const EdgeInsets.symmetric(vertical: 4),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              isAegis ? '◆' : '·',
-                              style: TextStyle(
-                                color: isAegis
-                                    ? AegisColors.danger
-                                    : AegisColors.textTertiary,
-                                fontSize: 14,
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                line.text,
-                                style: TextStyle(
-                                  color: isAegis
-                                      ? AegisColors.danger
-                                      : AegisColors.textSecondary,
-                                  fontSize: 13.5,
-                                  fontWeight: isAegis
-                                      ? FontWeight.w600
-                                      : FontWeight.w400,
-                                  height: 1.45,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      );
-                    },
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 20),
-                  child: Row(
+                  child: Column(
                     children: [
-                      Expanded(
-                        child: OutlinedButton.icon(
-                          onPressed: () {},
-                          icon: const Icon(Icons.pause_rounded),
-                          label: const Text('Pause shield'),
+                      Text(
+                        'Listening — no active call',
+                        style: tt.bodyMedium?.copyWith(
+                          color: AegisColors.textPrimary,
+                          fontWeight: FontWeight.w600,
                         ),
                       ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: ElevatedButton.icon(
-                          onPressed: () {},
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: AegisColors.danger,
-                            foregroundColor: Colors.white,
-                          ),
-                          icon: const Icon(Icons.call_end_rounded),
-                          label: const Text('END CALL'),
+                      const SizedBox(height: 6),
+                      Text(
+                        'When a call comes in, the live transcript and verdict will appear here.',
+                        textAlign: TextAlign.center,
+                        style: tt.bodySmall?.copyWith(
+                          color: AegisColors.textTertiary,
+                          height: 1.45,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(height: 28),
+                const SizedBox(height: 22),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Text(
+                    'TRANSCRIPTS',
+                    style: tt.labelSmall?.copyWith(
+                      color: AegisColors.textTertiary,
+                      letterSpacing: 1.6,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: 20),
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 22,
+                    horizontal: 16,
+                  ),
+                  decoration: BoxDecoration(
+                    color: AegisColors.surface.withValues(alpha: 0.55),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                      color: AegisColors.border,
+                      width: 0.6,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.history_rounded,
+                        color: AegisColors.textTertiary,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'No calls transcribed yet.',
+                              style: tt.bodyMedium?.copyWith(
+                                color: AegisColors.textPrimary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'Every call is transcribed on-device. The transcript and the scam verdict show up here when a call ends.',
+                              style: tt.bodySmall?.copyWith(
+                                color: AegisColors.textTertiary,
+                                height: 1.4,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Row(
+                    children: [
+                      const Icon(
+                        Icons.lock_outline_rounded,
+                        size: 14,
+                        color: AegisColors.textTertiary,
+                      ),
+                      const SizedBox(width: 6),
+                      Expanded(
+                        child: Text(
+                          'Transcripts never leave your phone. Only the verdict (scam / safe) syncs.',
+                          style: tt.labelSmall?.copyWith(
+                            color: AegisColors.textTertiary,
+                            height: 1.4,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -242,13 +255,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
   }
 }
 
-class _Line {
-  final String who;
-  final String text;
-  const _Line(this.who, this.text);
-}
-
-class _CallHeader extends StatelessWidget {
+class _StatusHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
@@ -268,12 +275,12 @@ class _CallHeader extends StatelessWidget {
               height: 44,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AegisColors.danger.withValues(alpha: 0.15),
-                border: Border.all(color: AegisColors.danger, width: 1),
+                color: AegisColors.turquoise.withValues(alpha: 0.15),
+                border: Border.all(color: AegisColors.turquoise, width: 1),
               ),
               child: const Icon(
-                Icons.warning_amber_rounded,
-                color: AegisColors.danger,
+                Icons.graphic_eq_rounded,
+                color: AegisColors.turquoise,
               ),
             ),
             const SizedBox(width: 12),
@@ -282,36 +289,20 @@ class _CallHeader extends StatelessWidget {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    '+1 (888) 555-0144',
+                    'Shield is active',
                     style: tt.titleMedium?.copyWith(
                       fontWeight: FontWeight.w700,
                     ),
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'VoIP · Originating Florida · 0:42',
+                    'Every call is transcribed on-device and screened for scams.',
                     style: tt.bodySmall?.copyWith(
                       color: AegisColors.textTertiary,
+                      height: 1.35,
                     ),
                   ),
                 ],
-              ),
-            ),
-            Container(
-              padding:
-                  const EdgeInsets.symmetric(vertical: 6, horizontal: 10),
-              decoration: BoxDecoration(
-                color: AegisColors.danger.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: const Text(
-                'SCAM',
-                style: TextStyle(
-                  color: AegisColors.danger,
-                  fontSize: 11,
-                  letterSpacing: 1.4,
-                  fontWeight: FontWeight.w700,
-                ),
               ),
             ),
           ],

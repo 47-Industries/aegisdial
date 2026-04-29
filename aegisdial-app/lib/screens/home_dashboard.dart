@@ -3,10 +3,12 @@ import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/hyperspace_stars.dart';
 import 'live_shield_active.dart';
-import 'globe_screen.dart';
+import 'coverage_screen.dart';
+import 'breach_screen.dart';
 
 class HomeDashboard extends StatefulWidget {
-  const HomeDashboard({super.key});
+  final VoidCallback? onOpenRecovery;
+  const HomeDashboard({super.key, this.onOpenRecovery});
 
   @override
   State<HomeDashboard> createState() => _HomeDashboardState();
@@ -49,15 +51,15 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Good evening',
+                        'AEGISDIAL',
                         style: tt.labelMedium?.copyWith(
                           color: AegisColors.textTertiary,
-                          letterSpacing: 1.2,
+                          letterSpacing: 1.6,
                         ),
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Dean',
+                        'Welcome back',
                         style: tt.headlineMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                           letterSpacing: -0.5,
@@ -130,14 +132,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       ],
                     ),
                     const SizedBox(height: 16),
-                    _StatRow(
-                      stats: [
-                        _Stat('Calls today', '14'),
-                        _Stat('Blocked', '3', accent: true),
-                        _Stat('Confidence', '98%'),
-                      ],
-                    ),
-                    const SizedBox(height: 8),
                     Container(
                       padding:
                           const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
@@ -160,7 +154,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           Expanded(
                             child: Text(
                               _shieldOn
-                                  ? 'Listening · transcripts stay on device'
+                                  ? 'Listening — transcripts stay on device'
                                   : 'Shield paused — tap to resume',
                               style: tt.bodySmall?.copyWith(
                                 color: AegisColors.textSecondary,
@@ -181,7 +175,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
               const SizedBox(height: 14),
               GlassCard(
                 accent: AegisColors.blue,
-                onTap: () {},
+                onTap: () => widget.onOpenRecovery?.call(),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
@@ -226,17 +220,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: const [
-                        _Chip(label: '52 scam playbooks'),
-                        _Chip(label: 'Bank scripts'),
-                        _Chip(label: 'FTC + IC3'),
-                        _Chip(label: 'Family loop-in'),
-                      ],
-                    ),
                   ],
                 ),
               ),
@@ -250,13 +233,13 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         horizontal: 14,
                       ),
                       onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => const GlobeScreen()),
+                        MaterialPageRoute(builder: (_) => const CoverageScreen()),
                       ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           const Icon(
-                            Icons.public_rounded,
+                            Icons.message_outlined,
                             color: AegisColors.turquoise,
                           ),
                           const SizedBox(height: 10),
@@ -268,7 +251,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'Pinpoint area',
+                            'AI message scanner',
                             style: tt.labelSmall?.copyWith(
                               color: AegisColors.textTertiary,
                             ),
@@ -284,7 +267,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         vertical: 18,
                         horizontal: 14,
                       ),
-                      onTap: () {},
+                      onTap: () => Navigator.of(context).push(
+                        MaterialPageRoute(builder: (_) => const BreachScreen()),
+                      ),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
@@ -301,7 +286,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            '0 new exposures',
+                            'Dark-web origins',
                             style: tt.labelSmall?.copyWith(
                               color: AegisColors.textTertiary,
                             ),
@@ -322,23 +307,34 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 ),
               ),
               const SizedBox(height: 10),
-              const _ActivityTile(
-                icon: Icons.block,
-                color: AegisColors.danger,
-                title: 'Blocked: "IRS Tax Settlement"',
-                subtitle: '2:14 PM · 95% scam confidence',
-              ),
-              const _ActivityTile(
-                icon: Icons.check_circle,
-                color: AegisColors.success,
-                title: 'Cleared: Kaiser Pharmacy',
-                subtitle: '11:48 AM · verified caller',
-              ),
-              const _ActivityTile(
-                icon: Icons.warning_amber_rounded,
-                color: Color(0xFFFFB454),
-                title: 'Suspicious SMS dropped',
-                subtitle: 'Yesterday · "package undeliverable" link',
+              Container(
+                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+                decoration: BoxDecoration(
+                  color: AegisColors.surface.withValues(alpha: 0.45),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AegisColors.border, width: 0.6),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(
+                      Icons.history_rounded,
+                      color: AegisColors.textTertiary,
+                      size: 22,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Text(
+                        _shieldOn
+                            ? 'No call or SMS events yet — Shield is listening.'
+                            : 'Shield is paused. Resume it to start logging activity.',
+                        style: tt.bodySmall?.copyWith(
+                          color: AegisColors.textSecondary,
+                          height: 1.45,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ],
           ),
@@ -382,145 +378,6 @@ class _StatusBanner extends StatelessWidget {
             style: tt.bodyMedium?.copyWith(
               color: AegisColors.textPrimary,
               fontWeight: FontWeight.w600,
-            ),
-          ),
-          const Spacer(),
-          Text(
-            on ? 'Pro · 3 lines' : 'Resume to continue',
-            style: tt.bodySmall?.copyWith(color: AegisColors.textTertiary),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Stat {
-  final String label;
-  final String value;
-  final bool accent;
-  const _Stat(this.label, this.value, {this.accent = false});
-}
-
-class _StatRow extends StatelessWidget {
-  final List<_Stat> stats;
-  const _StatRow({required this.stats});
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    return Row(
-      children: stats
-          .map(
-            (s) => Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    s.value,
-                    style: tt.headlineSmall?.copyWith(
-                      fontWeight: FontWeight.w700,
-                      color: s.accent
-                          ? AegisColors.turquoise
-                          : AegisColors.textPrimary,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  Text(
-                    s.label.toUpperCase(),
-                    style: tt.labelSmall?.copyWith(
-                      color: AegisColors.textTertiary,
-                      letterSpacing: 1.1,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          )
-          .toList(),
-    );
-  }
-}
-
-class _Chip extends StatelessWidget {
-  final String label;
-  const _Chip({required this.label});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 12),
-      decoration: BoxDecoration(
-        color: AegisColors.surfaceElevated,
-        borderRadius: BorderRadius.circular(40),
-        border: Border.all(color: AegisColors.border, width: 0.6),
-      ),
-      child: Text(
-        label,
-        style: const TextStyle(
-          color: AegisColors.textSecondary,
-          fontSize: 12,
-          fontWeight: FontWeight.w500,
-        ),
-      ),
-    );
-  }
-}
-
-class _ActivityTile extends StatelessWidget {
-  final IconData icon;
-  final Color color;
-  final String title;
-  final String subtitle;
-  const _ActivityTile({
-    required this.icon,
-    required this.color,
-    required this.title,
-    required this.subtitle,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-      decoration: BoxDecoration(
-        color: AegisColors.surface.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AegisColors.border, width: 0.6),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: color, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: const TextStyle(
-                    color: AegisColors.textPrimary,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: const TextStyle(
-                    color: AegisColors.textTertiary,
-                    fontSize: 12,
-                  ),
-                ),
-              ],
             ),
           ),
         ],
