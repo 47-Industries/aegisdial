@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
@@ -64,6 +65,33 @@ class _AuthScreenState extends State<AuthScreen> {
   Future<void> _guest() async {
     await auth.continueAsGuest();
     _enter();
+  }
+
+  void _showLegal(BuildContext context, String title, String body) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AegisColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: Text(title),
+        content: Text(
+          body,
+          style: const TextStyle(
+              color: AegisColors.textSecondary, height: 1.55, fontSize: 13),
+        ),
+        actions: [
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              backgroundColor: AegisColors.turquoise,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('Close'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _toast(String msg) {
@@ -146,24 +174,32 @@ class _AuthScreenState extends State<AuthScreen> {
                             color: AegisColors.textTertiary,
                             height: 1.5,
                           ),
-                      children: const [
-                        TextSpan(text: 'By continuing you agree to our '),
+                      children: [
+                        const TextSpan(text: 'By continuing you agree to our '),
                         TextSpan(
                           text: 'Terms',
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: AegisColors.turquoise,
                             decoration: TextDecoration.underline,
+                            decorationColor: AegisColors.turquoise,
                           ),
+                          recognizer: TapGestureRecognizer()
+                            ..onTap = () => _showLegal(context, 'Terms of Service',
+                                'AegisDial Terms of Service\n\nBy using AegisDial you agree to use it lawfully. We provide fraud-detection tools for informational purposes only. We are not liable for outcomes arising from scam incidents.\n\nFull terms at aegisdial.com/terms.'),
                         ),
-                        TextSpan(text: ' and '),
+                        const TextSpan(text: ' and '),
                         TextSpan(
                           text: 'Privacy Policy',
-                          style: TextStyle(
+                          style: const TextStyle(
                             color: AegisColors.turquoise,
                             decoration: TextDecoration.underline,
+                            decorationColor: AegisColors.turquoise,
                           ),
+                          recognizer: TapGestureRecognizer()
+                            ..onTap = () => _showLegal(context, 'Privacy Policy',
+                                'AegisDial Privacy Policy\n\nAll call transcripts and SMS scans are processed entirely on your device. We never upload your personal conversations, contacts, or messages.\n\nFull policy at aegisdial.com/privacy.'),
                         ),
-                        TextSpan(text: '.'),
+                        const TextSpan(text: '.'),
                       ],
                     ),
                     textAlign: TextAlign.center,

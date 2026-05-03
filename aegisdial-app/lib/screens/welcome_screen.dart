@@ -99,7 +99,19 @@ class WelcomeScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton(
-                    onPressed: () {},
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        PageRouteBuilder(
+                          transitionDuration: const Duration(milliseconds: 600),
+                          pageBuilder: (context, anim, secondary) =>
+                              const AuthScreen(),
+                          transitionsBuilder:
+                              (context, anim, secondary, child) {
+                            return FadeTransition(opacity: anim, child: child);
+                          },
+                        ),
+                      );
+                    },
                     child: const Text('I already have an account'),
                   ),
                   const SizedBox(height: 8),

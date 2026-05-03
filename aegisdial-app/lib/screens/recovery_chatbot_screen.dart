@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../services/trial_service.dart';
+import 'paywall_screen.dart';
+import 'recovery_screen.dart';
 
 class RecoveryChatbotScreen extends StatefulWidget {
   const RecoveryChatbotScreen({super.key});
@@ -10,8 +13,13 @@ class RecoveryChatbotScreen extends StatefulWidget {
 
 class _ChatMessage {
   final bool fromUser;
+  final bool isLimit;
   final String text;
-  const _ChatMessage({required this.fromUser, required this.text});
+  const _ChatMessage({
+    required this.fromUser,
+    required this.text,
+    this.isLimit = false,
+  });
 }
 
 class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
@@ -34,6 +42,36 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   ];
   bool _sending = false;
 
+  bool _trialActive = true;
+  int _daysLeft = TrialService.trialDays;
+  int _messagesLeft = TrialService.dailyLimit;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadTrial();
+  }
+
+  Future<void> _loadTrial() async {
+    final active = await TrialService.isTrialActive();
+    final days = await TrialService.daysRemaining();
+    final msgs = await TrialService.messagesRemainingToday();
+    if (!mounted) return;
+    setState(() {
+      _trialActive = active;
+      _daysLeft = days;
+      _messagesLeft = msgs;
+    });
+    if (!active) _showPaywall(PaywallReason.trialExpired);
+  }
+
+  Future<void> _showPaywall(PaywallReason reason) async {
+    await Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => PaywallScreen(reason: reason)),
+    );
+    _loadTrial();
+  }
+
   @override
   void dispose() {
     _input.dispose();
@@ -44,6 +82,26 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   Future<void> _send([String? text]) async {
     final value = (text ?? _input.text).trim();
     if (value.isEmpty || _sending) return;
+
+    if (!_trialActive) {
+      _showPaywall(PaywallReason.trialExpired);
+      return;
+    }
+
+    if (_messagesLeft <= 0) {
+      setState(() {
+        _messages.add(const _ChatMessage(
+          fromUser: false,
+          isLimit: true,
+          text:
+              "You've used all 10 free messages for today. Upgrade to Pro for unlimited daily access.",
+        ));
+      });
+      _scrollToBottom();
+      _showPaywall(PaywallReason.dailyLimitReached);
+      return;
+    }
+
     setState(() {
       _messages.add(_ChatMessage(fromUser: true, text: value));
       _input.clear();
@@ -51,11 +109,16 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
     });
     _scrollToBottom();
 
+    await TrialService.recordMessage();
+
     await Future.delayed(const Duration(milliseconds: 750));
     if (!mounted) return;
+
+    final msgs = await TrialService.messagesRemainingToday();
     setState(() {
       _messages.add(_ChatMessage(fromUser: false, text: _respond(value)));
       _sending = false;
+      _messagesLeft = msgs;
     });
     _scrollToBottom();
   }
@@ -145,18 +208,36 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
             ),
           ],
         ),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline_rounded, size: 20),
+            color: AegisColors.textTertiary,
+            onPressed: () => Navigator.of(context).push(
+              MaterialPageRoute(builder: (_) => const RecoveryScreen()),
+            ),
+            tooltip: 'Scam types & resources',
+          ),
+        ],
       ),
       body: Column(
         children: [
+          _TrialBanner(
+            active: _trialActive,
+            daysLeft: _daysLeft,
+            messagesLeft: _messagesLeft,
+            onUpgrade: () => _showPaywall(
+              _trialActive
+                  ? PaywallReason.dailyLimitReached
+                  : PaywallReason.trialExpired,
+            ),
+          ),
           Expanded(
             child: ListView.builder(
               controller: _scroll,
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
               itemCount: _messages.length + (_sending ? 1 : 0),
               itemBuilder: (context, idx) {
-                if (idx == _messages.length) {
-                  return const _TypingBubble();
-                }
+                if (idx == _messages.length) return const _TypingBubble();
                 return _Bubble(message: _messages[idx]);
               },
             ),
@@ -226,6 +307,95 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   }
 }
 
+class _TrialBanner extends StatelessWidget {
+  final bool active;
+  final int daysLeft;
+  final int messagesLeft;
+  final VoidCallback onUpgrade;
+
+  const _TrialBanner({
+    required this.active,
+    required this.daysLeft,
+    required this.messagesLeft,
+    required this.onUpgrade,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+
+    if (!active) {
+      return GestureDetector(
+        onTap: onUpgrade,
+        child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          color: AegisColors.danger.withValues(alpha: 0.15),
+          child: Row(
+            children: [
+              const Icon(Icons.lock_outline_rounded,
+                  size: 14, color: AegisColors.danger),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  'Free trial ended · Upgrade to continue',
+                  style: tt.labelSmall?.copyWith(
+                    color: AegisColors.danger,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+              Text(
+                'Upgrade',
+                style: tt.labelSmall?.copyWith(
+                  color: AegisColors.danger,
+                  fontWeight: FontWeight.w700,
+                  decoration: TextDecoration.underline,
+                  decorationColor: AegisColors.danger,
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    final lowMessages = messagesLeft <= 3;
+    final accent = lowMessages ? AegisColors.warning : AegisColors.turquoise;
+
+    return GestureDetector(
+      onTap: onUpgrade,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        color: accent.withValues(alpha: 0.08),
+        child: Row(
+          children: [
+            Icon(Icons.access_time_rounded, size: 13, color: accent),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'Free trial · $daysLeft day${daysLeft == 1 ? '' : 's'} left · $messagesLeft message${messagesLeft == 1 ? '' : 's'} today',
+                style: tt.labelSmall?.copyWith(
+                  color: accent,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+            Text(
+              'Upgrade',
+              style: tt.labelSmall?.copyWith(
+                color: accent,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 class _QuickPromptStrip extends StatelessWidget {
   final ValueChanged<String> onTap;
   const _QuickPromptStrip({required this.onTap});
@@ -255,10 +425,7 @@ class _QuickPromptStrip extends StatelessWidget {
                   ),
                   decoration: BoxDecoration(
                     borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: AegisColors.border,
-                      width: 0.6,
-                    ),
+                    border: Border.all(color: AegisColors.border, width: 0.6),
                   ),
                   child: Text(
                     label,
@@ -286,6 +453,44 @@ class _Bubble extends StatelessWidget {
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     final isUser = message.fromUser;
+
+    if (message.isLimit) {
+      return Padding(
+        padding: const EdgeInsets.symmetric(vertical: 8),
+        child: Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: AegisColors.warning.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(
+              color: AegisColors.warning.withValues(alpha: 0.4),
+              width: 0.8,
+            ),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.bolt_rounded,
+                color: AegisColors.warning,
+                size: 16,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  message.text,
+                  style: tt.bodySmall?.copyWith(
+                    color: AegisColors.textSecondary,
+                    height: 1.45,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 5),
       child: Row(
@@ -313,8 +518,7 @@ class _Bubble extends StatelessWidget {
               constraints: BoxConstraints(
                 maxWidth: MediaQuery.of(context).size.width * 0.78,
               ),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: isUser
                     ? AegisColors.turquoise.withValues(alpha: 0.18)
@@ -372,8 +576,7 @@ class _TypingBubble extends StatelessWidget {
             ),
           ),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
             decoration: BoxDecoration(
               color: AegisColors.surface.withValues(alpha: 0.85),
               borderRadius: BorderRadius.circular(16),

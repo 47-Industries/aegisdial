@@ -22,7 +22,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
   static const String _plusTier = 'Family+ · up to 5 lines';
   static const String _plusPrice = '\$69.99 / mo';
 
-  final List<_FamilyMember> _members = const [];
+  final List<_FamilyMember> _members = [];
+  String _safeWord = '';
 
   bool get _isFamilyPlus => _members.length > _baseLines;
   int get _capacity => _isFamilyPlus ? _maxLines : _baseLines;
@@ -47,6 +48,58 @@ class _FamilyScreenState extends State<FamilyScreen> {
       builder: (_) => const _AddMemberSheet(),
     );
     if (added != null) setState(() => _members.add(added));
+  }
+
+  Future<void> _showSafeWordDialog() async {
+    final ctrl = TextEditingController(text: _safeWord);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AegisColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Family safe word'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'A private word only your family knows. If someone calls claiming to be a family member, ask for it — AI voice clones can\'t answer.',
+              style: TextStyle(color: AegisColors.textSecondary, height: 1.45, fontSize: 14),
+            ),
+            const SizedBox(height: 14),
+            TextField(
+              controller: ctrl,
+              autofocus: true,
+              textCapitalization: TextCapitalization.words,
+              maxLength: 12,
+              decoration: const InputDecoration(
+                labelText: 'Safe word',
+                border: OutlineInputBorder(),
+                counterText: '',
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(null),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              backgroundColor: AegisColors.turquoise,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    );
+    if (result != null && result.isNotEmpty) {
+      setState(() => _safeWord = result);
+    }
   }
 
   Future<bool?> _confirmUpgrade() {
@@ -179,7 +232,10 @@ class _FamilyScreenState extends State<FamilyScreen> {
           if (_members.isEmpty)
             _EmptyMembers()
           else
-            ..._members.map((m) => _MemberTile(member: m)),
+            ..._members.map((m) => _MemberTile(
+                  member: m,
+                  onRemove: () => setState(() => _members.remove(m)),
+                )),
           if (_members.length < _maxLines) ...[
             const SizedBox(height: 8),
             _AddSlot(
@@ -282,10 +338,30 @@ class _FamilyScreenState extends State<FamilyScreen> {
                           height: 1.35,
                         ),
                       ),
+                      if (_safeWord.isNotEmpty) ...[
+                        const SizedBox(height: 5),
+                        Row(
+                          children: [
+                            const Icon(Icons.check_circle_outline,
+                                size: 13, color: AegisColors.success),
+                            const SizedBox(width: 4),
+                            Text(
+                              'Set · ${_safeWord[0]}${'•' * (_safeWord.length - 1)}',
+                              style: tt.labelSmall?.copyWith(
+                                color: AegisColors.success,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
                     ],
                   ),
                 ),
-                TextButton(onPressed: () {}, child: const Text('Set')),
+                TextButton(
+                  onPressed: () => _showSafeWordDialog(),
+                  child: Text(_safeWord.isEmpty ? 'Set' : 'Change'),
+                ),
               ],
             ),
           ),
@@ -352,7 +428,8 @@ class _GuardianEmpty extends StatelessWidget {
 
 class _MemberTile extends StatelessWidget {
   final _FamilyMember member;
-  const _MemberTile({required this.member});
+  final VoidCallback? onRemove;
+  const _MemberTile({required this.member, this.onRemove});
 
   @override
   Widget build(BuildContext context) {
@@ -406,10 +483,13 @@ class _MemberTile extends StatelessWidget {
               ],
             ),
           ),
-          const Icon(
-            Icons.fiber_manual_record,
-            color: AegisColors.textTertiary,
-            size: 10,
+          IconButton(
+            icon: const Icon(Icons.remove_circle_outline_rounded,
+                color: AegisColors.textTertiary, size: 20),
+            onPressed: onRemove,
+            tooltip: 'Remove',
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(),
           ),
         ],
       ),

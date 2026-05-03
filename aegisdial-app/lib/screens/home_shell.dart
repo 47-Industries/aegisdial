@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import 'home_dashboard.dart';
-import 'recovery_screen.dart';
+import 'recovery_chatbot_screen.dart';
 import 'family_screen.dart';
 import 'settings_screen.dart';
 
@@ -28,7 +28,7 @@ class _HomeShellState extends State<HomeShell> {
   Widget build(BuildContext context) {
     final tabs = <Widget>[
       HomeDashboard(onOpenRecovery: () => _select(1)),
-      const RecoveryScreen(),
+      const RecoveryChatbotScreen(),
       const FamilyScreen(),
       const SettingsScreen(),
     ];

@@ -67,12 +67,65 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       ),
                     ],
                   ),
-                  CircleAvatar(
-                    radius: 22,
-                    backgroundColor: AegisColors.surface,
-                    child: Icon(
-                      Icons.notifications_none_rounded,
-                      color: AegisColors.textPrimary.withValues(alpha: 0.85),
+                  GestureDetector(
+                    onTap: () {
+                      showModalBottomSheet(
+                        context: context,
+                        backgroundColor: AegisColors.surface,
+                        shape: const RoundedRectangleBorder(
+                          borderRadius:
+                              BorderRadius.vertical(top: Radius.circular(20)),
+                        ),
+                        builder: (_) => Padding(
+                          padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                'Notifications',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .titleLarge
+                                    ?.copyWith(fontWeight: FontWeight.w700),
+                              ),
+                              const SizedBox(height: 20),
+                              Container(
+                                padding: const EdgeInsets.all(16),
+                                decoration: BoxDecoration(
+                                  color: AegisColors.surfaceElevated,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.notifications_none_rounded,
+                                        color: AegisColors.textTertiary,
+                                        size: 20),
+                                    const SizedBox(width: 12),
+                                    Text(
+                                      'No new alerts',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium
+                                          ?.copyWith(
+                                              color:
+                                                  AegisColors.textSecondary),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    },
+                    child: CircleAvatar(
+                      radius: 22,
+                      backgroundColor: AegisColors.surface,
+                      child: Icon(
+                        Icons.notifications_none_rounded,
+                        color: AegisColors.textPrimary.withValues(alpha: 0.85),
+                      ),
                     ),
                   ),
                 ],
@@ -244,14 +297,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
                           ),
                           const SizedBox(height: 10),
                           Text(
-                            'Coverage',
+                            'SMS Filter',
                             style: tt.bodyLarge?.copyWith(
                               fontWeight: FontWeight.w600,
                             ),
                           ),
                           const SizedBox(height: 2),
                           Text(
-                            'AI message scanner',
+                            'Paste & scan messages',
                             style: tt.labelSmall?.copyWith(
                               color: AegisColors.textTertiary,
                             ),
@@ -307,34 +360,28 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 ),
               ),
               const SizedBox(height: 10),
-              Container(
-                padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
-                decoration: BoxDecoration(
-                  color: AegisColors.surface.withValues(alpha: 0.45),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AegisColors.border, width: 0.6),
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.history_rounded,
-                      color: AegisColors.textTertiary,
-                      size: 22,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        _shieldOn
-                            ? 'No call or SMS events yet — Shield is listening.'
-                            : 'Shield is paused. Resume it to start logging activity.',
-                        style: tt.bodySmall?.copyWith(
-                          color: AegisColors.textSecondary,
-                          height: 1.45,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
+              const _ActivityTile(
+                icon: Icons.phone_disabled_rounded,
+                sender: '+1 (347) 555-0192',
+                type: 'Scam call blocked',
+                score: 87,
+                timeAgo: '2 min ago',
+              ),
+              const SizedBox(height: 8),
+              const _ActivityTile(
+                icon: Icons.sms_failed_outlined,
+                sender: '+1 (800) 555-0199',
+                type: 'IRS impersonation — SMS deleted',
+                score: 94,
+                timeAgo: '1h ago',
+              ),
+              const SizedBox(height: 8),
+              const _ActivityTile(
+                icon: Icons.link_off_rounded,
+                sender: 'FakeBank-Alert',
+                type: 'Phishing link intercepted',
+                score: 99,
+                timeAgo: '3h ago',
               ),
             ],
           ),
@@ -379,6 +426,90 @@ class _StatusBanner extends StatelessWidget {
               color: AegisColors.textPrimary,
               fontWeight: FontWeight.w600,
             ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ActivityTile extends StatelessWidget {
+  final IconData icon;
+  final String sender;
+  final String type;
+  final int score;
+  final String timeAgo;
+  const _ActivityTile({
+    required this.icon,
+    required this.sender,
+    required this.type,
+    required this.score,
+    required this.timeAgo,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final scoreColor = score >= 80
+        ? AegisColors.danger
+        : score >= 50
+            ? AegisColors.warning
+            : AegisColors.success;
+    return Container(
+      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+      decoration: BoxDecoration(
+        color: AegisColors.surface.withValues(alpha: 0.45),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AegisColors.border, width: 0.6),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: scoreColor.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(icon, color: scoreColor, size: 18),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(sender,
+                    style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                const SizedBox(height: 2),
+                Text(type,
+                    style: tt.bodySmall
+                        ?.copyWith(color: AegisColors.textSecondary)),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: scoreColor.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(5),
+                ),
+                child: Text(
+                  '$score%',
+                  style: TextStyle(
+                      color: scoreColor,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(height: 3),
+              Text(timeAgo,
+                  style: tt.labelSmall
+                      ?.copyWith(color: AegisColors.textTertiary)),
+            ],
           ),
         ],
       ),

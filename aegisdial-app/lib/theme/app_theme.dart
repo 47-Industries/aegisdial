@@ -17,6 +17,7 @@ class AegisColors {
   static const Color textTertiary = Color(0xFF6A7480);
 
   static const Color danger = Color(0xFFFF4D6D);
+  static const Color warning = Color(0xFFFFB340);
   static const Color success = Color(0xFF00E5A0);
 
   static const LinearGradient heroGradient = LinearGradient(
