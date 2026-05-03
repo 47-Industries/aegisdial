@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/api_service.dart';
@@ -42,7 +44,51 @@ class _CaughtMessage {
   });
 }
 
+class _HistoryEntry {
+  final String textPreview;
+  final int score;
+  final String level;
+  final String finding;
+  final List<String> categories;
+  final DateTime ts;
+  _HistoryEntry({
+    required this.textPreview,
+    required this.score,
+    required this.level,
+    required this.finding,
+    required this.categories,
+    required this.ts,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'p': textPreview,
+        's': score,
+        'l': level,
+        'f': finding,
+        'c': categories,
+        't': ts.millisecondsSinceEpoch,
+      };
+
+  factory _HistoryEntry.fromJson(Map<String, dynamic> j) => _HistoryEntry(
+        textPreview: j['p'] as String,
+        score: j['s'] as int,
+        level: j['l'] as String,
+        finding: j['f'] as String,
+        categories: (j['c'] as List<dynamic>).map((e) => e.toString()).toList(),
+        ts: DateTime.fromMillisecondsSinceEpoch(j['t'] as int),
+      );
+
+  Color get color => score >= 70
+      ? AegisColors.danger
+      : score >= 40
+          ? AegisColors.warning
+          : AegisColors.success;
+}
+
 class _CoverageScreenState extends State<CoverageScreen> {
+  static const _kHistoryKey = 'sms_scan_history_v1';
+  static const _kMaxHistory = 20;
+
   bool _autoDelete = true;
   bool _scanLinks = true;
   bool _scanAttachments = true;
@@ -50,6 +96,7 @@ class _CoverageScreenState extends State<CoverageScreen> {
   final _pasteCtrl = TextEditingController();
   bool _scanning = false;
   _ScanResult? _result;
+  List<_HistoryEntry> _history = [];
 
   final List<_CaughtMessage> _caught = [
     _CaughtMessage(
@@ -79,9 +126,36 @@ class _CoverageScreenState extends State<CoverageScreen> {
   ];
 
   @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
+
+  @override
   void dispose() {
     _pasteCtrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadHistory() async {
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString(_kHistoryKey);
+    if (raw == null) return;
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      if (mounted) {
+        setState(() {
+          _history = list
+              .map((e) => _HistoryEntry.fromJson(e as Map<String, dynamic>))
+              .toList();
+        });
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveHistory() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kHistoryKey, jsonEncode(_history.map((e) => e.toJson()).toList()));
   }
 
   Future<void> _analyze() async {
@@ -122,10 +196,21 @@ class _CoverageScreenState extends State<CoverageScreen> {
     }
 
     if (!mounted) return;
+    final entry = _HistoryEntry(
+      textPreview: text.length > 80 ? '${text.substring(0, 80)}…' : text,
+      score: result.score,
+      level: result.level,
+      finding: result.finding,
+      categories: result.categories,
+      ts: DateTime.now(),
+    );
     setState(() {
       _scanning = false;
       _result = result;
+      _history.insert(0, entry);
+      if (_history.length > _kMaxHistory) _history.removeLast();
     });
+    _saveHistory();
   }
 
   _ScanResult _score(String text) {
@@ -353,6 +438,36 @@ class _CoverageScreenState extends State<CoverageScreen> {
             value: _scanAttachments,
             onChanged: (v) => setState(() => _scanAttachments = v),
           ),
+          if (_history.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    'SCAN HISTORY',
+                    style: tt.labelSmall?.copyWith(
+                      color: AegisColors.textTertiary,
+                      letterSpacing: 1.6,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+                TextButton(
+                  onPressed: () async {
+                    setState(() => _history.clear());
+                    final p = await SharedPreferences.getInstance();
+                    await p.remove(_kHistoryKey);
+                  },
+                  child: Text(
+                    'Clear',
+                    style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            ..._history.map((e) => _HistoryTile(entry: e)),
+          ],
           const SizedBox(height: 24),
           Text(
             'CAUGHT MESSAGES',
@@ -620,6 +735,87 @@ class _CaughtMessageTile extends StatelessWidget {
               ],
             ),
           ],
+        ],
+      ),
+    );
+  }
+}
+
+class _HistoryTile extends StatelessWidget {
+  final _HistoryEntry entry;
+  const _HistoryTile({required this.entry});
+
+  String _timeLabel() {
+    final diff = DateTime.now().difference(entry.ts);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final c = entry.color;
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.symmetric(vertical: 11, horizontal: 14),
+      decoration: BoxDecoration(
+        color: AegisColors.surface.withValues(alpha: 0.55),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: c.withValues(alpha: 0.25), width: 0.8),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 46,
+            height: 46,
+            decoration: BoxDecoration(
+              color: c.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(10),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              '${entry.score}',
+              style: TextStyle(
+                color: c,
+                fontSize: 16,
+                fontWeight: FontWeight.w800,
+              ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                      decoration: BoxDecoration(
+                        color: c.withValues(alpha: 0.15),
+                        borderRadius: BorderRadius.circular(5),
+                      ),
+                      child: Text(
+                        entry.level,
+                        style: TextStyle(color: c, fontSize: 9, fontWeight: FontWeight.w700, letterSpacing: 0.6),
+                      ),
+                    ),
+                    const Spacer(),
+                    Text(_timeLabel(), style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary, fontSize: 10)),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  entry.textPreview,
+                  style: tt.bodySmall?.copyWith(color: AegisColors.textSecondary, height: 1.35),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );

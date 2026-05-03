@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/api_service.dart';
@@ -11,9 +13,8 @@ class _Identifier {
   final String value;
   bool scanning;
   bool scanned;
-  _Identifier({required this.type, required this.value})
-      : scanning = false,
-        scanned = false;
+  _Identifier({required this.type, required this.value, this.scanned = false})
+      : scanning = false;
 
   IconData get icon => switch (type) {
         _IdentifierType.name => Icons.person_outline_rounded,
@@ -35,6 +36,18 @@ class _Identifier {
     }
     return value;
   }
+
+  Map<String, dynamic> toJson() => {
+        't': type.index,
+        'v': value,
+        'sc': scanned,
+      };
+
+  factory _Identifier.fromJson(Map<String, dynamic> j) => _Identifier(
+        type: _IdentifierType.values[j['t'] as int],
+        value: j['v'] as String,
+        scanned: j['sc'] as bool? ?? true,
+      );
 }
 
 class _Exposure {
@@ -44,7 +57,7 @@ class _Exposure {
   final IconData icon;
   final String severity;
   final List<String> dataTypes;
-  bool dismissed = false;
+  bool dismissed;
   _Exposure({
     required this.title,
     required this.source,
@@ -52,7 +65,28 @@ class _Exposure {
     required this.icon,
     this.severity = 'warning',
     this.dataTypes = const [],
+    this.dismissed = false,
   });
+
+  Map<String, dynamic> toJson() => {
+        'ti': title,
+        'so': source,
+        'd': date,
+        'ic': icon.codePoint,
+        'se': severity,
+        'dt': dataTypes,
+        'di': dismissed,
+      };
+
+  factory _Exposure.fromJson(Map<String, dynamic> j) => _Exposure(
+        title: j['ti'] as String,
+        source: j['so'] as String,
+        date: j['d'] as String,
+        icon: IconData(j['ic'] as int, fontFamily: 'MaterialIcons'),
+        severity: j['se'] as String? ?? 'warning',
+        dataTypes: (j['dt'] as List<dynamic>).map((e) => e.toString()).toList(),
+        dismissed: j['di'] as bool? ?? false,
+      );
 }
 
 class BreachScreen extends StatefulWidget {
@@ -63,8 +97,51 @@ class BreachScreen extends StatefulWidget {
 }
 
 class _BreachScreenState extends State<BreachScreen> {
+  static const _kIdentifiersKey = 'breach_identifiers_v1';
+  static const _kExposuresKey = 'breach_exposures_v1';
+
   final List<_Identifier> _identifiers = [];
   final List<_Exposure> _exposures = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadState();
+  }
+
+  Future<void> _loadState() async {
+    final p = await SharedPreferences.getInstance();
+    try {
+      final ids = p.getString(_kIdentifiersKey);
+      if (ids != null) {
+        final list = jsonDecode(ids) as List<dynamic>;
+        if (mounted) {
+          setState(() {
+            _identifiers.addAll(
+                list.map((e) => _Identifier.fromJson(e as Map<String, dynamic>)));
+          });
+        }
+      }
+      final exps = p.getString(_kExposuresKey);
+      if (exps != null) {
+        final list = jsonDecode(exps) as List<dynamic>;
+        if (mounted) {
+          setState(() {
+            _exposures.addAll(
+                list.map((e) => _Exposure.fromJson(e as Map<String, dynamic>)));
+          });
+        }
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveState() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(_kIdentifiersKey,
+        jsonEncode(_identifiers.map((e) => e.toJson()).toList()));
+    await p.setString(_kExposuresKey,
+        jsonEncode(_exposures.map((e) => e.toJson()).toList()));
+  }
 
   Future<void> _showAddSheet() async {
     final result = await showModalBottomSheet<_Identifier>(
@@ -78,6 +155,7 @@ class _BreachScreenState extends State<BreachScreen> {
     );
     if (result == null) return;
     setState(() => _identifiers.add(result));
+    _saveState();
     _runScan(result);
   }
 
@@ -161,6 +239,7 @@ class _BreachScreenState extends State<BreachScreen> {
       id.scanned = true;
       _exposures.addAll(newExposures);
     });
+    _saveState();
   }
 
   @override
@@ -288,7 +367,10 @@ class _BreachScreenState extends State<BreachScreen> {
             ...visibleExposures.map(
               (e) => _ExposureTile(
                 exposure: e,
-                onDismiss: () => setState(() => e.dismissed = true),
+                onDismiss: () {
+                  setState(() => e.dismissed = true);
+                  _saveState();
+                },
               ),
             ),
           const SizedBox(height: 24),
