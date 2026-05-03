@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/hyperspace_stars.dart';
+import '../services/auth_service.dart';
 import 'live_shield_active.dart';
 import 'coverage_screen.dart';
 import 'breach_screen.dart';
@@ -16,6 +17,16 @@ class HomeDashboard extends StatefulWidget {
 
 class _HomeDashboardState extends State<HomeDashboard> {
   bool _shieldOn = true;
+
+  String _greeting() {
+    final session = auth.session;
+    if (session == null || session.userId == 'guest') return 'Welcome back';
+    final name = session.displayName;
+    if (name != null && name.trim().isNotEmpty) {
+      return 'Hey, ${name.trim().split(' ').first}';
+    }
+    return 'Welcome back';
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -59,7 +70,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       ),
                       const SizedBox(height: 4),
                       Text(
-                        'Welcome back',
+                        _greeting(),
                         style: tt.headlineMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                           letterSpacing: -0.5,

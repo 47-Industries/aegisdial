@@ -8,18 +8,21 @@ class AuthSession {
   final String token;
   final String userId;
   final String tier;
+  final String? displayName;
   const AuthSession({
     required this.token,
     required this.userId,
     required this.tier,
+    this.displayName,
   });
 
   Map<String, dynamic> toJson() =>
-      {'token': token, 'user_id': userId, 'tier': tier};
+      {'token': token, 'user_id': userId, 'tier': tier, if (displayName != null) 'display_name': displayName};
   factory AuthSession.fromJson(Map<String, dynamic> j) => AuthSession(
         token: j['token'] as String,
         userId: j['user_id'] as String,
         tier: (j['tier'] as String?) ?? 'free',
+        displayName: j['display_name'] as String?,
       );
 }
 
@@ -30,6 +33,7 @@ class AuthService extends ChangeNotifier {
   static const _kToken = 'auth_token';
   static const _kUserId = 'auth_user_id';
   static const _kTier = 'auth_tier';
+  static const _kDisplayName = 'auth_display_name';
   static const _kOnboarded = 'onboarded_v1';
 
   AuthSession? _session;
@@ -50,8 +54,11 @@ class AuthService extends ChangeNotifier {
         token: token,
         userId: userId,
         tier: p.getString(_kTier) ?? 'free',
+        displayName: p.getString(_kDisplayName),
       );
       api.setToken(token);
+      // Refresh display name + tier from server in background.
+      _refreshMe();
     }
     _onboarded = p.getBool(_kOnboarded) ?? false;
     _booted = true;
@@ -151,7 +158,28 @@ class AuthService extends ChangeNotifier {
     await p.setString(_kToken, s.token);
     await p.setString(_kUserId, s.userId);
     await p.setString(_kTier, s.tier);
+    if (s.displayName != null) {
+      await p.setString(_kDisplayName, s.displayName!);
+    }
     notifyListeners();
+  }
+
+  Future<void> _refreshMe() async {
+    try {
+      final res = await api.get('/auth/me');
+      final displayName = res['display_name'] as String?;
+      final tier = (res['tier'] as String?) ?? _session?.tier ?? 'free';
+      if (_session == null) return;
+      final updated = AuthSession(
+        token: _session!.token,
+        userId: _session!.userId,
+        tier: tier,
+        displayName: displayName,
+      );
+      await _persist(updated);
+    } catch (_) {
+      // Non-fatal — stale data is fine
+    }
   }
 }
 

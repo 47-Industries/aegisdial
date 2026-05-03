@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
+import '../services/api_service.dart';
+import '../services/auth_service.dart';
 
 enum _IdentifierType { name, phone, email, ssn }
 
@@ -40,12 +42,16 @@ class _Exposure {
   final String source;
   final String date;
   final IconData icon;
+  final String severity;
+  final List<String> dataTypes;
   bool dismissed = false;
   _Exposure({
     required this.title,
     required this.source,
     required this.date,
     required this.icon,
+    this.severity = 'warning',
+    this.dataTypes = const [],
   });
 }
 
@@ -77,35 +83,83 @@ class _BreachScreenState extends State<BreachScreen> {
 
   Future<void> _runScan(_Identifier id) async {
     setState(() => id.scanning = true);
-    await Future.delayed(const Duration(seconds: 2));
+
+    final newExposures = <_Exposure>[];
+
+    // SSN and Name never leave the device — local mock only.
+    if (id.type == _IdentifierType.ssn) {
+      await Future.delayed(const Duration(seconds: 2));
+      newExposures.add(_Exposure(
+        title: 'SSN partial match on dark-web forum',
+        source: 'BreachForums dump · 1.4M records',
+        date: '2025-11',
+        icon: Icons.travel_explore_rounded,
+        severity: 'critical',
+        dataTypes: const ['SSN', 'personal identifiers'],
+      ));
+    } else if (id.type == _IdentifierType.name) {
+      await Future.delayed(const Duration(seconds: 1));
+      // Names aren't a breach signal — show clean result
+    } else {
+      // Email or phone — call real backend if auth'd
+      final session = auth.session;
+      if (session != null && session.userId != 'guest') {
+        try {
+          final kind = id.type == _IdentifierType.email ? 'email' : 'phone';
+          final res = await api.post('/v1/breach/quick-check', {
+            'kind': kind,
+            'value': id.value,
+          });
+          final exposures = res['exposures'] as List<dynamic>? ?? [];
+          for (final e in exposures) {
+            final m = e as Map<String, dynamic>;
+            newExposures.add(_Exposure(
+              title: m['title'] as String? ?? 'Unknown breach',
+              source: (m['source_domain'] as String?) ?? 'Unknown source',
+              date: (m['date'] as String?) ?? '',
+              icon: id.type == _IdentifierType.email
+                  ? Icons.cloud_off_rounded
+                  : Icons.phone_disabled_rounded,
+              severity: (m['severity'] as String?) ?? 'warning',
+              dataTypes: (m['data_types'] as List<dynamic>?)
+                      ?.map((e) => e.toString())
+                      .toList() ??
+                  [],
+            ));
+          }
+        } on ApiException catch (e) {
+          if (e.statusCode == 429) {
+            // Daily limit — show a notice but don't crash
+          }
+        } catch (_) {
+          // Network error — show nothing rather than fake data
+        }
+      } else {
+        // Guest: local mock
+        await Future.delayed(const Duration(seconds: 2));
+        if (id.type == _IdentifierType.email) {
+          newExposures.add(_Exposure(
+            title: '${id.value} found in breach corpus',
+            source: 'Collection #1 — credentials + hashed password',
+            date: '2024-08',
+            icon: Icons.cloud_off_rounded,
+          ));
+        } else {
+          newExposures.add(_Exposure(
+            title: 'Phone on scam-call list',
+            source: 'FCC robocall index · reported 23×',
+            date: '2025-03',
+            icon: Icons.phone_disabled_rounded,
+          ));
+        }
+      }
+    }
+
     if (!mounted) return;
     setState(() {
       id.scanning = false;
       id.scanned = true;
-      if (id.type == _IdentifierType.email) {
-        _exposures.add(_Exposure(
-          title: '${id.value} found in breach corpus',
-          source: 'Collection #1 — credentials + hashed password',
-          date: '2024-08',
-          icon: Icons.cloud_off_rounded,
-        ));
-      }
-      if (id.type == _IdentifierType.phone) {
-        _exposures.add(_Exposure(
-          title: 'Phone ${id.value} on scam-call list',
-          source: 'FCC robocall index · reported 23×',
-          date: '2025-03',
-          icon: Icons.phone_disabled_rounded,
-        ));
-      }
-      if (id.type == _IdentifierType.ssn) {
-        _exposures.add(_Exposure(
-          title: 'SSN partial match on dark-web forum',
-          source: 'BreachForums dump · 1.4M records',
-          date: '2025-11',
-          icon: Icons.travel_explore_rounded,
-        ));
-      }
+      _exposures.addAll(newExposures);
     });
   }
 
@@ -379,11 +433,33 @@ class _ExposureTile extends StatelessWidget {
                       style: tt.labelSmall
                           ?.copyWith(color: AegisColors.textTertiary),
                     ),
-                    Text(
-                      exposure.date,
-                      style: tt.labelSmall
-                          ?.copyWith(color: AegisColors.textTertiary),
-                    ),
+                    if (exposure.date.isNotEmpty)
+                      Text(
+                        exposure.date,
+                        style: tt.labelSmall
+                            ?.copyWith(color: AegisColors.textTertiary),
+                      ),
+                    if (exposure.dataTypes.isNotEmpty) ...[
+                      const SizedBox(height: 5),
+                      Wrap(
+                        spacing: 4,
+                        runSpacing: 3,
+                        children: exposure.dataTypes.map((t) => Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AegisColors.danger.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(4),
+                          ),
+                          child: Text(
+                            t,
+                            style: tt.labelSmall?.copyWith(
+                              color: AegisColors.danger,
+                              fontSize: 10,
+                            ),
+                          ),
+                        )).toList(),
+                      ),
+                    ],
                   ],
                 ),
               ),

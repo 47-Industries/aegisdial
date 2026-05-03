@@ -2,8 +2,9 @@ import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query } from '../lib/db.js';
 import { requireAppUser, requireProTier } from '../lib/auth.js';
-import { hashIdentifier, displayMask } from '../lib/enzoic.js';
+import { hashIdentifier, displayMask, lookupExposures } from '../lib/enzoic.js';
 import { scanIdentifier } from '../services/breachScan.js';
+import { redis } from '../lib/cache.js';
 import { emitGuardianAlert } from '../services/guardianAlerts.js';
 import { track } from '../lib/analytics.js';
 import { sendEmail } from '../lib/email.js';
@@ -312,6 +313,62 @@ export async function breachRoutes(app: FastifyInstance): Promise<void> {
       );
       if (res.rowCount === 0) return reply.code(404).send({ error: 'not_found' });
       return reply.send({ acknowledged: true });
+    },
+  );
+
+  // Quick breach check — auth required, no pro gate. Single-use lookup
+  // with no DB persistence. Free users get 5 checks/day (Redis counter).
+  app.post(
+    '/v1/breach/quick-check',
+    {
+      preHandler: [requireAppUser],
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: '1 hour',
+          keyGenerator: (req) => (req as { appUser?: { id: string } }).appUser?.id ?? req.ip,
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = req.appUser!;
+      const parsed = z.object({
+        kind: z.enum(['email', 'phone']),
+        value: z.string().min(3).max(200),
+      }).safeParse(req.body ?? {});
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      if (user.tier !== 'pro') {
+        const today = new Date().toISOString().slice(0, 10);
+        const key = `breach_quick:${user.id}:${today}`;
+        const raw = await redis.get(key);
+        const count = raw ? parseInt(raw, 10) : 0;
+        if (count >= 5) {
+          return reply.code(429).send({
+            error: 'daily_limit_reached',
+            message: 'Free tier: 5 breach checks per day. Upgrade for unlimited monitoring.',
+          });
+        }
+        await redis.set(key, String(count + 1), 'EX', 90000);
+      }
+
+      const { kind, value } = parsed.data;
+      const normalized = kind === 'phone' ? value.replace(/\D/g, '') : value.trim().toLowerCase();
+      const exposures = await lookupExposures(kind, normalized);
+
+      return reply.send({
+        kind,
+        display: displayMask(kind, value),
+        exposures_found: exposures.length,
+        exposures: exposures.map((e) => ({
+          title: e.title,
+          date: e.date,
+          source_domain: e.source_domain,
+          data_types: e.data_types,
+          severity: e.severity,
+          description: e.description,
+        })),
+      });
     },
   );
 }

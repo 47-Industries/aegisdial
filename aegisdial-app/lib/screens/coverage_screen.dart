@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
+import '../services/api_service.dart';
 
 class CoverageScreen extends StatefulWidget {
   const CoverageScreen({super.key});
@@ -15,11 +16,13 @@ class _ScanResult {
   final String level;
   final String finding;
   final Color color;
+  final List<String> categories;
   const _ScanResult({
     required this.score,
     required this.level,
     required this.finding,
     required this.color,
+    this.categories = const [],
   });
 }
 
@@ -88,11 +91,40 @@ class _CoverageScreenState extends State<CoverageScreen> {
       _scanning = true;
       _result = null;
     });
-    await Future.delayed(const Duration(milliseconds: 1600));
+
+    _ScanResult result;
+    try {
+      final res = await api.post('/v1/sms-classify', {'text': text});
+      final score = ((res['risk_score'] as num?) ?? 0).round();
+      final level = (res['risk_level'] as String?) ?? 'LOW';
+      final reason = (res['reason'] as String?) ?? '';
+      final cats = (res['triggered_categories'] as List<dynamic>?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [];
+      result = _ScanResult(
+        score: score,
+        level: level,
+        finding: reason.isNotEmpty
+            ? reason
+            : score < 30
+                ? 'No obvious scam patterns detected. Stay cautious with unexpected messages.'
+                : 'Suspicious content detected — do not click links or reply.',
+        color: score >= 70
+            ? AegisColors.danger
+            : score >= 40
+                ? AegisColors.warning
+                : AegisColors.success,
+        categories: cats,
+      );
+    } catch (_) {
+      result = _score(text);
+    }
+
     if (!mounted) return;
     setState(() {
       _scanning = false;
-      _result = _score(text);
+      _result = result;
     });
   }
 
@@ -410,6 +442,31 @@ class _ScanResultCard extends StatelessWidget {
               height: 1.45,
             ),
           ),
+          if (result.categories.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Wrap(
+              spacing: 6,
+              runSpacing: 4,
+              children: result.categories.map((c) {
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: result.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    c.replaceAll('_', ' ').toUpperCase(),
+                    style: TextStyle(
+                      color: result.color,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                );
+              }).toList(),
+            ),
+          ],
         ],
       ),
     );
