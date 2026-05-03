@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
@@ -7,6 +9,10 @@ class _FamilyMember {
   final String name;
   final String relation;
   const _FamilyMember(this.name, this.relation);
+
+  Map<String, dynamic> toJson() => {'n': name, 'r': relation};
+  factory _FamilyMember.fromJson(Map<String, dynamic> j) =>
+      _FamilyMember(j['n'] as String, j['r'] as String);
 }
 
 class FamilyScreen extends StatefulWidget {
@@ -22,12 +28,47 @@ class _FamilyScreenState extends State<FamilyScreen> {
   static const String _baseTier = 'Pro · 3 lines';
   static const String _plusTier = 'Family+ · up to 5 lines';
   static const String _plusPrice = '\$69.99 / mo';
+  static const String _kMembersKey = 'family_members_v1';
+  static const String _kSafeWordKey = 'family_safe_word_v1';
 
   final List<_FamilyMember> _members = [];
   String _safeWord = '';
 
   bool get _isFamilyPlus => _members.length > _baseLines;
   int get _capacity => _isFamilyPlus ? _maxLines : _baseLines;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadState();
+  }
+
+  Future<void> _loadState() async {
+    final p = await SharedPreferences.getInstance();
+    try {
+      final membersRaw = p.getString(_kMembersKey);
+      if (membersRaw != null) {
+        final list = jsonDecode(membersRaw) as List<dynamic>;
+        if (mounted) {
+          setState(() {
+            _members.addAll(list.map(
+                (e) => _FamilyMember.fromJson(e as Map<String, dynamic>)));
+          });
+        }
+      }
+      final sw = p.getString(_kSafeWordKey);
+      if (sw != null && sw.isNotEmpty && mounted) {
+        setState(() => _safeWord = sw);
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveState() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(
+        _kMembersKey, jsonEncode(_members.map((e) => e.toJson()).toList()));
+    await p.setString(_kSafeWordKey, _safeWord);
+  }
 
   Future<void> _showAddMemberSheet() async {
     if (_members.length >= _maxLines) return;
@@ -48,7 +89,10 @@ class _FamilyScreenState extends State<FamilyScreen> {
       ),
       builder: (_) => const _AddMemberSheet(),
     );
-    if (added != null) setState(() => _members.add(added));
+    if (added != null) {
+      setState(() => _members.add(added));
+      _saveState();
+    }
   }
 
   Future<void> _showSafeWordDialog() async {
@@ -60,6 +104,7 @@ class _FamilyScreenState extends State<FamilyScreen> {
     );
     if (result != null && result.isNotEmpty) {
       setState(() => _safeWord = result);
+      _saveState();
     }
   }
 
@@ -195,7 +240,10 @@ class _FamilyScreenState extends State<FamilyScreen> {
           else
             ..._members.map((m) => _MemberTile(
                   member: m,
-                  onRemove: () => setState(() => _members.remove(m)),
+                  onRemove: () {
+                    setState(() => _members.remove(m));
+                    _saveState();
+                  },
                 )),
           if (_members.length < _maxLines) ...[
             const SizedBox(height: 8),
