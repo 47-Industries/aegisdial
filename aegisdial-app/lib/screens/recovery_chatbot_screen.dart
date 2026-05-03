@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../services/trial_service.dart';
+import '../services/auth_service.dart';
+import '../services/api_service.dart';
 import 'paywall_screen.dart';
 import 'recovery_screen.dart';
 
@@ -111,16 +113,45 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
 
     await TrialService.recordMessage();
 
-    await Future.delayed(const Duration(milliseconds: 750));
+    final reply = await _callBackend(value);
     if (!mounted) return;
 
     final msgs = await TrialService.messagesRemainingToday();
     setState(() {
-      _messages.add(_ChatMessage(fromUser: false, text: _respond(value)));
+      _messages.add(_ChatMessage(fromUser: false, text: reply));
       _sending = false;
       _messagesLeft = msgs;
     });
     _scrollToBottom();
+  }
+
+  Future<String> _callBackend(String message) async {
+    // Guest sessions have no real auth token — fall back to local responses.
+    final session = auth.session;
+    if (session == null || session.userId == 'guest') {
+      return _respond(message);
+    }
+
+    final history = _messages
+        .where((m) => !m.isLimit)
+        .map((m) => {'role': m.fromUser ? 'user' : 'assistant', 'content': m.text})
+        .toList();
+
+    try {
+      final res = await api.post('/v1/recovery/companion/quick', {
+        'message': message,
+        'history': history,
+      });
+      return (res['reply'] as String?) ?? _respond(message);
+    } on ApiException catch (e) {
+      if (e.statusCode == 429) {
+        // Server-side daily limit hit (should match client limit, edge case).
+        return "You've reached today's message limit. Upgrade to Pro for unlimited access.";
+      }
+      return _respond(message);
+    } catch (_) {
+      return _respond(message);
+    }
   }
 
   String _respond(String input) {

@@ -27,6 +27,7 @@ import {
 } from '../services/recoveryCompanion.js';
 import { describeScamType } from '../lib/scamTypeDescriptions.js';
 import { analyzeText } from '../services/textAnalyzer.js';
+import { redis } from '../lib/cache.js';
 
 // Recovery Concierge endpoints. Wired for the "I just got scammed — what
 // do I do?" moment. Kyle's positioning: we stop more loss than insurance
@@ -87,6 +88,14 @@ const START_SCHEMA = z.object({
 
 const COMPANION_MSG_SCHEMA = z.object({
   message: z.string().min(1).max(2000),
+});
+
+const QUICK_COMPANION_SCHEMA = z.object({
+  message: z.string().min(1).max(2000),
+  history: z
+    .array(z.object({ role: z.enum(['user', 'assistant']), content: z.string().max(2000) }))
+    .max(24)
+    .default([]),
 });
 
 const TRIAGE_START_SCHEMA = z.object({
@@ -746,6 +755,66 @@ export async function recoveryRoutes(app: FastifyInstance): Promise<void> {
   // "scam_confirmed_no_loss" is our headline PR metric — scams stopped
   // before money left. We fire a dedicated analytics event for it.
   // ------------------------------------------------------------------
+
+  // Quick companion — sessionless AI chat for trial and free-tier users.
+  // Requires auth but not pro tier. Free users get 10 messages/day (Redis
+  // counter); pro users are unlimited. Mirrors the client-side trial system.
+  app.post(
+    '/v1/recovery/companion/quick',
+    {
+      preHandler: [requireAppUser, llmBudgetGuard],
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: '1 hour',
+          keyGenerator: (req) => (req as { appUser?: { id: string } }).appUser?.id ?? req.ip,
+        },
+      },
+    },
+    async (req, reply) => {
+      const user = req.appUser!;
+      const parsed = QUICK_COMPANION_SCHEMA.safeParse(req.body ?? {});
+      if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      // Per-day limit for non-pro users (matches client-side trial: 10/day).
+      if (user.tier !== 'pro') {
+        const today = new Date().toISOString().slice(0, 10); // YYYY-MM-DD
+        const key = `companion_quick:${user.id}:${today}`;
+        const raw = await redis.get(key);
+        const count = raw ? parseInt(raw, 10) : 0;
+        if (count >= 10) {
+          return reply.code(429).send({
+            error: 'daily_limit_reached',
+            message: 'Free tier: 10 messages per day. Upgrade for unlimited access.',
+          });
+        }
+        // Increment with 25-hour TTL so it survives past midnight safely.
+        await redis.set(key, String(count + 1), 'EX', 90000);
+      }
+
+      const ctx: CompanionSessionContext = {
+        mode: 'triage',
+        scamType: 'generic',
+        scamTypeDescription: 'suspected fraud or scam',
+        amountLostUSD: null,
+        sessionStartedAt: new Date(),
+        openStepKeys: [],
+        completedStepKeys: [],
+        nextStepTitle: null,
+        nextStepBody: null,
+        hasFamilyPlan: false,
+        hasNamedGuardian: false,
+        userDisplayName: null,
+      };
+
+      const reply_ = await generateCompanionReply(ctx, parsed.data.history, parsed.data.message);
+
+      return reply.send({
+        reply: reply_.text,
+        crisis_detected: reply_.crisisDetected,
+      });
+    },
+  );
 
   app.post(
     '/v1/recovery/triage/start',
