@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:speech_to_text/speech_to_text.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 
@@ -51,51 +52,11 @@ class _FamilyScreenState extends State<FamilyScreen> {
   }
 
   Future<void> _showSafeWordDialog() async {
-    final ctrl = TextEditingController(text: _safeWord);
-    final result = await showDialog<String>(
+    final result = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AegisColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Family safe word'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'A private word only your family knows. If someone calls claiming to be a family member, ask for it — AI voice clones can\'t answer.',
-              style: TextStyle(color: AegisColors.textSecondary, height: 1.45, fontSize: 14),
-            ),
-            const SizedBox(height: 14),
-            TextField(
-              controller: ctrl,
-              autofocus: true,
-              textCapitalization: TextCapitalization.words,
-              maxLength: 12,
-              decoration: const InputDecoration(
-                labelText: 'Safe word',
-                border: OutlineInputBorder(),
-                counterText: '',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(null),
-            child: const Text('Cancel'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(ctrl.text.trim()),
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(0, 44),
-              backgroundColor: AegisColors.turquoise,
-              foregroundColor: Colors.black,
-            ),
-            child: const Text('Save'),
-          ),
-        ],
-      ),
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (_) => _SafeWordSetupSheet(current: _safeWord),
     );
     if (result != null && result.isNotEmpty) {
       setState(() => _safeWord = result);
@@ -738,6 +699,509 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
           ),
         ],
       ),
+    );
+  }
+}
+
+// ── Safe word validation ─────────────────────────────────────────────────────
+
+const _kCommonNames = {
+  'mom', 'dad', 'mama', 'papa', 'mum', 'sarah', 'emily', 'jessica', 'ashley',
+  'hannah', 'emma', 'olivia', 'sophia', 'isabella', 'mia', 'charlotte',
+  'james', 'john', 'robert', 'michael', 'william', 'david', 'richard',
+  'joseph', 'thomas', 'charles', 'grandma', 'grandpa', 'nana', 'poppy',
+  'sister', 'brother', 'aunt', 'uncle', 'baby', 'honey', 'dear', 'love',
+};
+
+const _kCommonWords = {
+  'apple', 'house', 'hello', 'world', 'password', 'secret', 'family',
+  'water', 'fire', 'earth', 'light', 'dark', 'night', 'day', 'sun', 'moon',
+  'star', 'blue', 'green', 'red', 'black', 'white', 'happy', 'good',
+  'great', 'love', 'life', 'time', 'door', 'home', 'room', 'tree', 'bird',
+  'fish', 'book', 'phone', 'money', 'work', 'play', 'school', 'food',
+  'dance', 'music', 'heart', 'peace', 'hope', 'faith', 'trust', 'gold',
+  'silver', 'diamond', 'tiger', 'lion', 'eagle', 'wolf', 'bear', 'fox',
+  'cat', 'dog', 'horse', 'flower', 'garden', 'cloud', 'rain', 'snow',
+  'wind', 'storm', 'thunder', 'lightning', 'power', 'strong', 'brave',
+  'smile', 'laugh', 'dream', 'wish', 'magic', 'super', 'hero', 'king',
+  'queen', 'prince', 'angel', 'grace', 'glory', 'honor',
+};
+
+const _kSuggestions = [
+  'hummingbird', 'marigold', 'crescent moon', 'saltwater', 'persimmon',
+  'tangerine', 'archipelago', 'tumbleweed', 'cobblestone', 'cinnamon',
+  'cardamom', 'stargazer', 'labyrinth', 'wanderlust', 'chrysanthemum',
+  'saffron', 'driftwood', 'moonflower', 'thundersnow', 'copperhead',
+];
+
+String? _validateSafeWord(String word) {
+  final w = word.trim().toLowerCase();
+  if (w.isEmpty) return null;
+  if (w.length < 4) return 'Too short — choose at least 4 characters.';
+  // Digits only
+  if (RegExp(r'^\d+$').hasMatch(w)) {
+    return 'Numbers only are easy to guess — add some letters.';
+  }
+  // Birthday / year pattern: 4-digit year 1900-2099, or MM/DD, or MMDD
+  if (RegExp(r'^(19|20)\d{2}$').hasMatch(w)) {
+    return 'Years are in public records — pick something more personal.';
+  }
+  if (RegExp(r'^\d{4,8}$').hasMatch(w)) {
+    return 'Digit strings are easy to guess — use a word instead.';
+  }
+  if (_kCommonNames.contains(w)) {
+    return 'Family names are guessable from social media — try something else.';
+  }
+  if (_kCommonWords.contains(w)) {
+    return 'Too common — scammers guess these first.';
+  }
+  return null; // valid
+}
+
+_WordStrength _wordStrength(String word) {
+  final len = word.trim().length;
+  if (len == 0) return _WordStrength.none;
+  if (len < 4) return _WordStrength.weak;
+  if (len <= 5) return _WordStrength.fair;
+  return _WordStrength.strong;
+}
+
+enum _WordStrength { none, weak, fair, strong }
+
+// ── Safe word setup bottom sheet ─────────────────────────────────────────────
+
+class _SafeWordSetupSheet extends StatefulWidget {
+  final String current;
+  const _SafeWordSetupSheet({required this.current});
+
+  @override
+  State<_SafeWordSetupSheet> createState() => _SafeWordSetupSheetState();
+}
+
+class _SafeWordSetupSheetState extends State<_SafeWordSetupSheet> {
+  int _step = 0; // 0 = choose, 1 = say it out loud
+  final _ctrl = TextEditingController();
+  String? _validationError;
+  late List<String> _suggestions;
+
+  // STT state
+  final _stt = SpeechToText();
+  bool _sttAvailable = false;
+  bool _listening = false;
+  String _heard = '';
+  bool _voiceConfirmed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _ctrl.text = widget.current;
+    _ctrl.addListener(_onTyped);
+    // Pick 4 random suggestions
+    final pool = List<String>.from(_kSuggestions)..shuffle();
+    _suggestions = pool.take(4).toList();
+    _initStt();
+  }
+
+  Future<void> _initStt() async {
+    final available = await _stt.initialize();
+    if (mounted) setState(() => _sttAvailable = available);
+  }
+
+  void _onTyped() {
+    final error = _validateSafeWord(_ctrl.text);
+    setState(() => _validationError = error);
+  }
+
+  bool get _step1Valid {
+    final w = _ctrl.text.trim();
+    return w.length >= 4 && _validateSafeWord(w) == null;
+  }
+
+  void _applySuggestion(String s) {
+    _ctrl.text = s;
+    _ctrl.selection = TextSelection.collapsed(offset: s.length);
+    _onTyped();
+  }
+
+  Future<void> _startListening() async {
+    if (!_sttAvailable) return;
+    setState(() {
+      _listening = true;
+      _heard = '';
+      _voiceConfirmed = false;
+    });
+    await _stt.listen(
+      onResult: (result) {
+        final text = result.recognizedWords.trim().toLowerCase();
+        final target = _ctrl.text.trim().toLowerCase();
+        setState(() {
+          _heard = result.recognizedWords;
+          _voiceConfirmed = text == target || text.contains(target);
+        });
+      },
+      listenFor: const Duration(seconds: 6),
+      pauseFor: const Duration(seconds: 2),
+      localeId: 'en_US',
+    );
+    setState(() => _listening = false);
+  }
+
+  void _stopListening() {
+    _stt.stop();
+    setState(() => _listening = false);
+  }
+
+  @override
+  void dispose() {
+    _ctrl.removeListener(_onTyped);
+    _ctrl.dispose();
+    _stt.stop();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: const BoxDecoration(
+        color: AegisColors.surface,
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      child: SafeArea(
+        top: false,
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          child: _step == 0 ? _buildChooseStep() : _buildVoiceStep(),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildChooseStep() {
+    final tt = Theme.of(context).textTheme;
+    final strength = _wordStrength(_ctrl.text);
+    return Padding(
+      key: const ValueKey('choose'),
+      padding: EdgeInsets.fromLTRB(
+        24, 20, 24, MediaQuery.of(context).viewInsets.bottom + 24,
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Center(
+            child: Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AegisColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Family safe word',
+            style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'A private word only your family knows. If someone calls claiming to be a family member, ask for it — AI voice clones can\'t answer.',
+            style: tt.bodySmall?.copyWith(
+              color: AegisColors.textSecondary,
+              height: 1.5,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Row(
+            children: [
+              const Icon(Icons.people_outline_rounded,
+                  size: 14, color: AegisColors.turquoise),
+              const SizedBox(width: 6),
+              Text(
+                'Your family members will need to remember this.',
+                style: tt.labelSmall?.copyWith(
+                  color: AegisColors.turquoise,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 18),
+          // Suggestions
+          Text(
+            'SUGGESTED',
+            style: tt.labelSmall?.copyWith(
+              color: AegisColors.textTertiary,
+              letterSpacing: 1.4,
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 6,
+            children: _suggestions.map((s) {
+              final selected = _ctrl.text.trim().toLowerCase() == s.toLowerCase();
+              return GestureDetector(
+                onTap: () => _applySuggestion(s),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                  decoration: BoxDecoration(
+                    color: selected
+                        ? AegisColors.turquoise.withValues(alpha: 0.18)
+                        : AegisColors.surfaceElevated,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: selected ? AegisColors.turquoise : AegisColors.border,
+                      width: selected ? 1.2 : 0.6,
+                    ),
+                  ),
+                  child: Text(
+                    s,
+                    style: TextStyle(
+                      color: selected
+                          ? AegisColors.turquoise
+                          : AegisColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+          const SizedBox(height: 16),
+          // Input
+          TextField(
+            controller: _ctrl,
+            autofocus: widget.current.isEmpty,
+            textCapitalization: TextCapitalization.words,
+            style: Theme.of(context).textTheme.bodyMedium,
+            decoration: InputDecoration(
+              labelText: 'Or type your own',
+              border: const OutlineInputBorder(),
+              errorText: _validationError,
+              suffixIcon: _ctrl.text.isNotEmpty
+                  ? IconButton(
+                      icon: const Icon(Icons.clear_rounded, size: 18),
+                      onPressed: () => _ctrl.clear(),
+                    )
+                  : null,
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Strength meter
+          if (_ctrl.text.isNotEmpty) _StrengthMeter(strength: strength),
+          const SizedBox(height: 20),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: _step1Valid
+                  ? () => setState(() => _step = 1)
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AegisColors.turquoise,
+                foregroundColor: Colors.black,
+                disabledBackgroundColor:
+                    AegisColors.turquoise.withValues(alpha: 0.3),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text(
+                'Next — say it out loud',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildVoiceStep() {
+    final tt = Theme.of(context).textTheme;
+    final word = _ctrl.text.trim();
+    return Padding(
+      key: const ValueKey('voice'),
+      padding: const EdgeInsets.fromLTRB(24, 20, 24, 40),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Center(
+            child: Container(
+              width: 40, height: 4,
+              decoration: BoxDecoration(
+                color: AegisColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
+          Text(
+            'Say it out loud',
+            style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'We\'ll register how you say "$word" so we can verify it matches during emergencies. Say the word clearly when you tap the mic.',
+            style: tt.bodySmall?.copyWith(
+              color: AegisColors.textSecondary,
+              height: 1.5,
+            ),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 28),
+          // Big mic button
+          GestureDetector(
+            onTap: _listening ? _stopListening : _startListening,
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 200),
+              width: 96,
+              height: 96,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                color: _listening
+                    ? AegisColors.turquoise
+                    : AegisColors.surfaceElevated,
+                border: Border.all(
+                  color: _listening
+                      ? AegisColors.turquoise
+                      : AegisColors.border,
+                  width: 1.5,
+                ),
+                boxShadow: _listening
+                    ? [
+                        BoxShadow(
+                          color: AegisColors.turquoise.withValues(alpha: 0.4),
+                          blurRadius: 20,
+                          spreadRadius: 4,
+                        )
+                      ]
+                    : [],
+              ),
+              child: Icon(
+                _listening ? Icons.stop_rounded : Icons.mic_rounded,
+                size: 40,
+                color: _listening ? Colors.black : AegisColors.textSecondary,
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            _listening
+                ? 'Listening…'
+                : _heard.isEmpty
+                    ? 'Tap to record'
+                    : 'Heard: "$_heard"',
+            style: tt.bodySmall?.copyWith(
+              color: _voiceConfirmed
+                  ? AegisColors.success
+                  : AegisColors.textTertiary,
+              fontWeight: _voiceConfirmed ? FontWeight.w600 : FontWeight.normal,
+            ),
+          ),
+          if (_voiceConfirmed) ...[
+            const SizedBox(height: 6),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.check_circle_rounded,
+                    color: AegisColors.success, size: 16),
+                const SizedBox(width: 6),
+                Text(
+                  'Voice registered',
+                  style: tt.labelSmall?.copyWith(
+                    color: AegisColors.success,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+          if (!_sttAvailable)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Text(
+                'Speech recognition unavailable on this device.',
+                style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
+                textAlign: TextAlign.center,
+              ),
+            ),
+          const SizedBox(height: 28),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton(
+              onPressed: (_voiceConfirmed || !_sttAvailable)
+                  ? () => Navigator.of(context).pop(word)
+                  : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AegisColors.turquoise,
+                foregroundColor: Colors.black,
+                disabledBackgroundColor:
+                    AegisColors.turquoise.withValues(alpha: 0.3),
+                padding: const EdgeInsets.symmetric(vertical: 14),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14)),
+              ),
+              child: const Text(
+                'Save safe word',
+                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+              ),
+            ),
+          ),
+          const SizedBox(height: 8),
+          TextButton(
+            onPressed: () => setState(() => _step = 0),
+            child: Text(
+              '← Change word',
+              style: tt.bodySmall?.copyWith(color: AegisColors.textTertiary),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ── Strength meter ────────────────────────────────────────────────────────────
+
+class _StrengthMeter extends StatelessWidget {
+  final _WordStrength strength;
+  const _StrengthMeter({required this.strength});
+
+  @override
+  Widget build(BuildContext context) {
+    final (label, color, filled) = switch (strength) {
+      _WordStrength.weak => ('Weak', AegisColors.danger, 1),
+      _WordStrength.fair => ('Fair', AegisColors.warning, 2),
+      _WordStrength.strong => ('Strong', AegisColors.success, 3),
+      _WordStrength.none => ('', AegisColors.border, 0),
+    };
+    return Row(
+      children: [
+        ...List.generate(3, (i) {
+          return Expanded(
+            child: Container(
+              height: 4,
+              margin: EdgeInsets.only(right: i < 2 ? 4 : 0),
+              decoration: BoxDecoration(
+                color: i < filled ? color : AegisColors.border,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+          );
+        }),
+        const SizedBox(width: 10),
+        Text(
+          label,
+          style: TextStyle(
+            color: color,
+            fontSize: 12,
+            fontWeight: FontWeight.w600,
+          ),
+        ),
+      ],
     );
   }
 }
