@@ -214,57 +214,66 @@ class SettingsScreen extends StatelessWidget {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
-          GlassCard(
-            onTap: () => _showInfo(
-              context,
-              'Your profile',
-              'Profile editing — name, photo, and notification preferences — is coming in the next update.',
-            ),
-            child: Row(
-              children: [
-                Container(
-                  width: 56,
-                  height: 56,
-                  decoration: const BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: AegisColors.heroGradient,
-                  ),
-                  alignment: Alignment.center,
-                  child: const Text(
-                    'D',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 22,
-                      fontWeight: FontWeight.w700,
-                    ),
-                  ),
+          ListenableBuilder(
+            listenable: auth,
+            builder: (context, _) {
+              final name = auth.session?.displayName ??
+                  (auth.session?.userId == 'guest' ? 'Guest' : 'Your Account');
+              final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
+              final isGuest = auth.session?.userId == 'guest';
+              return GlassCard(
+                onTap: () => _showInfo(
+                  context,
+                  'Your profile',
+                  'Profile editing — name, photo, and notification preferences — is coming in the next update.',
                 ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Dean',
-                        style: tt.titleLarge?.copyWith(
+                child: Row(
+                  children: [
+                    Container(
+                      width: 56,
+                      height: 56,
+                      decoration: const BoxDecoration(
+                        shape: BoxShape.circle,
+                        gradient: AegisColors.heroGradient,
+                      ),
+                      alignment: Alignment.center,
+                      child: Text(
+                        initial,
+                        style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 22,
                           fontWeight: FontWeight.w700,
                         ),
                       ),
-                      Text(
-                        'kylerivers4@gmail.com',
-                        style: tt.bodySmall?.copyWith(
-                          color: AegisColors.textTertiary,
-                        ),
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            name,
+                            style: tt.titleLarge?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          Text(
+                            isGuest ? 'Guest session' : 'Tap to manage profile',
+                            style: tt.bodySmall?.copyWith(
+                              color: AegisColors.textTertiary,
+                            ),
+                          ),
+                        ],
                       ),
-                    ],
-                  ),
+                    ),
+                    const Icon(
+                      Icons.chevron_right_rounded,
+                      color: AegisColors.textTertiary,
+                    ),
+                  ],
                 ),
-                const Icon(
-                  Icons.chevron_right_rounded,
-                  color: AegisColors.textTertiary,
-                ),
-              ],
-            ),
+              );
+            },
           ),
           const SizedBox(height: 20),
           _SectionLabel('SUBSCRIPTION'),

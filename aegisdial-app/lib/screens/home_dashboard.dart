@@ -93,11 +93,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        _greeting(),
-                        style: tt.headlineMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                          letterSpacing: -0.5,
+                      ListenableBuilder(
+                        listenable: auth,
+                        builder: (_, child) => Text(
+                          _greeting(),
+                          style: tt.headlineMedium?.copyWith(
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: -0.5,
+                          ),
                         ),
                       ),
                     ],
