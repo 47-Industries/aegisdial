@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../services/auth_service.dart';
+import '../services/api_service.dart';
 import 'live_shield_active.dart';
 import 'coverage_screen.dart';
 import 'breach_screen.dart';
@@ -17,6 +18,29 @@ class HomeDashboard extends StatefulWidget {
 
 class _HomeDashboardState extends State<HomeDashboard> {
   bool _shieldOn = true;
+  int _callsAnalyzed = 0;
+  int _scamsBlocked = 0;
+  int _breachesFound = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadStats();
+  }
+
+  Future<void> _loadStats() async {
+    final session = auth.session;
+    if (session == null || session.userId == 'guest') return;
+    try {
+      final res = await api.get('/v1/stats/summary');
+      if (!mounted) return;
+      setState(() {
+        _callsAnalyzed = ((res['shields_this_week'] as num?) ?? 0).toInt();
+        _scamsBlocked = ((res['critical_calls_avoided_30d'] as num?) ?? 0).toInt();
+        _breachesFound = ((res['breaches_found_30d'] as num?) ?? 0).toInt();
+      });
+    } catch (_) {}
+  }
 
   String _greeting() {
     final session = auth.session;
@@ -361,6 +385,28 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   ),
                 ],
               ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  _StatTile(
+                    value: _callsAnalyzed,
+                    label: 'Calls\nanalyzed',
+                    color: AegisColors.turquoise,
+                  ),
+                  const SizedBox(width: 10),
+                  _StatTile(
+                    value: _scamsBlocked,
+                    label: 'Scams\nblocked',
+                    color: AegisColors.danger,
+                  ),
+                  const SizedBox(width: 10),
+                  _StatTile(
+                    value: _breachesFound,
+                    label: 'Breaches\nfound',
+                    color: AegisColors.warning,
+                  ),
+                ],
+              ),
               const SizedBox(height: 24),
               Text(
                 'RECENT ACTIVITY',
@@ -398,6 +444,50 @@ class _HomeDashboardState extends State<HomeDashboard> {
           ),
         ),
       ],
+    );
+  }
+}
+
+class _StatTile extends StatelessWidget {
+  final int value;
+  final String label;
+  final Color color;
+  const _StatTile({required this.value, required this.label, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return Expanded(
+      child: Container(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.25), width: 0.8),
+        ),
+        child: Column(
+          children: [
+            Text(
+              value == 0 ? '—' : '$value',
+              style: tt.headlineSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: value == 0 ? AegisColors.textTertiary : color,
+                height: 1,
+              ),
+            ),
+            const SizedBox(height: 5),
+            Text(
+              label,
+              textAlign: TextAlign.center,
+              style: tt.labelSmall?.copyWith(
+                color: AegisColors.textTertiary,
+                height: 1.3,
+                fontSize: 10,
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

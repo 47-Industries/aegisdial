@@ -268,16 +268,32 @@ class SettingsScreen extends StatelessWidget {
           ),
           const SizedBox(height: 20),
           _SectionLabel('SUBSCRIPTION'),
-          _SettingsTile(
-            icon: Icons.workspace_premium_outlined,
-            title: 'AegisDial Pro',
-            trailing: '\$299/year',
-            onTap: () => _showInfo(
-              context,
-              'AegisDial Pro',
-              'You\'re on the Pro Annual plan at \$299/year. Manage or cancel your subscription at any time via the App Store → Account → Subscriptions.',
-            ),
-          ),
+          Builder(builder: (context) {
+            final tier = auth.session?.tier ?? 'free';
+            final (label, trailing, body) = switch (tier) {
+              'pro' => (
+                  'AegisDial Pro',
+                  '\$49.99/mo',
+                  'You\'re on Pro. Manage or cancel via App Store → Account → Subscriptions.',
+                ),
+              'guest' => (
+                  'Free trial',
+                  'Trial',
+                  'You\'re using a guest session. Sign in to start your 7-day free trial.',
+                ),
+              _ => (
+                  'Free trial',
+                  '7 days free',
+                  'You\'re on the free trial. Upgrade anytime to keep your protection active.',
+                ),
+            };
+            return _SettingsTile(
+              icon: Icons.workspace_premium_outlined,
+              title: label,
+              trailing: trailing,
+              onTap: () => _showInfo(context, label, body),
+            );
+          }),
           _SettingsTile(
             icon: Icons.receipt_long_outlined,
             title: 'Billing history',
