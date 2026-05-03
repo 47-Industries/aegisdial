@@ -22,6 +22,7 @@ export async function statsRoutes(app: FastifyInstance): Promise<void> {
         criticalAvoided30d,
         breachesFound30d,
         smsJunkedAllTime,
+        criticalAllTime,
       ] = await Promise.all([
         query<{ count: string }>(
           `SELECT COUNT(*)::TEXT AS count FROM call_sessions
@@ -45,10 +46,11 @@ export async function statsRoutes(app: FastifyInstance): Promise<void> {
             WHERE user_id = $1 AND action = 'junk'`,
           [user.id],
         ),
-        // lookup_history dropped in migration 035 — the table had no
-        // writer anywhere in the codebase, so the count was always 0.
-        // lookups_all_time removed from the response (iOS ignores
-        // unknown fields; older clients tolerate the missing field).
+        query<{ count: string }>(
+          `SELECT COUNT(*)::TEXT AS count FROM call_sessions
+            WHERE user_id = $1 AND risk_level = 'critical'`,
+          [user.id],
+        ),
       ]);
 
       return reply.send({
@@ -57,7 +59,7 @@ export async function statsRoutes(app: FastifyInstance): Promise<void> {
         breaches_found_30d: Number(breachesFound30d.rows[0]!.count),
         scams_blocked_all_time:
           Number(smsJunkedAllTime.rows[0]!.count) +
-          Number(criticalAvoided30d.rows[0]!.count),
+          Number(criticalAllTime.rows[0]!.count),
       });
     },
   );

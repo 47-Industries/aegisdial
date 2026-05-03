@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../widgets/hyperspace_stars.dart';
@@ -17,6 +18,8 @@ class HomeDashboard extends StatefulWidget {
 }
 
 class _HomeDashboardState extends State<HomeDashboard> {
+  static const _kShieldKey = 'shield_on_v1';
+
   bool _shieldOn = true;
   int _callsAnalyzed = 0;
   int _scamsBlocked = 0;
@@ -25,7 +28,20 @@ class _HomeDashboardState extends State<HomeDashboard> {
   @override
   void initState() {
     super.initState();
+    _loadShieldState();
     _loadStats();
+  }
+
+  Future<void> _loadShieldState() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _shieldOn = p.getBool(_kShieldKey) ?? true);
+  }
+
+  Future<void> _setShield(bool v) async {
+    setState(() => _shieldOn = v);
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_kShieldKey, v);
   }
 
   Future<void> _loadStats() async {
@@ -217,7 +233,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         ),
                         Switch(
                           value: _shieldOn,
-                          onChanged: (v) => setState(() => _shieldOn = v),
+                          onChanged: _setShield,
                           activeThumbColor: AegisColors.turquoise,
                         ),
                       ],

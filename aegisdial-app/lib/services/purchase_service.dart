@@ -13,14 +13,29 @@ const kProductRecoverySession = 'aegisdial_recovery_session';
 const _kEntitlementPro = 'pro';
 const _kEntitlementRecovery = 'recovery';
 
+// Notified when entitlement status changes (purchase completes, subscription renews, etc.)
+typedef EntitlementCallback = void Function(bool isPro);
+
 class PurchaseService {
   static bool _initialized = false;
+  static final List<EntitlementCallback> _listeners = [];
+
+  static void addListener(EntitlementCallback cb) => _listeners.add(cb);
+  static void removeListener(EntitlementCallback cb) => _listeners.remove(cb);
 
   static Future<void> initialize() async {
     if (_initialized) return;
     await Purchases.setLogLevel(kDebugMode ? LogLevel.debug : LogLevel.error);
     final config = PurchasesConfiguration(_kRevenueCatApiKey);
     await Purchases.configure(config);
+    // Notify listeners when entitlement status changes in real time
+    // (covers purchase completion, renewal, expiry, and restore).
+    Purchases.addCustomerInfoUpdateListener((info) {
+      final pro = _hasAnyEntitlement(info);
+      for (final cb in List.of(_listeners)) {
+        cb(pro);
+      }
+    });
     _initialized = true;
   }
 

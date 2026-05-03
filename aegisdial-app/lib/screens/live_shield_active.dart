@@ -329,15 +329,37 @@ class _StatusHeader extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    'Shield is active',
-                    style: tt.titleMedium?.copyWith(
-                      fontWeight: FontWeight.w700,
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'Shield is active',
+                        style: tt.titleMedium?.copyWith(
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: AegisColors.warning.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: const Text(
+                          'DEMO',
+                          style: TextStyle(
+                            color: AegisColors.warning,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Every call is transcribed on-device and screened for scams.',
+                    'Demo mode — tap "Run demo" to see how Live Shield detects a scam call.',
                     style: tt.bodySmall?.copyWith(
                       color: AegisColors.textTertiary,
                       height: 1.35,

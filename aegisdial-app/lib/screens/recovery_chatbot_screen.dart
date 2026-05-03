@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../services/trial_service.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
+import '../services/purchase_service.dart';
 import 'paywall_screen.dart';
 import 'recovery_screen.dart';
 
@@ -56,6 +57,7 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   bool _sending = false;
 
   bool _trialActive = true;
+  bool _isPro = false;
   int _daysLeft = TrialService.trialDays;
   int _messagesLeft = TrialService.dailyLimit;
 
@@ -64,6 +66,26 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
     super.initState();
     _loadTrial();
     _loadChat();
+    PurchaseService.addListener(_onEntitlementUpdate);
+  }
+
+  void _onEntitlementUpdate(bool isPro) {
+    if (!mounted) return;
+    setState(() {
+      _isPro = isPro;
+      if (isPro) {
+        _trialActive = true;
+        _messagesLeft = 999;
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    PurchaseService.removeListener(_onEntitlementUpdate);
+    _input.dispose();
+    _scroll.dispose();
+    super.dispose();
   }
 
   Future<void> _loadChat() async {
@@ -114,13 +136,15 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
     final active = await TrialService.isTrialActive();
     final days = await TrialService.daysRemaining();
     final msgs = await TrialService.messagesRemainingToday();
+    final pro = await PurchaseService.isPro();
     if (!mounted) return;
     setState(() {
-      _trialActive = active;
+      _isPro = pro;
+      _trialActive = pro || active;
       _daysLeft = days;
-      _messagesLeft = msgs;
+      _messagesLeft = pro ? 999 : msgs;
     });
-    if (!active) _showPaywall(PaywallReason.trialExpired);
+    if (!pro && !active) _showPaywall(PaywallReason.trialExpired);
   }
 
   Future<void> _showPaywall(PaywallReason reason) async {
@@ -130,16 +154,11 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
     _loadTrial();
   }
 
-  @override
-  void dispose() {
-    _input.dispose();
-    _scroll.dispose();
-    super.dispose();
-  }
 
   Future<void> _send([String? text]) async {
     final value = (text ?? _input.text).trim();
     if (value.isEmpty || _sending) return;
+    FocusManager.instance.primaryFocus?.unfocus();
 
     if (!_trialActive) {
       _showPaywall(PaywallReason.trialExpired);
@@ -349,6 +368,7 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
         children: [
           _TrialBanner(
             active: _trialActive,
+            isPro: _isPro,
             daysLeft: _daysLeft,
             messagesLeft: _messagesLeft,
             onUpgrade: () => _showPaywall(
@@ -435,12 +455,14 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
 
 class _TrialBanner extends StatelessWidget {
   final bool active;
+  final bool isPro;
   final int daysLeft;
   final int messagesLeft;
   final VoidCallback onUpgrade;
 
   const _TrialBanner({
     required this.active,
+    required this.isPro,
     required this.daysLeft,
     required this.messagesLeft,
     required this.onUpgrade,
@@ -449,6 +471,28 @@ class _TrialBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+
+    if (isPro) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+        color: AegisColors.success.withValues(alpha: 0.08),
+        child: Row(
+          children: [
+            const Icon(Icons.workspace_premium_rounded,
+                size: 13, color: AegisColors.success),
+            const SizedBox(width: 6),
+            Text(
+              'AegisDial Pro · Unlimited',
+              style: tt.labelSmall?.copyWith(
+                color: AegisColors.success,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ],
+        ),
+      );
+    }
 
     if (!active) {
       return GestureDetector(
