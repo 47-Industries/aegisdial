@@ -39,11 +39,16 @@ export interface UrlFinding {
 // adversarial attempt to blow up regex matchers / our SB payload.
 const MAX_URL_LENGTH = 2048;
 
+// Match protocol-prefixed URLs and bare known-shortener domains (bit.ly/xyz, etc.)
+const SHORTENER_BARE_REGEX =
+  /\b(?:bit\.ly|tinyurl\.com|t\.co|goo\.gl|ow\.ly|is\.gd|buff\.ly|rebrand\.ly|cutt\.ly|shorturl\.at|bl\.ink)\/[^\s<>"']+/gi;
+
 const URL_REGEX =
   /\b(?:https?:\/\/|www\.)[^\s<>"']+/gi;
 
 export function extractUrls(text: string): string[] {
-  const matches = text.match(URL_REGEX) ?? [];
+  const bare = (text.match(SHORTENER_BARE_REGEX) ?? []).map(u => 'https://' + u);
+  const matches = [...(text.match(URL_REGEX) ?? []), ...bare];
   const seen = new Set<string>();
   const out: string[] = [];
   for (let raw of matches) {
