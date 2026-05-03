@@ -307,7 +307,7 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
             ),
             const SizedBox(height: 2),
             Text(
-              'AI-first · Claude Sonnet 4.6',
+              'AI-powered fraud recovery',
               style: tt.labelSmall?.copyWith(
                 color: AegisColors.textTertiary,
                 letterSpacing: 0.4,

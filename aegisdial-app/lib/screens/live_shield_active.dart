@@ -263,6 +263,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                           ? _LiveCallCard(
                               key: const ValueKey('live'),
                               number: _kScenarios[_scenarioIndex].number,
+                              scenarioName: _kScenarios[_scenarioIndex].name,
                               lines: _transcript,
                               score: _fraudScore,
                               verdict: _demoPhase == _DemoPhase.verdict,
@@ -726,6 +727,7 @@ class _LiveCallCard extends StatelessWidget {
   final List<String> lines;
   final int score;
   final bool verdict;
+  final String scenarioName;
   final VoidCallback onBlock;
   final VoidCallback onAnswer;
 
@@ -735,6 +737,7 @@ class _LiveCallCard extends StatelessWidget {
     required this.lines,
     required this.score,
     required this.verdict,
+    required this.scenarioName,
     required this.onBlock,
     required this.onAnswer,
   });
@@ -865,7 +868,7 @@ class _LiveCallCard extends StatelessWidget {
                           ),
                         ),
                         Text(
-                          'IRS impersonation · $score% confidence',
+                          '$scenarioName · $score% confidence',
                           style: tt.labelSmall?.copyWith(
                             color: AegisColors.danger.withValues(alpha: 0.8),
                           ),

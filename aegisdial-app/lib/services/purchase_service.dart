@@ -7,6 +7,7 @@ const _kRevenueCatApiKey = 'REVENUECAT_IOS_API_KEY_PLACEHOLDER';
 // Product IDs — must match App Store Connect in-app purchase IDs exactly
 const kProductProAnnual = 'aegisdial_pro_annual';
 const kProductProMonthly = 'aegisdial_pro_monthly';
+const kProductFamilyPlusMonthly = 'aegisdial_family_plus_monthly';
 const kProductRecoverySession = 'aegisdial_recovery_session';
 
 // Entitlement IDs — must match RevenueCat dashboard entitlements
@@ -43,7 +44,7 @@ class PurchaseService {
     try {
       return await Purchases.getOfferings();
     } catch (e) {
-      debugPrint('RevenueCat getOfferings error: $e');
+      if (kDebugMode) debugPrint('RevenueCat getOfferings error: $e');
       return null;
     }
   }
@@ -71,7 +72,7 @@ class PurchaseService {
           .firstOrNull;
 
       if (pkg == null) {
-        debugPrint('Product $productId not found in offerings');
+        if (kDebugMode) debugPrint('Product $productId not found in offerings');
         return false;
       }
 
@@ -79,10 +80,10 @@ class PurchaseService {
       return true;
     } on PurchasesErrorCode catch (e) {
       if (e == PurchasesErrorCode.purchaseCancelledError) return false;
-      debugPrint('Purchase error: $e');
+      if (kDebugMode) debugPrint('Purchase error: $e');
       return false;
     } catch (e) {
-      debugPrint('Purchase error: $e');
+      if (kDebugMode) debugPrint('Purchase error: $e');
       return false;
     }
   }
@@ -92,7 +93,7 @@ class PurchaseService {
       final info = await Purchases.restorePurchases();
       return _hasAnyEntitlement(info);
     } catch (e) {
-      debugPrint('Restore error: $e');
+      if (kDebugMode) debugPrint('Restore error: $e');
       return false;
     }
   }

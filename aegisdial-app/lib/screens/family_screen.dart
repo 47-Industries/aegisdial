@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
+import '../services/purchase_service.dart';
 
 class _FamilyMember {
   final String name;
@@ -74,9 +75,11 @@ class _FamilyScreenState extends State<FamilyScreen> {
     if (_members.length >= _maxLines) return;
 
     if (_members.length >= _baseLines && !_isFamilyPlus) {
-      // Already at base capacity — adding triggers Family+ upgrade prompt.
       final upgrade = await _confirmUpgrade();
       if (upgrade != true) return;
+      if (!mounted) return;
+      final purchased = await PurchaseService.purchaseProduct(kProductFamilyPlusMonthly);
+      if (!purchased) return;
     }
 
     if (!mounted) return;
