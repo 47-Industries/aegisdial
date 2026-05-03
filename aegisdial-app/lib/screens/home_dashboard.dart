@@ -9,7 +9,6 @@ import '../services/api_service.dart';
 import 'live_shield_active.dart';
 import 'coverage_screen.dart';
 import 'breach_screen.dart';
-import 'globe_screen.dart';
 
 class _RecentItem {
   final IconData icon;
@@ -601,51 +600,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     ),
                   ),
                 ],
-              ),
-              const SizedBox(height: 12),
-              GlassCard(
-                accent: AegisColors.blue,
-                onTap: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const GlobeScreen()),
-                ),
-                child: Row(
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AegisColors.blue.withValues(alpha: 0.12),
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(Icons.public_rounded, color: AegisColors.blue),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Coverage Map',
-                            style: tt.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            'Live fraud density by region',
-                            style: tt.bodySmall?.copyWith(
-                              color: AegisColors.textTertiary,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                    const Icon(
-                      Icons.arrow_forward_ios_rounded,
-                      color: AegisColors.textTertiary,
-                      size: 16,
-                    ),
-                  ],
-                ),
               ),
               const SizedBox(height: 20),
               Text(
