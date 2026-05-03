@@ -10,7 +10,8 @@ import 'home_shell.dart';
 import 'email_auth_screen.dart';
 
 class AuthScreen extends StatefulWidget {
-  const AuthScreen({super.key});
+  final bool initialSignUp;
+  const AuthScreen({super.key, this.initialSignUp = false});
 
   @override
   State<AuthScreen> createState() => _AuthScreenState();
@@ -57,7 +58,9 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _email() async {
     final ok = await Navigator.of(context).push<bool>(
-      MaterialPageRoute(builder: (_) => const EmailAuthScreen()),
+      MaterialPageRoute(
+          builder: (_) =>
+              EmailAuthScreen(initialSignUp: widget.initialSignUp)),
     );
     if (ok == true) _enter();
   }

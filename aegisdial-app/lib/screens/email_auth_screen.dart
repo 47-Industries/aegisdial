@@ -5,7 +5,8 @@ import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
 
 class EmailAuthScreen extends StatefulWidget {
-  const EmailAuthScreen({super.key});
+  final bool initialSignUp;
+  const EmailAuthScreen({super.key, this.initialSignUp = false});
 
   @override
   State<EmailAuthScreen> createState() => _EmailAuthScreenState();
@@ -17,8 +18,15 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
   final _password = TextEditingController();
   final _name = TextEditingController();
   final _dob = TextEditingController();
-  bool _isSignUp = false;
+  late bool _isSignUp;
   bool _busy = false;
+  bool _showPassword = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _isSignUp = widget.initialSignUp;
+  }
 
   @override
   void dispose() {
@@ -144,7 +152,18 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
                     controller: _password,
                     label: 'Password',
                     icon: Icons.lock_outline_rounded,
-                    obscureText: true,
+                    obscureText: !_showPassword,
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _showPassword
+                            ? Icons.visibility_off_outlined
+                            : Icons.visibility_outlined,
+                        size: 20,
+                        color: AegisColors.textTertiary,
+                      ),
+                      onPressed: () =>
+                          setState(() => _showPassword = !_showPassword),
+                    ),
                     validator: (v) {
                       if (v == null || v.length < 8) {
                         return 'Min 8 characters.';
@@ -204,6 +223,7 @@ class _Field extends StatelessWidget {
   final String label;
   final IconData icon;
   final bool obscureText;
+  final Widget? suffixIcon;
   final TextInputType? keyboardType;
   final String? Function(String?)? validator;
 
@@ -212,6 +232,7 @@ class _Field extends StatelessWidget {
     required this.label,
     required this.icon,
     this.obscureText = false,
+    this.suffixIcon,
     this.keyboardType,
     this.validator,
   });
@@ -229,6 +250,7 @@ class _Field extends StatelessWidget {
         labelText: label,
         labelStyle: const TextStyle(color: AegisColors.textTertiary),
         prefixIcon: Icon(icon, color: AegisColors.turquoise, size: 20),
+        suffixIcon: suffixIcon,
         filled: true,
         fillColor: AegisColors.surface.withValues(alpha: 0.7),
         contentPadding:

@@ -97,6 +97,7 @@ class AuthService extends ChangeNotifier {
     final res = await api.post('/auth/apple', body);
     final session = AuthSession.fromJson(res);
     await _persist(session);
+    _refreshMe();
     return session;
   }
 
@@ -110,6 +111,7 @@ class AuthService extends ChangeNotifier {
     });
     final session = AuthSession.fromJson(res);
     await _persist(session);
+    _refreshMe();
     return session;
   }
 
@@ -125,8 +127,13 @@ class AuthService extends ChangeNotifier {
       'dob_year': dobYear,
       if (displayName != null) 'display_name': displayName,
     });
-    final session = AuthSession.fromJson(res);
+    // Sign-up response includes display_name directly
+    final session = AuthSession.fromJson({
+      ...res,
+      if (displayName != null) 'display_name': displayName,
+    });
     await _persist(session);
+    _refreshMe();
     return session;
   }
 

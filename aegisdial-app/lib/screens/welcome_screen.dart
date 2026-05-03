@@ -87,7 +87,7 @@ class WelcomeScreen extends StatelessWidget {
                         PageRouteBuilder(
                           transitionDuration: const Duration(milliseconds: 600),
                           pageBuilder: (context, anim, secondary) =>
-                              const AuthScreen(),
+                              const AuthScreen(initialSignUp: true),
                           transitionsBuilder:
                               (context, anim, secondary, child) {
                             return FadeTransition(opacity: anim, child: child);
