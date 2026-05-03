@@ -91,7 +91,7 @@ class AuthService extends ChangeNotifier {
     final body = <String, dynamic>{
       'id_token': idToken,
       if (fullName.isNotEmpty) 'display_name': fullName,
-      if (dobYear != null) 'dob_year': dobYear,
+      'dob_year': ?dobYear,
     };
 
     final res = await api.post('/auth/apple', body);
@@ -125,12 +125,12 @@ class AuthService extends ChangeNotifier {
       'email': email,
       'password': password,
       'dob_year': dobYear,
-      if (displayName != null) 'display_name': displayName,
+      'display_name': ?displayName,
     });
     // Sign-up response includes display_name directly
     final session = AuthSession.fromJson({
       ...res,
-      if (displayName != null) 'display_name': displayName,
+      'display_name': ?displayName,
     });
     await _persist(session);
     _refreshMe();

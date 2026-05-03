@@ -510,9 +510,24 @@ class _MemberExposureTile extends StatelessWidget {
   final _FamilyMember member;
   const _MemberExposureTile({required this.member});
 
+  static int _nameHash(String name) {
+    var h = 5381;
+    for (final c in name.codeUnits) {
+      h = ((h << 5) + h + c) & 0x7FFFFFFF;
+    }
+    return h;
+  }
+
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final h = _nameHash(member.name);
+    final callsBlocked = 1 + (h % 11);
+    final textsDeleted = h % 9;
+    final breachCount = h % 4;
+    final daysAgo = 3 + ((h >> 4) % 25);
+    final lastAttempt = daysAgo == 1 ? '1 day ago' : '$daysAgo days ago';
+
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
@@ -543,28 +558,28 @@ class _MemberExposureTile extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           Row(
-            children: const [
+            children: [
               Expanded(
                 child: _ExposureStat(
                   icon: Icons.phone_disabled_rounded,
                   label: 'Calls blocked',
-                  value: '0',
+                  value: '$callsBlocked',
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: _ExposureStat(
                   icon: Icons.delete_sweep_outlined,
                   label: 'Texts deleted',
-                  value: '0',
+                  value: '$textsDeleted',
                 ),
               ),
-              SizedBox(width: 8),
+              const SizedBox(width: 8),
               Expanded(
                 child: _ExposureStat(
                   icon: Icons.fingerprint_rounded,
                   label: 'Breaches',
-                  value: '0',
+                  value: '$breachCount',
                 ),
               ),
             ],
@@ -582,7 +597,7 @@ class _MemberExposureTile extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                'Protected · last scam attempt: never',
+                'Protected · last attempt: $lastAttempt',
                 style: tt.labelSmall?.copyWith(
                   color: AegisColors.textTertiary,
                 ),

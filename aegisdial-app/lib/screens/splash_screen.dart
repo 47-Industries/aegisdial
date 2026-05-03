@@ -111,7 +111,7 @@ class _SplashScreenState extends State<SplashScreen>
           Positioned.fill(
             child: AnimatedBuilder(
               animation: _intro,
-              builder: (_, __) => DecoratedBox(
+              builder: (_, _) => DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: RadialGradient(
                     center: Alignment.center,
@@ -135,7 +135,7 @@ class _SplashScreenState extends State<SplashScreen>
                   height: 240,
                   child: AnimatedBuilder(
                     animation: Listenable.merge([_intro, _pulse]),
-                    builder: (_, __) {
+                    builder: (_, _) {
                       return Stack(
                         alignment: Alignment.center,
                         children: [
@@ -181,7 +181,7 @@ class _SplashScreenState extends State<SplashScreen>
                 const SizedBox(height: 36),
                 AnimatedBuilder(
                   animation: _intro,
-                  builder: (_, __) => Opacity(
+                  builder: (_, _) => Opacity(
                     opacity: _titleOpacity.value,
                     child: SlideTransition(
                       position: _titleSlide,

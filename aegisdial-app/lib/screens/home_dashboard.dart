@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
@@ -8,6 +9,22 @@ import '../services/api_service.dart';
 import 'live_shield_active.dart';
 import 'coverage_screen.dart';
 import 'breach_screen.dart';
+import 'globe_screen.dart';
+
+class _RecentItem {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final int score;
+  final String timeAgo;
+  const _RecentItem({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.score,
+    required this.timeAgo,
+  });
+}
 
 class HomeDashboard extends StatefulWidget {
   final VoidCallback? onOpenRecovery;
@@ -24,12 +41,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
   int _callsAnalyzed = 0;
   int _scamsBlocked = 0;
   int _breachesFound = 0;
+  List<_RecentItem> _recentActivity = [];
 
   @override
   void initState() {
     super.initState();
     _loadShieldState();
     _loadStats();
+    _loadActivity();
   }
 
   Future<void> _loadShieldState() async {
@@ -56,6 +75,80 @@ class _HomeDashboardState extends State<HomeDashboard> {
         _breachesFound = ((res['breaches_found_30d'] as num?) ?? 0).toInt();
       });
     } catch (_) {}
+  }
+
+  Future<void> _loadActivity() async {
+    final prefs = await SharedPreferences.getInstance();
+    final pairs = <(int, _RecentItem)>[];
+
+    final smsRaw = prefs.getString('sms_scan_history_v1');
+    if (smsRaw != null) {
+      try {
+        final list = jsonDecode(smsRaw) as List<dynamic>;
+        for (final e in list) {
+          final m = e as Map<String, dynamic>;
+          final ts = (m['t'] as num).toInt();
+          final score = (m['s'] as num).toInt();
+          pairs.add((ts, _RecentItem(
+            icon: Icons.sms_failed_outlined,
+            title: m['p'] as String? ?? 'SMS message',
+            subtitle: m['f'] as String? ?? 'Suspicious message',
+            score: score,
+            timeAgo: _relativeTime(ts),
+          )));
+        }
+      } catch (_) {}
+    }
+
+    final breachRaw = prefs.getString('breach_exposures_v1');
+    if (breachRaw != null) {
+      try {
+        final list = jsonDecode(breachRaw) as List<dynamic>;
+        for (final e in list) {
+          final m = e as Map<String, dynamic>;
+          final dateStr = m['d'] as String?;
+          final ts = DateTime.tryParse(dateStr ?? '')?.millisecondsSinceEpoch ?? 0;
+          final cp = (m['ic'] as num?)?.toInt() ?? Icons.warning_rounded.codePoint;
+          pairs.add((ts, _RecentItem(
+            icon: IconData(cp, fontFamily: 'MaterialIcons'),
+            title: m['ti'] as String? ?? 'Data breach',
+            subtitle: m['so'] as String? ?? 'Dark web exposure',
+            score: _severityScore(m['se'] as String?),
+            timeAgo: _formatDate(dateStr),
+          )));
+        }
+      } catch (_) {}
+    }
+
+    pairs.sort((a, b) => b.$1.compareTo(a.$1));
+    final items = pairs.take(3).map((pair) => pair.$2).toList();
+    if (!mounted) return;
+    setState(() => _recentActivity = items);
+  }
+
+  static String _relativeTime(int ms) {
+    final diff = DateTime.now().difference(DateTime.fromMillisecondsSinceEpoch(ms));
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    return '${diff.inDays}d ago';
+  }
+
+  static int _severityScore(String? severity) => switch (severity) {
+    'critical' => 95,
+    'high' => 80,
+    'medium' => 55,
+    _ => 30,
+  };
+
+  static String _formatDate(String? date) {
+    if (date == null) return '';
+    final dt = DateTime.tryParse(date);
+    if (dt == null) return date;
+    final diff = DateTime.now().difference(dt);
+    if (diff.inDays < 30) return '${diff.inDays}d ago';
+    if (diff.inDays < 365) return '${(diff.inDays / 30).round()}mo ago';
+    return '${(diff.inDays / 365).round()}yr ago';
   }
 
   String _greeting() {
@@ -144,30 +237,88 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                     ?.copyWith(fontWeight: FontWeight.w700),
                               ),
                               const SizedBox(height: 20),
-                              Container(
-                                padding: const EdgeInsets.all(16),
-                                decoration: BoxDecoration(
-                                  color: AegisColors.surfaceElevated,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.notifications_none_rounded,
-                                        color: AegisColors.textTertiary,
-                                        size: 20),
-                                    const SizedBox(width: 12),
-                                    Text(
-                                      'No new alerts',
-                                      style: Theme.of(context)
-                                          .textTheme
-                                          .bodyMedium
-                                          ?.copyWith(
-                                              color:
-                                                  AegisColors.textSecondary),
+                              if (_recentActivity.isEmpty)
+                                Container(
+                                  padding: const EdgeInsets.all(16),
+                                  decoration: BoxDecoration(
+                                    color: AegisColors.surfaceElevated,
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      const Icon(Icons.notifications_none_rounded,
+                                          color: AegisColors.textTertiary,
+                                          size: 20),
+                                      const SizedBox(width: 12),
+                                      Text(
+                                        'No new alerts',
+                                        style: Theme.of(context)
+                                            .textTheme
+                                            .bodyMedium
+                                            ?.copyWith(
+                                                color: AegisColors.textSecondary),
+                                      ),
+                                    ],
+                                  ),
+                                )
+                              else
+                                ..._recentActivity.map((item) {
+                                  final sc = item.score >= 80
+                                      ? AegisColors.danger
+                                      : item.score >= 50
+                                          ? AegisColors.warning
+                                          : AegisColors.success;
+                                  return Container(
+                                    margin: const EdgeInsets.only(bottom: 8),
+                                    padding: const EdgeInsets.symmetric(
+                                        vertical: 12, horizontal: 14),
+                                    decoration: BoxDecoration(
+                                      color: AegisColors.surfaceElevated,
+                                      borderRadius: BorderRadius.circular(12),
                                     ),
-                                  ],
-                                ),
-                              ),
+                                    child: Row(
+                                      children: [
+                                        Icon(item.icon, color: sc, size: 18),
+                                        const SizedBox(width: 12),
+                                        Expanded(
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                item.title,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodyMedium
+                                                    ?.copyWith(
+                                                        fontWeight:
+                                                            FontWeight.w600),
+                                              ),
+                                              Text(
+                                                item.subtitle,
+                                                style: Theme.of(context)
+                                                    .textTheme
+                                                    .bodySmall
+                                                    ?.copyWith(
+                                                        color: AegisColors
+                                                            .textSecondary),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                        Text(
+                                          item.timeAgo,
+                                          style: Theme.of(context)
+                                              .textTheme
+                                              .labelSmall
+                                              ?.copyWith(
+                                                  color:
+                                                      AegisColors.textTertiary),
+                                        ),
+                                      ],
+                                    ),
+                                  );
+                                }),
                             ],
                           ),
                         ),
@@ -404,6 +555,51 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   ),
                 ],
               ),
+              const SizedBox(height: 12),
+              GlassCard(
+                accent: AegisColors.blue,
+                onTap: () => Navigator.of(context).push(
+                  MaterialPageRoute(builder: (_) => const GlobeScreen()),
+                ),
+                child: Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AegisColors.blue.withValues(alpha: 0.12),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(Icons.public_rounded, color: AegisColors.blue),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Coverage Map',
+                            style: tt.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Live fraud density by region',
+                            style: tt.bodySmall?.copyWith(
+                              color: AegisColors.textTertiary,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Icon(
+                      Icons.arrow_forward_ios_rounded,
+                      color: AegisColors.textTertiary,
+                      size: 16,
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 20),
               Row(
                 children: [
@@ -436,29 +632,41 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 ),
               ),
               const SizedBox(height: 10),
-              const _ActivityTile(
-                icon: Icons.phone_disabled_rounded,
-                sender: '+1 (347) 555-0192',
-                type: 'Scam call blocked',
-                score: 87,
-                timeAgo: '2 min ago',
-              ),
-              const SizedBox(height: 8),
-              const _ActivityTile(
-                icon: Icons.sms_failed_outlined,
-                sender: '+1 (800) 555-0199',
-                type: 'IRS impersonation — SMS deleted',
-                score: 94,
-                timeAgo: '1h ago',
-              ),
-              const SizedBox(height: 8),
-              const _ActivityTile(
-                icon: Icons.link_off_rounded,
-                sender: 'FakeBank-Alert',
-                type: 'Phishing link intercepted',
-                score: 99,
-                timeAgo: '3h ago',
-              ),
+              if (_recentActivity.isEmpty) ...[
+                const _ActivityTile(
+                  icon: Icons.phone_disabled_rounded,
+                  sender: '+1 (347) 555-0192',
+                  type: 'Scam call blocked',
+                  score: 87,
+                  timeAgo: '2 min ago',
+                ),
+                const SizedBox(height: 8),
+                const _ActivityTile(
+                  icon: Icons.sms_failed_outlined,
+                  sender: '+1 (800) 555-0199',
+                  type: 'IRS impersonation — SMS deleted',
+                  score: 94,
+                  timeAgo: '1h ago',
+                ),
+                const SizedBox(height: 8),
+                const _ActivityTile(
+                  icon: Icons.link_off_rounded,
+                  sender: 'FakeBank-Alert',
+                  type: 'Phishing link intercepted',
+                  score: 99,
+                  timeAgo: '3h ago',
+                ),
+              ] else
+                for (int i = 0; i < _recentActivity.length; i++) ...[
+                  if (i > 0) const SizedBox(height: 8),
+                  _ActivityTile(
+                    icon: _recentActivity[i].icon,
+                    sender: _recentActivity[i].title,
+                    type: _recentActivity[i].subtitle,
+                    score: _recentActivity[i].score,
+                    timeAgo: _recentActivity[i].timeAgo,
+                  ),
+                ],
             ],
           ),
         ),

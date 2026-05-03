@@ -12,23 +12,65 @@ class LiveShieldActiveScreen extends StatefulWidget {
   State<LiveShieldActiveScreen> createState() => _LiveShieldActiveScreenState();
 }
 
-// Demo transcript lines (IRS impersonation scam).
-const _kDemoLines = [
-  'Hello, this is Agent Williams from the Internal Revenue Service.',
-  'Your Social Security number has been suspended due to suspicious activity.',
-  'A federal arrest warrant has been issued in your name.',
-  'To avoid immediate arrest, press 1 or stay on the line.',
-  'You owe \$4,280 in back taxes. Payment must be made via gift cards today.',
-];
-
-const _kDemoNumber = '+1 (877) 234-5678';
-
 enum _DemoPhase { idle, ringing, transcribing, verdict, done }
+
+class _DemoScenario {
+  final String name;
+  final String number;
+  final List<String> lines;
+  final List<int> scores;
+  const _DemoScenario({
+    required this.name,
+    required this.number,
+    required this.lines,
+    required this.scores,
+  });
+}
+
+const _kScenarios = [
+  _DemoScenario(
+    name: 'IRS Impersonation',
+    number: '+1 (877) 234-5678',
+    lines: [
+      'Hello, this is Agent Williams from the Internal Revenue Service.',
+      'Your Social Security number has been suspended due to suspicious activity.',
+      'A federal arrest warrant has been issued in your name.',
+      'To avoid immediate arrest, press 1 or stay on the line.',
+      'You owe \$4,280 in back taxes. Payment must be made via gift cards today.',
+    ],
+    scores: [12, 31, 58, 77, 94],
+  ),
+  _DemoScenario(
+    name: 'Bank Fraud Alert',
+    number: '+1 (800) 935-9935',
+    lines: [
+      'This is the Wells Fargo fraud prevention team.',
+      'We detected a \$2,400 unauthorized charge in Miami on your account.',
+      'To protect your funds, we need to move your balance to a secure holding account.',
+      'Please confirm your full debit card number and the CVV on the back.',
+      'This hold is temporary — funds return within 24 hours once verified.',
+    ],
+    scores: [8, 28, 52, 79, 96],
+  ),
+  _DemoScenario(
+    name: 'Tech Support',
+    number: '+1 (888) 277-4537',
+    lines: [
+      'Hi, this is Apple Support calling about your Apple ID.',
+      'We detected three unauthorized sign-ins from Russia and China.',
+      'Your account will be permanently locked in 30 minutes unless we act now.',
+      'I need you to install AnyDesk so our security team can remove the threat.',
+      'Please also provide your Apple ID password so we can reset your 2FA today.',
+    ],
+    scores: [10, 24, 49, 73, 97],
+  ),
+];
 
 class _DemoCall {
   final List<String> lines;
   final int score;
-  _DemoCall(this.lines, this.score);
+  final String scenarioName;
+  _DemoCall(this.lines, this.score, this.scenarioName);
 }
 
 class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
@@ -37,6 +79,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
   late final AnimationController _wave;
 
   _DemoPhase _demoPhase = _DemoPhase.idle;
+  int _scenarioIndex = 0;
   final List<String> _transcript = [];
   int _fraudScore = 0;
   Timer? _demoTimer;
@@ -65,6 +108,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
 
   Future<void> _runDemo() async {
     if (_demoPhase != _DemoPhase.idle && _demoPhase != _DemoPhase.done) return;
+    final scenario = _kScenarios[_scenarioIndex];
     setState(() {
       _demoPhase = _DemoPhase.ringing;
       _transcript.clear();
@@ -72,20 +116,17 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
     });
     HapticFeedback.heavyImpact();
 
-    // Ring phase
     await Future.delayed(const Duration(milliseconds: 1800));
     if (!mounted) return;
     setState(() => _demoPhase = _DemoPhase.transcribing);
 
-    // Stream transcript lines with delays
-    final delays = [0, 1400, 1600, 1500, 1700];
-    for (int i = 0; i < _kDemoLines.length; i++) {
+    const delays = [0, 1400, 1600, 1500, 1700];
+    for (int i = 0; i < scenario.lines.length; i++) {
       await Future.delayed(Duration(milliseconds: delays[i]));
       if (!mounted) return;
       setState(() {
-        _transcript.add(_kDemoLines[i]);
-        // Score ramps: 12 → 31 → 58 → 77 → 94
-        _fraudScore = [12, 31, 58, 77, 94][i];
+        _transcript.add(scenario.lines[i]);
+        _fraudScore = scenario.scores[i];
       });
       HapticFeedback.selectionClick();
     }
@@ -99,7 +140,10 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
   void _dismissDemo() {
     if (_demoPhase == _DemoPhase.verdict) {
       setState(() {
-        _callHistory.insert(0, _DemoCall(List.from(_transcript), _fraudScore));
+        _callHistory.insert(0, _DemoCall(
+          List.from(_transcript), _fraudScore,
+          _kScenarios[_scenarioIndex].name,
+        ));
         _demoPhase = _DemoPhase.done;
         _transcript.clear();
         _fraudScore = 0;
@@ -210,18 +254,28 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
                   child: _demoPhase == _DemoPhase.ringing
-                      ? _RingingCard(number: _kDemoNumber, key: const ValueKey('ring'))
-                      : _demoPhase == _DemoPhase.transcribing || _demoPhase == _DemoPhase.verdict
+                      ? _RingingCard(
+                          number: _kScenarios[_scenarioIndex].number,
+                          key: const ValueKey('ring'),
+                        )
+                      : _demoPhase == _DemoPhase.transcribing ||
+                              _demoPhase == _DemoPhase.verdict
                           ? _LiveCallCard(
                               key: const ValueKey('live'),
-                              number: _kDemoNumber,
+                              number: _kScenarios[_scenarioIndex].number,
                               lines: _transcript,
                               score: _fraudScore,
                               verdict: _demoPhase == _DemoPhase.verdict,
                               onBlock: _dismissDemo,
                               onAnswer: _dismissDemo,
                             )
-                          : _IdleCard(key: const ValueKey('idle'), onRunDemo: _runDemo),
+                          : _IdleCard(
+                              key: const ValueKey('idle'),
+                              onRunDemo: _runDemo,
+                              selectedIndex: _scenarioIndex,
+                              onSelectScenario: (i) =>
+                                  setState(() => _scenarioIndex = i),
+                            ),
                 ),
                 const SizedBox(height: 22),
                 Padding(
@@ -452,7 +506,14 @@ class _PulseRingsPainter extends CustomPainter {
 
 class _IdleCard extends StatelessWidget {
   final VoidCallback onRunDemo;
-  const _IdleCard({super.key, required this.onRunDemo});
+  final int selectedIndex;
+  final ValueChanged<int> onSelectScenario;
+  const _IdleCard({
+    super.key,
+    required this.onRunDemo,
+    required this.selectedIndex,
+    required this.onSelectScenario,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -466,6 +527,7 @@ class _IdleCard extends StatelessWidget {
         border: Border.all(color: AegisColors.border, width: 0.6),
       ),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
             'Listening — no active call',
@@ -474,13 +536,65 @@ class _IdleCard extends StatelessWidget {
               fontWeight: FontWeight.w600,
             ),
           ),
-          const SizedBox(height: 6),
+          const SizedBox(height: 4),
           Text(
             'When a call comes in, the live transcript and verdict appear here.',
-            textAlign: TextAlign.center,
             style: tt.bodySmall?.copyWith(
               color: AegisColors.textTertiary,
               height: 1.45,
+            ),
+          ),
+          const SizedBox(height: 14),
+          Text(
+            'DEMO SCENARIO',
+            style: tt.labelSmall?.copyWith(
+              color: AegisColors.textTertiary,
+              letterSpacing: 1.4,
+              fontWeight: FontWeight.w600,
+              fontSize: 10,
+            ),
+          ),
+          const SizedBox(height: 8),
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: List.generate(_kScenarios.length, (i) {
+                final selected = i == selectedIndex;
+                return Padding(
+                  padding: EdgeInsets.only(right: i < _kScenarios.length - 1 ? 8 : 0),
+                  child: GestureDetector(
+                    onTap: () => onSelectScenario(i),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 7),
+                      decoration: BoxDecoration(
+                        color: selected
+                            ? AegisColors.turquoise.withValues(alpha: 0.15)
+                            : AegisColors.surfaceElevated,
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(
+                          color: selected
+                              ? AegisColors.turquoise
+                              : AegisColors.border,
+                          width: selected ? 1.2 : 0.6,
+                        ),
+                      ),
+                      child: Text(
+                        _kScenarios[i].name,
+                        style: TextStyle(
+                          color: selected
+                              ? AegisColors.turquoise
+                              : AegisColors.textSecondary,
+                          fontSize: 12,
+                          fontWeight: selected
+                              ? FontWeight.w700
+                              : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ),
+                );
+              }),
             ),
           ),
           const SizedBox(height: 14),
@@ -555,7 +669,7 @@ class _RingingCardState extends State<_RingingCard>
         children: [
           AnimatedBuilder(
             animation: _ring,
-            builder: (_, __) => Icon(
+            builder: (_, _) => Icon(
               Icons.phone_in_talk_rounded,
               size: 36,
               color: AegisColors.warning
@@ -581,7 +695,7 @@ class _RingingCardState extends State<_RingingCard>
             children: [
               AnimatedBuilder(
                 animation: _ring,
-                builder: (_, __) => Container(
+                builder: (_, _) => Container(
                   width: 8,
                   height: 8,
                   decoration: BoxDecoration(
@@ -848,11 +962,11 @@ class _CallHistoryTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '$_kDemoNumber · BLOCKED',
+                  '${call.scenarioName} · BLOCKED',
                   style: tt.bodySmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 Text(
-                  'IRS impersonation · ${call.score}% fraud score',
+                  '${call.score}% fraud score · demo',
                   style: tt.labelSmall
                       ?.copyWith(color: AegisColors.textTertiary),
                 ),

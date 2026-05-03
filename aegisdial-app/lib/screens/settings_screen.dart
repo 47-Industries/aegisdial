@@ -355,6 +355,7 @@ class SettingsScreen extends StatelessWidget {
               );
               if (ok == true && context.mounted) {
                 await auth.signOut();
+                if (!context.mounted) return;
                 Navigator.of(context).pushAndRemoveUntil(
                   MaterialPageRoute(builder: (_) => const WelcomeScreen()),
                   (_) => false,
