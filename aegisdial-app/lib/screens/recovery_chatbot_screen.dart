@@ -1,4 +1,6 @@
+import 'dart:convert';
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../services/trial_service.dart';
 import '../services/auth_service.dart';
@@ -22,9 +24,18 @@ class _ChatMessage {
     required this.text,
     this.isLimit = false,
   });
+
+  Map<String, dynamic> toJson() => {'u': fromUser, 't': text};
+  factory _ChatMessage.fromJson(Map<String, dynamic> j) => _ChatMessage(
+        fromUser: j['u'] as bool,
+        text: j['t'] as String,
+      );
 }
 
 class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
+  static const _kChatKey = 'recovery_chat_history_v1';
+  static const _kMaxMessages = 60;
+
   static const _quickPrompts = [
     'I just got scammed',
     'I sent money',
@@ -52,6 +63,51 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   void initState() {
     super.initState();
     _loadTrial();
+    _loadChat();
+  }
+
+  Future<void> _loadChat() async {
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString(_kChatKey);
+    if (raw == null) return;
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      final loaded = list
+          .map((e) => _ChatMessage.fromJson(e as Map<String, dynamic>))
+          .toList();
+      if (loaded.isNotEmpty && mounted) {
+        setState(() {
+          _messages
+            ..clear()
+            ..addAll(loaded);
+        });
+        WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+      }
+    } catch (_) {}
+  }
+
+  Future<void> _saveChat() async {
+    final p = await SharedPreferences.getInstance();
+    final toSave = _messages
+        .where((m) => !m.isLimit)
+        .take(_kMaxMessages)
+        .map((m) => m.toJson())
+        .toList();
+    await p.setString(_kChatKey, jsonEncode(toSave));
+  }
+
+  Future<void> _clearChat() async {
+    final p = await SharedPreferences.getInstance();
+    await p.remove(_kChatKey);
+    setState(() {
+      _messages
+        ..clear()
+        ..add(const _ChatMessage(
+          fromUser: false,
+          text:
+              "I'm here. Take a breath — you're not alone, and what happened isn't your fault.\n\nWhen you're ready, tell me what just happened. The more detail you share, the better I can help you stop the bleeding and figure out the next move.",
+        ));
+    });
   }
 
   Future<void> _loadTrial() async {
@@ -123,6 +179,7 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
       _messagesLeft = msgs;
     });
     _scrollToBottom();
+    _saveChat();
   }
 
   Future<String> _callBackend(String message) async {
@@ -240,6 +297,44 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
           ],
         ),
         actions: [
+          if (_messages.length > 1)
+            IconButton(
+              icon: const Icon(Icons.add_comment_outlined, size: 20),
+              color: AegisColors.textTertiary,
+              tooltip: 'New session',
+              onPressed: () async {
+                final ok = await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    backgroundColor: AegisColors.surface,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(18)),
+                    title: const Text('Start a new session?'),
+                    content: const Text(
+                      'This clears the current conversation. Your prior history will be gone.',
+                      style: TextStyle(
+                          color: AegisColors.textSecondary, height: 1.5),
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.of(ctx).pop(false),
+                        child: const Text('Keep it'),
+                      ),
+                      ElevatedButton(
+                        onPressed: () => Navigator.of(ctx).pop(true),
+                        style: ElevatedButton.styleFrom(
+                          minimumSize: const Size(0, 44),
+                          backgroundColor: AegisColors.turquoise,
+                          foregroundColor: Colors.black,
+                        ),
+                        child: const Text('New session'),
+                      ),
+                    ],
+                  ),
+                );
+                if (ok == true) _clearChat();
+              },
+            ),
           IconButton(
             icon: const Icon(Icons.info_outline_rounded, size: 20),
             color: AegisColors.textTertiary,

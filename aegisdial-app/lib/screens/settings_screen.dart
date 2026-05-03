@@ -321,6 +321,48 @@ class SettingsScreen extends StatelessWidget {
             ),
           ),
           _SettingsTile(
+            icon: Icons.logout_rounded,
+            title: 'Sign out',
+            onTap: () async {
+              final ok = await showDialog<bool>(
+                context: context,
+                builder: (ctx) => AlertDialog(
+                  backgroundColor: AegisColors.surface,
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(18)),
+                  title: const Text('Sign out?'),
+                  content: const Text(
+                    'You\'ll need to sign in again to access your protected data.',
+                    style: TextStyle(
+                        color: AegisColors.textSecondary, height: 1.5),
+                  ),
+                  actions: [
+                    TextButton(
+                      onPressed: () => Navigator.of(ctx).pop(false),
+                      child: const Text('Cancel'),
+                    ),
+                    ElevatedButton(
+                      onPressed: () => Navigator.of(ctx).pop(true),
+                      style: ElevatedButton.styleFrom(
+                        minimumSize: const Size(0, 44),
+                        backgroundColor: AegisColors.turquoise,
+                        foregroundColor: Colors.black,
+                      ),
+                      child: const Text('Sign out'),
+                    ),
+                  ],
+                ),
+              );
+              if (ok == true && context.mounted) {
+                await auth.signOut();
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                  (_) => false,
+                );
+              }
+            },
+          ),
+          _SettingsTile(
             icon: Icons.delete_outline,
             title: 'Delete my account',
             destructive: true,
