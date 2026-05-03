@@ -9,20 +9,28 @@ class AuthSession {
   final String userId;
   final String tier;
   final String? displayName;
+  final String? email;
   const AuthSession({
     required this.token,
     required this.userId,
     required this.tier,
     this.displayName,
+    this.email,
   });
 
-  Map<String, dynamic> toJson() =>
-      {'token': token, 'user_id': userId, 'tier': tier, if (displayName != null) 'display_name': displayName};
+  Map<String, dynamic> toJson() => {
+        'token': token,
+        'user_id': userId,
+        'tier': tier,
+        if (displayName != null) 'display_name': displayName,
+        if (email != null) 'email': email,
+      };
   factory AuthSession.fromJson(Map<String, dynamic> j) => AuthSession(
         token: j['token'] as String,
         userId: j['user_id'] as String,
         tier: (j['tier'] as String?) ?? 'free',
         displayName: j['display_name'] as String?,
+        email: j['email'] as String?,
       );
 }
 
@@ -34,6 +42,7 @@ class AuthService extends ChangeNotifier {
   static const _kUserId = 'auth_user_id';
   static const _kTier = 'auth_tier';
   static const _kDisplayName = 'auth_display_name';
+  static const _kEmail = 'auth_email';
   static const _kOnboarded = 'onboarded_v1';
 
   AuthSession? _session;
@@ -55,6 +64,7 @@ class AuthService extends ChangeNotifier {
         userId: userId,
         tier: p.getString(_kTier) ?? 'free',
         displayName: p.getString(_kDisplayName),
+        email: p.getString(_kEmail),
       );
       api.setToken(token);
       // Refresh display name + tier from server in background.
@@ -109,7 +119,7 @@ class AuthService extends ChangeNotifier {
       'email': email,
       'password': password,
     });
-    final session = AuthSession.fromJson(res);
+    final session = AuthSession.fromJson({...res, 'email': email});
     await _persist(session);
     _refreshMe();
     return session;
@@ -131,6 +141,7 @@ class AuthService extends ChangeNotifier {
     final session = AuthSession.fromJson({
       ...res,
       'display_name': ?displayName,
+      'email': email,
     });
     await _persist(session);
     _refreshMe();
@@ -153,6 +164,8 @@ class AuthService extends ChangeNotifier {
     await p.remove(_kToken);
     await p.remove(_kUserId);
     await p.remove(_kTier);
+    await p.remove(_kDisplayName);
+    await p.remove(_kEmail);
     _session = null;
     api.setToken(null);
     notifyListeners();
@@ -165,9 +178,8 @@ class AuthService extends ChangeNotifier {
     await p.setString(_kToken, s.token);
     await p.setString(_kUserId, s.userId);
     await p.setString(_kTier, s.tier);
-    if (s.displayName != null) {
-      await p.setString(_kDisplayName, s.displayName!);
-    }
+    if (s.displayName != null) await p.setString(_kDisplayName, s.displayName!);
+    if (s.email != null) await p.setString(_kEmail, s.email!);
     notifyListeners();
   }
 
@@ -182,6 +194,7 @@ class AuthService extends ChangeNotifier {
         userId: _session!.userId,
         tier: tier,
         displayName: displayName,
+        email: (res['email'] as String?) ?? _session!.email,
       );
       await _persist(updated);
     } catch (_) {

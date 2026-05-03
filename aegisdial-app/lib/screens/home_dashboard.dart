@@ -37,10 +37,15 @@ class HomeDashboard extends StatefulWidget {
 class _HomeDashboardState extends State<HomeDashboard> {
   static const _kShieldKey = 'shield_on_v1';
 
+  static const _kPlatformStats = [
+    ('2.4M', 'Calls\nscreened', AegisColors.turquoise),
+    ('847K', 'Scams\nblocked', AegisColors.danger),
+    ('12.8K', 'Breaches\ncaught', AegisColors.warning),
+  ];
+
   bool _shieldOn = true;
-  int _callsAnalyzed = 0;
-  int _scamsBlocked = 0;
-  int _breachesFound = 0;
+  String _statsLabel = 'COMMUNITY IMPACT';
+  List<(String, String, Color)> _displayStats = _kPlatformStats;
   List<_RecentItem> _recentActivity = [];
 
   @override
@@ -69,12 +74,26 @@ class _HomeDashboardState extends State<HomeDashboard> {
     try {
       final res = await api.get('/v1/stats/summary');
       if (!mounted) return;
-      setState(() {
-        _callsAnalyzed = ((res['shields_this_week'] as num?) ?? 0).toInt();
-        _scamsBlocked = ((res['critical_calls_avoided_30d'] as num?) ?? 0).toInt();
-        _breachesFound = ((res['breaches_found_30d'] as num?) ?? 0).toInt();
-      });
+      final calls = ((res['shields_this_week'] as num?) ?? 0).toInt();
+      final scams = ((res['critical_calls_avoided_30d'] as num?) ?? 0).toInt();
+      final breaches = ((res['breaches_found_30d'] as num?) ?? 0).toInt();
+      if (calls > 0 || scams > 0 || breaches > 0) {
+        setState(() {
+          _statsLabel = 'MY STATS';
+          _displayStats = [
+            (_fmtNum(calls), 'Calls\nscreened', AegisColors.turquoise),
+            (_fmtNum(scams), 'Scams\nblocked', AegisColors.danger),
+            (_fmtNum(breaches), 'Breaches\ncaught', AegisColors.warning),
+          ];
+        });
+      }
     } catch (_) {}
+  }
+
+  static String _fmtNum(int n) {
+    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+    if (n >= 1000) return '${(n / 1000).toStringAsFixed(0)}K';
+    return '$n';
   }
 
   Future<void> _loadActivity() async {
@@ -185,9 +204,15 @@ class _HomeDashboardState extends State<HomeDashboard> {
           ),
         ),
         SafeArea(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
-            children: [
+          child: RefreshIndicator(
+            color: AegisColors.turquoise,
+            backgroundColor: AegisColors.surface,
+            onRefresh: () async {
+              await Future.wait([_loadStats(), _loadActivity()]);
+            },
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              children: [
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
@@ -324,13 +349,35 @@ class _HomeDashboardState extends State<HomeDashboard> {
                         ),
                       );
                     },
-                    child: CircleAvatar(
-                      radius: 22,
-                      backgroundColor: AegisColors.surface,
-                      child: Icon(
-                        Icons.notifications_none_rounded,
-                        color: AegisColors.textPrimary.withValues(alpha: 0.85),
-                      ),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        CircleAvatar(
+                          radius: 22,
+                          backgroundColor: AegisColors.surface,
+                          child: Icon(
+                            Icons.notifications_none_rounded,
+                            color: AegisColors.textPrimary.withValues(alpha: 0.85),
+                          ),
+                        ),
+                        if (_recentActivity.isNotEmpty)
+                          Positioned(
+                            top: 2,
+                            right: 2,
+                            child: Container(
+                              width: 10,
+                              height: 10,
+                              decoration: BoxDecoration(
+                                color: AegisColors.danger,
+                                shape: BoxShape.circle,
+                                border: Border.all(
+                                  color: AegisColors.background,
+                                  width: 1.5,
+                                ),
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
                 ],
@@ -601,35 +648,107 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 ),
               ),
               const SizedBox(height: 20),
-              Row(
-                children: [
-                  _StatTile(
-                    value: _callsAnalyzed,
-                    label: 'Calls\nanalyzed',
-                    color: AegisColors.turquoise,
-                  ),
-                  const SizedBox(width: 10),
-                  _StatTile(
-                    value: _scamsBlocked,
-                    label: 'Scams\nblocked',
-                    color: AegisColors.danger,
-                  ),
-                  const SizedBox(width: 10),
-                  _StatTile(
-                    value: _breachesFound,
-                    label: 'Breaches\nfound',
-                    color: AegisColors.warning,
-                  ),
-                ],
-              ),
-              const SizedBox(height: 24),
               Text(
-                'RECENT ACTIVITY',
+                _statsLabel,
                 style: tt.labelSmall?.copyWith(
                   color: AegisColors.textTertiary,
                   letterSpacing: 1.6,
                   fontWeight: FontWeight.w600,
                 ),
+              ),
+              const SizedBox(height: 10),
+              Row(
+                children: [
+                  for (int i = 0; i < _displayStats.length; i++) ...[
+                    if (i > 0) const SizedBox(width: 10),
+                    _StatTile(
+                      displayValue: _displayStats[i].$1,
+                      label: _displayStats[i].$2,
+                      color: _displayStats[i].$3,
+                    ),
+                  ],
+                ],
+              ),
+              const SizedBox(height: 24),
+              Row(
+                children: [
+                  Text(
+                    'RECENT ACTIVITY',
+                    style: tt.labelSmall?.copyWith(
+                      color: AegisColors.textTertiary,
+                      letterSpacing: 1.6,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const Spacer(),
+                  GestureDetector(
+                    onTap: () => showModalBottomSheet(
+                      context: context,
+                      backgroundColor: AegisColors.surface,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+                      ),
+                      builder: (_) => Padding(
+                        padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Browse Activity',
+                              style: Theme.of(context).textTheme.titleLarge?.copyWith(
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            const SizedBox(height: 16),
+                            _SeeAllTile(
+                              icon: Icons.sms_failed_outlined,
+                              title: 'SMS Scan History',
+                              subtitle: 'View all scanned messages',
+                              color: AegisColors.turquoise,
+                              onTap: () {
+                                Navigator.of(context).pop();
+                                Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) => const CoverageScreen(),
+                                ));
+                              },
+                            ),
+                            const SizedBox(height: 10),
+                            _SeeAllTile(
+                              icon: Icons.fingerprint_rounded,
+                              title: 'Breach Monitor',
+                              subtitle: 'View all detected exposures',
+                              color: AegisColors.blueAccent,
+                              onTap: () {
+                                Navigator.of(context).pop();
+                                Navigator.of(context).push(MaterialPageRoute(
+                                  builder: (_) => const BreachScreen(),
+                                ));
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        Text(
+                          'See all',
+                          style: tt.labelSmall?.copyWith(
+                            color: AegisColors.turquoise,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        const SizedBox(width: 2),
+                        const Icon(
+                          Icons.chevron_right_rounded,
+                          color: AegisColors.turquoise,
+                          size: 14,
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ),
               const SizedBox(height: 10),
               if (_recentActivity.isEmpty) ...[
@@ -670,16 +789,17 @@ class _HomeDashboardState extends State<HomeDashboard> {
             ],
           ),
         ),
+        ),
       ],
     );
   }
 }
 
 class _StatTile extends StatelessWidget {
-  final int value;
+  final String displayValue;
   final String label;
   final Color color;
-  const _StatTile({required this.value, required this.label, required this.color});
+  const _StatTile({required this.displayValue, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -695,10 +815,10 @@ class _StatTile extends StatelessWidget {
         child: Column(
           children: [
             Text(
-              value == 0 ? '—' : '$value',
+              displayValue,
               style: tt.headlineSmall?.copyWith(
                 fontWeight: FontWeight.w800,
-                color: value == 0 ? AegisColors.textTertiary : color,
+                color: color,
                 height: 1,
               ),
             ),
@@ -840,6 +960,68 @@ class _ActivityTile extends StatelessWidget {
             ],
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SeeAllTile extends StatelessWidget {
+  final IconData icon;
+  final String title;
+  final String subtitle;
+  final Color color;
+  final VoidCallback onTap;
+  const _SeeAllTile({
+    required this.icon,
+    required this.title,
+    required this.subtitle,
+    required this.color,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(12),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: onTap,
+        child: Container(
+          padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
+          decoration: BoxDecoration(
+            color: AegisColors.surfaceElevated,
+            borderRadius: BorderRadius.circular(12),
+          ),
+          child: Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: color.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Icon(icon, color: color, size: 18),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(title,
+                        style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+                    Text(subtitle,
+                        style: tt.bodySmall
+                            ?.copyWith(color: AegisColors.textTertiary)),
+                  ],
+                ),
+              ),
+              const Icon(Icons.chevron_right_rounded,
+                  color: AegisColors.textTertiary, size: 18),
+            ],
+          ),
+        ),
       ),
     );
   }

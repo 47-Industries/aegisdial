@@ -217,10 +217,12 @@ class SettingsScreen extends StatelessWidget {
           ListenableBuilder(
             listenable: auth,
             builder: (context, _) {
-              final name = auth.session?.displayName ??
-                  (auth.session?.userId == 'guest' ? 'Guest' : 'Your Account');
+              final session = auth.session;
+              final name = session?.displayName ??
+                  (session?.userId == 'guest' ? 'Guest' : 'Your Account');
               final initial = name.isNotEmpty ? name[0].toUpperCase() : '?';
-              final isGuest = auth.session?.userId == 'guest';
+              final isGuest = session?.userId == 'guest';
+              final email = session?.email;
               return GlassCard(
                 onTap: () => _showInfo(
                   context,
@@ -257,12 +259,20 @@ class SettingsScreen extends StatelessWidget {
                               fontWeight: FontWeight.w700,
                             ),
                           ),
-                          Text(
-                            isGuest ? 'Guest session' : 'Tap to manage profile',
-                            style: tt.bodySmall?.copyWith(
-                              color: AegisColors.textTertiary,
+                          if (email != null && email.isNotEmpty)
+                            Text(
+                              email,
+                              style: tt.bodySmall?.copyWith(
+                                color: AegisColors.textSecondary,
+                              ),
+                            )
+                          else
+                            Text(
+                              isGuest ? 'Guest session' : 'Tap to manage profile',
+                              style: tt.bodySmall?.copyWith(
+                                color: AegisColors.textTertiary,
+                              ),
                             ),
-                          ),
                         ],
                       ),
                     ),

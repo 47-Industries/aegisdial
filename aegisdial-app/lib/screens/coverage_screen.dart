@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -536,17 +537,7 @@ class _ScanResultCard extends StatelessWidget {
                 ),
               ),
               const Spacer(),
-              Text(
-                '${result.score}%',
-                style: tt.headlineSmall?.copyWith(
-                  color: result.color,
-                  fontWeight: FontWeight.w800,
-                ),
-              ),
-              Text(
-                ' fraud score',
-                style: tt.bodySmall?.copyWith(color: AegisColors.textTertiary),
-              ),
+              _RiskGauge(score: result.score, color: result.color),
             ],
           ),
           const SizedBox(height: 10),
@@ -884,4 +875,85 @@ class _Toggle extends StatelessWidget {
       ),
     );
   }
+}
+
+class _RiskGauge extends StatelessWidget {
+  final int score;
+  final Color color;
+  const _RiskGauge({required this.score, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 68,
+      height: 68,
+      child: CustomPaint(
+        painter: _RiskGaugePainter(progress: score / 100.0, color: color),
+        child: Center(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                '$score',
+                style: TextStyle(
+                  color: color,
+                  fontSize: 20,
+                  fontWeight: FontWeight.w800,
+                  height: 1,
+                ),
+              ),
+              Text(
+                '%',
+                style: TextStyle(
+                  color: color.withValues(alpha: 0.65),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RiskGaugePainter extends CustomPainter {
+  final double progress;
+  final Color color;
+  _RiskGaugePainter({required this.progress, required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2 - 5;
+    const start = -math.pi / 2;
+
+    canvas.drawCircle(
+      center,
+      radius,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 5.5
+        ..color = color.withValues(alpha: 0.15),
+    );
+
+    if (progress > 0) {
+      canvas.drawArc(
+        Rect.fromCircle(center: center, radius: radius),
+        start,
+        2 * math.pi * progress,
+        false,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 5.5
+          ..strokeCap = StrokeCap.round
+          ..color = color,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _RiskGaugePainter old) =>
+      old.progress != progress || old.color != color;
 }
