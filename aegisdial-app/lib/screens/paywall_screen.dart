@@ -1,15 +1,47 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../services/purchase_service.dart';
 
 enum PaywallReason { trialExpired, dailyLimitReached }
 
-class PaywallScreen extends StatelessWidget {
+class PaywallScreen extends StatefulWidget {
   final PaywallReason reason;
   const PaywallScreen({super.key, required this.reason});
 
   @override
+  State<PaywallScreen> createState() => _PaywallScreenState();
+}
+
+class _PaywallScreenState extends State<PaywallScreen> {
+  String? _purchasing;
+  bool _restoring = false;
+
+  Future<void> _buy(String productId) async {
+    setState(() => _purchasing = productId);
+    final ok = await PurchaseService.purchaseProduct(productId);
+    if (!mounted) return;
+    setState(() => _purchasing = null);
+    if (ok) Navigator.of(context).pop(true);
+  }
+
+  Future<void> _restore() async {
+    setState(() => _restoring = true);
+    final ok = await PurchaseService.restorePurchases();
+    if (!mounted) return;
+    setState(() => _restoring = false);
+    if (ok) {
+      Navigator.of(context).pop(true);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No active purchases found.')),
+      );
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final busy = _purchasing != null || _restoring;
     return Scaffold(
       backgroundColor: AegisColors.background,
       body: SafeArea(
@@ -24,15 +56,11 @@ class PaywallScreen extends StatelessWidget {
                   shape: BoxShape.circle,
                   gradient: AegisColors.heroGradient,
                 ),
-                child: const Icon(
-                  Icons.shield_moon,
-                  size: 36,
-                  color: Colors.black,
-                ),
+                child: const Icon(Icons.shield_moon, size: 36, color: Colors.black),
               ),
               const SizedBox(height: 20),
               Text(
-                reason == PaywallReason.trialExpired
+                widget.reason == PaywallReason.trialExpired
                     ? 'Your free trial has ended'
                     : "You've used today's free messages",
                 style: tt.headlineSmall?.copyWith(
@@ -43,7 +71,7 @@ class PaywallScreen extends StatelessWidget {
               ),
               const SizedBox(height: 10),
               Text(
-                reason == PaywallReason.trialExpired
+                widget.reason == PaywallReason.trialExpired
                     ? 'Keep your protection active. Choose a plan to continue.'
                     : 'Free trial includes 10 messages per day. Upgrade for unlimited access.',
                 style: tt.bodyMedium?.copyWith(
@@ -60,7 +88,9 @@ class PaywallScreen extends StatelessWidget {
                 period: '/year',
                 detail: 'Save \$300 vs monthly · Unlimited everything',
                 accent: AegisColors.turquoise,
-                onTap: () => Navigator.of(context).pop(true),
+                loading: _purchasing == kProductProAnnual,
+                disabled: busy,
+                onTap: () => _buy(kProductProAnnual),
               ),
               const SizedBox(height: 12),
               _PlanCard(
@@ -69,7 +99,9 @@ class PaywallScreen extends StatelessWidget {
                 period: '/month',
                 detail: 'Unlimited calls, scans, recovery sessions',
                 accent: AegisColors.blue,
-                onTap: () => Navigator.of(context).pop(true),
+                loading: _purchasing == kProductProMonthly,
+                disabled: busy,
+                onTap: () => _buy(kProductProMonthly),
               ),
               const SizedBox(height: 12),
               _PlanCard(
@@ -78,29 +110,35 @@ class PaywallScreen extends StatelessWidget {
                 period: ' one-time',
                 detail: 'AI-guided recovery + 30-day Pro included',
                 accent: AegisColors.danger,
-                onTap: () => Navigator.of(context).pop(true),
+                loading: _purchasing == kProductRecoverySession,
+                disabled: busy,
+                onTap: () => _buy(kProductRecoverySession),
               ),
               const SizedBox(height: 28),
               TextButton(
-                onPressed: () => Navigator.of(context).pop(false),
-                child: Text(
-                  'Restore Purchase',
-                  style: tt.bodySmall?.copyWith(
-                    color: AegisColors.textTertiary,
-                    decoration: TextDecoration.underline,
-                    decorationColor: AegisColors.textTertiary,
-                  ),
-                ),
+                onPressed: busy ? null : _restore,
+                child: _restoring
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : Text(
+                        'Restore Purchase',
+                        style: tt.bodySmall?.copyWith(
+                          color: AegisColors.textTertiary,
+                          decoration: TextDecoration.underline,
+                          decorationColor: AegisColors.textTertiary,
+                        ),
+                      ),
               ),
               const SizedBox(height: 8),
-              if (reason == PaywallReason.dailyLimitReached)
+              if (widget.reason == PaywallReason.dailyLimitReached)
                 TextButton(
-                  onPressed: () => Navigator.of(context).pop(false),
+                  onPressed: busy ? null : () => Navigator.of(context).pop(false),
                   child: Text(
                     'Continue with free tier',
-                    style: tt.bodySmall?.copyWith(
-                      color: AegisColors.textTertiary,
-                    ),
+                    style: tt.bodySmall?.copyWith(color: AegisColors.textTertiary),
                   ),
                 ),
               const SizedBox(height: 12),
@@ -127,6 +165,8 @@ class _PlanCard extends StatelessWidget {
   final String period;
   final String detail;
   final Color accent;
+  final bool loading;
+  final bool disabled;
   final VoidCallback onTap;
 
   const _PlanCard({
@@ -136,6 +176,8 @@ class _PlanCard extends StatelessWidget {
     required this.period,
     required this.detail,
     required this.accent,
+    required this.loading,
+    required this.disabled,
     required this.onTap,
   });
 
@@ -147,107 +189,115 @@ class _PlanCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(18),
       child: InkWell(
         borderRadius: BorderRadius.circular(18),
-        onTap: onTap,
-        child: Container(
-          padding: const EdgeInsets.all(18),
-          decoration: BoxDecoration(
-            color: AegisColors.surface,
-            borderRadius: BorderRadius.circular(18),
-            border: Border.all(
-              color: badge != null ? accent : AegisColors.border,
-              width: badge != null ? 1.5 : 0.6,
+        onTap: disabled ? null : onTap,
+        child: Opacity(
+          opacity: disabled && !loading ? 0.5 : 1.0,
+          child: Container(
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              color: AegisColors.surface,
+              borderRadius: BorderRadius.circular(18),
+              border: Border.all(
+                color: badge != null ? accent : AegisColors.border,
+                width: badge != null ? 1.5 : 0.6,
+              ),
             ),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Text(
-                      title,
-                      style: tt.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w700,
-                        color: AegisColors.textPrimary,
-                      ),
-                    ),
-                  ),
-                  if (badge != null)
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 8,
-                        vertical: 3,
-                      ),
-                      decoration: BoxDecoration(
-                        color: accent.withValues(alpha: 0.18),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
                       child: Text(
-                        badge!,
-                        style: TextStyle(
-                          color: accent,
-                          fontSize: 10,
+                        title,
+                        style: tt.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
-                          letterSpacing: 0.8,
+                          color: AegisColors.textPrimary,
                         ),
                       ),
                     ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Row(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    price,
-                    style: tt.headlineMedium?.copyWith(
-                      fontWeight: FontWeight.w800,
-                      color: accent,
-                      height: 1,
-                    ),
-                  ),
-                  Padding(
-                    padding: const EdgeInsets.only(bottom: 3),
-                    child: Text(
-                      period,
-                      style: tt.bodySmall?.copyWith(
-                        color: AegisColors.textSecondary,
+                    if (badge != null)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                        decoration: BoxDecoration(
+                          color: accent.withValues(alpha: 0.18),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          badge!,
+                          style: TextStyle(
+                            color: accent,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.8,
+                          ),
+                        ),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Text(
+                      price,
+                      style: tt.headlineMedium?.copyWith(
+                        fontWeight: FontWeight.w800,
+                        color: accent,
+                        height: 1,
                       ),
                     ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 6),
-              Text(
-                detail,
-                style: tt.bodySmall?.copyWith(
-                  color: AegisColors.textSecondary,
-                  height: 1.4,
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 3),
+                      child: Text(
+                        period,
+                        style: tt.bodySmall?.copyWith(color: AegisColors.textSecondary),
+                      ),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 14),
-              SizedBox(
-                width: double.infinity,
-                child: ElevatedButton(
-                  onPressed: onTap,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: accent,
-                    foregroundColor: Colors.black,
-                    padding: const EdgeInsets.symmetric(vertical: 14),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    title == 'Recovery Session' ? 'Start Session' : 'Start Plan',
-                    style: const TextStyle(
-                      fontWeight: FontWeight.w700,
-                      fontSize: 15,
-                    ),
+                const SizedBox(height: 6),
+                Text(
+                  detail,
+                  style: tt.bodySmall?.copyWith(
+                    color: AegisColors.textSecondary,
+                    height: 1.4,
                   ),
                 ),
-              ),
-            ],
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: disabled ? null : onTap,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: accent,
+                      foregroundColor: Colors.black,
+                      disabledBackgroundColor: accent.withValues(alpha: 0.4),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: loading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2.5,
+                              color: Colors.black,
+                            ),
+                          )
+                        : Text(
+                            title == 'Recovery Session' ? 'Start Session' : 'Start Plan',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),

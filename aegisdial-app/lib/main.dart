@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'theme/app_theme.dart';
 import 'services/auth_service.dart';
 import 'services/trial_service.dart';
+import 'services/purchase_service.dart';
 import 'screens/splash_screen.dart';
 
 void main() async {
@@ -17,6 +18,7 @@ void main() async {
   );
   await auth.boot();
   await TrialService.ensureStarted();
+  await PurchaseService.initialize();
   runApp(const AegisDialApp());
 }
 
