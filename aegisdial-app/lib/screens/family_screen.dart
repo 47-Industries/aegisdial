@@ -9,11 +9,12 @@ import '../services/purchase_service.dart';
 class _FamilyMember {
   final String name;
   final String relation;
-  const _FamilyMember(this.name, this.relation);
+  final String phone;
+  const _FamilyMember(this.name, this.relation, {this.phone = ''});
 
-  Map<String, dynamic> toJson() => {'n': name, 'r': relation};
+  Map<String, dynamic> toJson() => {'n': name, 'r': relation, 'p': phone};
   factory _FamilyMember.fromJson(Map<String, dynamic> j) =>
-      _FamilyMember(j['n'] as String, j['r'] as String);
+      _FamilyMember(j['n'] as String, j['r'] as String, phone: (j['p'] as String?) ?? '');
 }
 
 class FamilyScreen extends StatefulWidget {
@@ -513,24 +514,9 @@ class _MemberExposureTile extends StatelessWidget {
   final _FamilyMember member;
   const _MemberExposureTile({required this.member});
 
-  static int _nameHash(String name) {
-    var h = 5381;
-    for (final c in name.codeUnits) {
-      h = ((h << 5) + h + c) & 0x7FFFFFFF;
-    }
-    return h;
-  }
-
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
-    final h = _nameHash(member.name);
-    final callsBlocked = 1 + (h % 11);
-    final textsDeleted = h % 9;
-    final breachCount = h % 4;
-    final daysAgo = 3 + ((h >> 4) % 25);
-    final lastAttempt = daysAgo == 1 ? '1 day ago' : '$daysAgo days ago';
-
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 14),
@@ -538,56 +524,31 @@ class _MemberExposureTile extends StatelessWidget {
         color: AegisColors.surfaceElevated,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+      child: Row(
         children: [
-          Row(
-            children: [
-              Expanded(
-                child: Text(
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
                   member.name,
-                  style: tt.bodyMedium?.copyWith(
-                    fontWeight: FontWeight.w600,
+                  style: tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  member.relation,
+                  style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
+                ),
+                if (member.phone.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    member.phone,
+                    style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
                   ),
-                ),
-              ),
-              Text(
-                member.relation,
-                style: tt.labelSmall?.copyWith(
-                  color: AegisColors.textTertiary,
-                ),
-              ),
-            ],
+                ],
+              ],
+            ),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: _ExposureStat(
-                  icon: Icons.phone_disabled_rounded,
-                  label: 'Calls blocked',
-                  value: '$callsBlocked',
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _ExposureStat(
-                  icon: Icons.delete_sweep_outlined,
-                  label: 'Texts deleted',
-                  value: '$textsDeleted',
-                ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: _ExposureStat(
-                  icon: Icons.fingerprint_rounded,
-                  label: 'Breaches',
-                  value: '$breachCount',
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 10),
           Row(
             children: [
               Container(
@@ -600,10 +561,8 @@ class _MemberExposureTile extends StatelessWidget {
               ),
               const SizedBox(width: 6),
               Text(
-                'Protected · last attempt: $lastAttempt',
-                style: tt.labelSmall?.copyWith(
-                  color: AegisColors.textTertiary,
-                ),
+                'Protected',
+                style: tt.labelSmall?.copyWith(color: AegisColors.success, fontWeight: FontWeight.w600),
               ),
             ],
           ),
@@ -613,50 +572,6 @@ class _MemberExposureTile extends StatelessWidget {
   }
 }
 
-class _ExposureStat extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final String value;
-  const _ExposureStat({
-    required this.icon,
-    required this.label,
-    required this.value,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    return Container(
-      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 10),
-      decoration: BoxDecoration(
-        color: AegisColors.surface.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AegisColors.border, width: 0.6),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Icon(icon, color: AegisColors.turquoise, size: 14),
-          const SizedBox(height: 6),
-          Text(
-            value,
-            style: tt.titleMedium?.copyWith(
-              color: AegisColors.textPrimary,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          Text(
-            label,
-            style: tt.labelSmall?.copyWith(
-              color: AegisColors.textTertiary,
-              height: 1.2,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
 
 class _AddSlot extends StatelessWidget {
   final String label;
@@ -712,11 +627,13 @@ class _AddMemberSheet extends StatefulWidget {
 class _AddMemberSheetState extends State<_AddMemberSheet> {
   final _name = TextEditingController();
   final _relation = TextEditingController();
+  final _phone = TextEditingController();
 
   @override
   void dispose() {
     _name.dispose();
     _relation.dispose();
+    _phone.dispose();
     super.dispose();
   }
 
@@ -751,6 +668,15 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
               border: OutlineInputBorder(),
             ),
           ),
+          const SizedBox(height: 12),
+          TextField(
+            controller: _phone,
+            keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(
+              labelText: 'Phone number (optional)',
+              border: OutlineInputBorder(),
+            ),
+          ),
           const SizedBox(height: 16),
           ElevatedButton(
             onPressed: () {
@@ -759,6 +685,7 @@ class _AddMemberSheetState extends State<_AddMemberSheet> {
               Navigator.of(context).pop(_FamilyMember(
                 name,
                 _relation.text.trim().isEmpty ? 'Family' : _relation.text.trim(),
+                phone: _phone.text.trim(),
               ));
             },
             child: const Text('Add'),
@@ -890,7 +817,21 @@ class _SafeWordSetupSheetState extends State<_SafeWordSetupSheet> {
   }
 
   Future<void> _startListening() async {
-    if (!_sttAvailable) return;
+    if (!_sttAvailable) {
+      final available = await _stt.initialize();
+      if (mounted) setState(() => _sttAvailable = available);
+      if (!available) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Microphone access required — enable in Settings > AegisDial.'),
+              duration: Duration(seconds: 4),
+            ),
+          );
+        }
+        return;
+      }
+    }
     setState(() {
       _listening = true;
       _heard = '';
