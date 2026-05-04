@@ -164,17 +164,8 @@ class _BreachScreenState extends State<BreachScreen> {
 
     final newExposures = <_Exposure>[];
 
-    // SSN and Name never leave the device — local mock only.
     if (id.type == _IdentifierType.ssn) {
-      await Future.delayed(const Duration(seconds: 2));
-      newExposures.add(_Exposure(
-        title: 'SSN partial match on dark-web forum',
-        source: 'BreachForums dump · 1.4M records',
-        date: '2025-11',
-        icon: Icons.travel_explore_rounded,
-        severity: 'critical',
-        dataTypes: const ['SSN', 'personal identifiers'],
-      ));
+      // SSN never leaves the device — no remote check available yet
     } else if (id.type == _IdentifierType.name) {
       await Future.delayed(const Duration(seconds: 1));
       // Names aren't a breach signal — show clean result
@@ -213,23 +204,7 @@ class _BreachScreenState extends State<BreachScreen> {
           // Network error — show nothing rather than fake data
         }
       } else {
-        // Guest: local mock
-        await Future.delayed(const Duration(seconds: 2));
-        if (id.type == _IdentifierType.email) {
-          newExposures.add(_Exposure(
-            title: '${id.value} found in breach corpus',
-            source: 'Collection #1 — credentials + hashed password',
-            date: '2024-08',
-            icon: Icons.cloud_off_rounded,
-          ));
-        } else {
-          newExposures.add(_Exposure(
-            title: 'Phone on scam-call list',
-            source: 'FCC robocall index · reported 23×',
-            date: '2025-03',
-            icon: Icons.phone_disabled_rounded,
-          ));
-        }
+        // Guest — no results until signed in
       }
     }
 
@@ -245,6 +220,7 @@ class _BreachScreenState extends State<BreachScreen> {
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final isGuest = auth.session == null || auth.session?.userId == 'guest';
     final visibleExposures = _exposures.where((e) => !e.dismissed).toList();
 
     return Scaffold(
@@ -342,18 +318,22 @@ class _BreachScreenState extends State<BreachScreen> {
               ),
               child: Column(
                 children: [
-                  const Icon(Icons.verified_user_outlined,
-                      color: AegisColors.success, size: 32),
+                  Icon(
+                    isGuest ? Icons.lock_outline_rounded : Icons.verified_user_outlined,
+                    color: isGuest ? AegisColors.textTertiary : AegisColors.success,
+                    size: 32,
+                  ),
                   const SizedBox(height: 10),
                   Text(
-                    'No exposures found.',
-                    style: tt.bodyMedium
-                        ?.copyWith(color: AegisColors.textSecondary),
+                    isGuest ? 'Sign in to check breaches' : 'No exposures found.',
+                    style: tt.bodyMedium?.copyWith(color: AegisColors.textSecondary),
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    'When your details surface, the exact source appears here.',
+                    isGuest
+                        ? 'Create a free account to scan your email and phone against real breach databases.'
+                        : 'When your details surface, the exact source appears here.',
                     style: tt.bodySmall?.copyWith(
                       color: AegisColors.textTertiary,
                       height: 1.4,
