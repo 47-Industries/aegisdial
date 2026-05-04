@@ -7,6 +7,7 @@ import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../widgets/aegis_logo.dart';
 import 'home_shell.dart';
+import 'onboarding_screen.dart';
 import 'email_auth_screen.dart';
 
 class AuthScreen extends StatefulWidget {
@@ -25,12 +26,15 @@ class _AuthScreenState extends State<AuthScreen> {
       (defaultTargetPlatform == TargetPlatform.iOS ||
           defaultTargetPlatform == TargetPlatform.macOS);
 
-  void _enter() {
+  Future<void> _enter() async {
     if (!mounted) return;
+    final seen = await tutorialSeen();
+    if (!mounted) return;
+    final next = seen ? const HomeShell() : const OnboardingScreen();
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 500),
-        pageBuilder: (context, anim, secondary) => const HomeShell(),
+        pageBuilder: (context, anim, secondary) => next,
         transitionsBuilder: (context, anim, secondary, child) {
           return FadeTransition(opacity: anim, child: child);
         },

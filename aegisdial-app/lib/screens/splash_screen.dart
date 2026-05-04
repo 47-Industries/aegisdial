@@ -5,6 +5,7 @@ import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
 import 'welcome_screen.dart';
 import 'home_shell.dart';
+import 'onboarding_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -86,7 +87,14 @@ class _SplashScreenState extends State<SplashScreen>
   Future<void> _route() async {
     await Future.delayed(const Duration(milliseconds: 2400));
     if (!mounted) return;
-    final next = auth.isSignedIn ? const HomeShell() : const WelcomeScreen();
+    Widget next;
+    if (auth.isSignedIn) {
+      final seen = await tutorialSeen();
+      next = seen ? const HomeShell() : const OnboardingScreen();
+    } else {
+      next = const WelcomeScreen();
+    }
+    if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 700),
