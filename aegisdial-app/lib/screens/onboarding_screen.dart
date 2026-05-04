@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
+import '../services/auth_service.dart';
 import '../widgets/hyperspace_stars.dart';
 import 'home_shell.dart';
 
@@ -104,7 +105,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
   }
 
   Future<void> _finish() async {
-    await markTutorialSeen();
+    if (auth.session?.userId != 'guest') await markTutorialSeen();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(

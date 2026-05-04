@@ -28,7 +28,8 @@ class _AuthScreenState extends State<AuthScreen> {
 
   Future<void> _enter() async {
     if (!mounted) return;
-    final seen = await tutorialSeen();
+    final isGuest = auth.session?.userId == 'guest';
+    final seen = isGuest ? false : await tutorialSeen();
     if (!mounted) return;
     final next = seen ? const HomeShell() : const OnboardingScreen();
     Navigator.of(context).pushReplacement(
