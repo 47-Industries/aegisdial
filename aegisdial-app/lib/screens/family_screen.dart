@@ -10,11 +10,32 @@ class _FamilyMember {
   final String name;
   final String relation;
   final String phone;
-  const _FamilyMember(this.name, this.relation, {this.phone = ''});
+  bool consentAccepted;
+  bool showActivity;
 
-  Map<String, dynamic> toJson() => {'n': name, 'r': relation, 'p': phone};
-  factory _FamilyMember.fromJson(Map<String, dynamic> j) =>
-      _FamilyMember(j['n'] as String, j['r'] as String, phone: (j['p'] as String?) ?? '');
+  _FamilyMember(
+    this.name,
+    this.relation, {
+    this.phone = '',
+    this.consentAccepted = false,
+    this.showActivity = true,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'n': name,
+        'r': relation,
+        'p': phone,
+        'ca': consentAccepted,
+        'sa': showActivity,
+      };
+
+  factory _FamilyMember.fromJson(Map<String, dynamic> j) => _FamilyMember(
+        j['n'] as String,
+        j['r'] as String,
+        phone: (j['p'] as String?) ?? '',
+        consentAccepted: (j['ca'] as bool?) ?? false,
+        showActivity: (j['sa'] as bool?) ?? true,
+      );
 }
 
 class FamilyScreen extends StatefulWidget {
@@ -248,6 +269,14 @@ class _FamilyScreenState extends State<FamilyScreen> {
                     setState(() => _members.remove(m));
                     _saveState();
                   },
+                  onAccept: () {
+                    setState(() => m.consentAccepted = true);
+                    _saveState();
+                  },
+                  onToggleActivity: () {
+                    setState(() => m.showActivity = !m.showActivity);
+                    _saveState();
+                  },
                 )),
           if (_members.length < _maxLines) ...[
             const SizedBox(height: 8),
@@ -442,7 +471,14 @@ class _GuardianEmpty extends StatelessWidget {
 class _MemberTile extends StatelessWidget {
   final _FamilyMember member;
   final VoidCallback? onRemove;
-  const _MemberTile({required this.member, this.onRemove});
+  final VoidCallback? onAccept;
+  final VoidCallback? onToggleActivity;
+  const _MemberTile({
+    required this.member,
+    this.onRemove,
+    this.onAccept,
+    this.onToggleActivity,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -456,54 +492,117 @@ class _MemberTile extends StatelessWidget {
       decoration: BoxDecoration(
         color: AegisColors.surface.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AegisColors.border, width: 0.6),
+        border: Border.all(
+          color: member.consentAccepted ? AegisColors.border : AegisColors.warning.withValues(alpha: 0.4),
+          width: 0.6,
+        ),
       ),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 42,
-            height: 42,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              gradient: AegisColors.heroGradient,
-            ),
-            alignment: Alignment.center,
-            child: Text(
-              initials,
-              style: const TextStyle(
-                color: Colors.black,
-                fontWeight: FontWeight.w700,
-                fontSize: 16,
-              ),
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  member.name,
-                  style: tt.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+          Row(
+            children: [
+              Container(
+                width: 42,
+                height: 42,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: AegisColors.heroGradient,
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  member.relation,
-                  style: tt.labelSmall?.copyWith(
+                alignment: Alignment.center,
+                child: Text(
+                  initials,
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontWeight: FontWeight.w700,
+                    fontSize: 16,
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      member.name,
+                      style: tt.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      member.relation + (member.phone.isNotEmpty ? ' · ${member.phone}' : ''),
+                      style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
+                    ),
+                  ],
+                ),
+              ),
+              if (member.consentAccepted)
+                IconButton(
+                  icon: Icon(
+                    member.showActivity ? Icons.visibility_outlined : Icons.visibility_off_outlined,
                     color: AegisColors.textTertiary,
+                    size: 18,
+                  ),
+                  onPressed: onToggleActivity,
+                  tooltip: member.showActivity ? 'Hide activity' : 'Show activity',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(),
+                ),
+              const SizedBox(width: 8),
+              IconButton(
+                icon: const Icon(Icons.remove_circle_outline_rounded,
+                    color: AegisColors.textTertiary, size: 20),
+                onPressed: onRemove,
+                tooltip: 'Remove',
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+          if (!member.consentAccepted) ...[
+            const SizedBox(height: 10),
+            Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AegisColors.warning.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    'INVITE PENDING',
+                    style: tt.labelSmall?.copyWith(
+                      color: AegisColors.warning,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Waiting for ${member.name} to accept monitoring',
+                    style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
+                  ),
+                ),
+                TextButton(
+                  onPressed: onAccept,
+                  style: TextButton.styleFrom(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    minimumSize: Size.zero,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                  ),
+                  child: Text(
+                    'Mark accepted',
+                    style: tt.labelSmall?.copyWith(
+                      color: AegisColors.turquoise,
+                      fontWeight: FontWeight.w600,
+                    ),
                   ),
                 ),
               ],
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.remove_circle_outline_rounded,
-                color: AegisColors.textTertiary, size: 20),
-            onPressed: onRemove,
-            tooltip: 'Remove',
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(),
-          ),
+          ],
         ],
       ),
     );
@@ -539,33 +638,33 @@ class _MemberExposureTile extends StatelessWidget {
                   member.relation,
                   style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
                 ),
-                if (member.phone.isNotEmpty) ...[
-                  const SizedBox(height: 2),
-                  Text(
-                    member.phone,
-                    style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
-                  ),
-                ],
               ],
             ),
           ),
-          Row(
-            children: [
+          if (!member.consentAccepted)
+            Row(children: [
+              const Icon(Icons.hourglass_empty_rounded, size: 13, color: AegisColors.warning),
+              const SizedBox(width: 5),
+              Text('Invite pending',
+                  style: tt.labelSmall?.copyWith(color: AegisColors.warning, fontWeight: FontWeight.w600)),
+            ])
+          else if (!member.showActivity)
+            Row(children: [
+              const Icon(Icons.visibility_off_outlined, size: 13, color: AegisColors.textTertiary),
+              const SizedBox(width: 5),
+              Text('Hidden',
+                  style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary)),
+            ])
+          else
+            Row(children: [
               Container(
-                width: 6,
-                height: 6,
-                decoration: const BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: AegisColors.success,
-                ),
+                width: 6, height: 6,
+                decoration: const BoxDecoration(shape: BoxShape.circle, color: AegisColors.success),
               ),
               const SizedBox(width: 6),
-              Text(
-                'Protected',
-                style: tt.labelSmall?.copyWith(color: AegisColors.success, fontWeight: FontWeight.w600),
-              ),
-            ],
-          ),
+              Text('Protected',
+                  style: tt.labelSmall?.copyWith(color: AegisColors.success, fontWeight: FontWeight.w600)),
+            ]),
         ],
       ),
     );
@@ -783,6 +882,7 @@ class _SafeWordSetupSheetState extends State<_SafeWordSetupSheet> {
   bool _listening = false;
   String _heard = '';
   bool _voiceConfirmed = false;
+  bool _attempted = false;
 
   @override
   void initState() {
@@ -822,6 +922,7 @@ class _SafeWordSetupSheetState extends State<_SafeWordSetupSheet> {
       if (mounted) setState(() => _sttAvailable = available);
       if (!available) {
         if (mounted) {
+          setState(() => _attempted = true);
           ScaffoldMessenger.of(context).showSnackBar(
             const SnackBar(
               content: Text('Microphone access required — enable in Settings > AegisDial.'),
@@ -836,6 +937,7 @@ class _SafeWordSetupSheetState extends State<_SafeWordSetupSheet> {
       _listening = true;
       _heard = '';
       _voiceConfirmed = false;
+      _attempted = true;
     });
     await _stt.listen(
       onResult: (result) {
@@ -1098,72 +1200,69 @@ class _SafeWordSetupSheetState extends State<_SafeWordSetupSheet> {
           Text(
             _listening
                 ? 'Listening…'
-                : _heard.isEmpty
-                    ? 'Tap to record'
-                    : 'Heard: "$_heard"',
+                : _voiceConfirmed
+                    ? 'Heard: "$_heard"'
+                    : _attempted && _heard.isNotEmpty
+                        ? 'Heard: "$_heard" — didn\'t match, try again or skip'
+                        : _attempted
+                            ? 'Mic didn\'t catch it — try again or skip below'
+                            : 'Tap to record',
             style: tt.bodySmall?.copyWith(
-              color: _voiceConfirmed
-                  ? AegisColors.success
-                  : AegisColors.textTertiary,
+              color: _voiceConfirmed ? AegisColors.success : AegisColors.textTertiary,
               fontWeight: _voiceConfirmed ? FontWeight.w600 : FontWeight.normal,
             ),
+            textAlign: TextAlign.center,
           ),
           if (_voiceConfirmed) ...[
             const SizedBox(height: 6),
             Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.check_circle_rounded,
-                    color: AegisColors.success, size: 16),
+                const Icon(Icons.check_circle_rounded, color: AegisColors.success, size: 16),
                 const SizedBox(width: 6),
-                Text(
-                  'Voice registered',
-                  style: tt.labelSmall?.copyWith(
-                    color: AegisColors.success,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
+                Text('Voice confirmed',
+                    style: tt.labelSmall?.copyWith(color: AegisColors.success, fontWeight: FontWeight.w600)),
               ],
             ),
           ],
-          if (!_sttAvailable)
-            Padding(
-              padding: const EdgeInsets.only(top: 8),
-              child: Text(
-                'Speech recognition unavailable on this device.',
-                style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
-                textAlign: TextAlign.center,
-              ),
-            ),
           const SizedBox(height: 28),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton(
-              onPressed: (_voiceConfirmed || !_sttAvailable)
+              onPressed: (_voiceConfirmed || _attempted || !_sttAvailable)
                   ? () => Navigator.of(context).pop(word)
                   : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AegisColors.turquoise,
                 foregroundColor: Colors.black,
-                disabledBackgroundColor:
-                    AegisColors.turquoise.withValues(alpha: 0.3),
+                disabledBackgroundColor: AegisColors.turquoise.withValues(alpha: 0.3),
                 padding: const EdgeInsets.symmetric(vertical: 14),
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
               ),
-              child: const Text(
-                'Save safe word',
-                style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+              child: Text(
+                _voiceConfirmed ? 'Save safe word' : _attempted ? 'Save anyway' : 'Save safe word',
+                style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
               ),
             ),
           ),
           const SizedBox(height: 8),
-          TextButton(
-            onPressed: () => setState(() => _step = 0),
-            child: Text(
-              '← Change word',
-              style: tt.bodySmall?.copyWith(color: AegisColors.textTertiary),
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              TextButton(
+                onPressed: () => setState(() => _step = 0),
+                child: Text('← Change word',
+                    style: tt.bodySmall?.copyWith(color: AegisColors.textTertiary)),
+              ),
+              if (_attempted && !_voiceConfirmed) ...[
+                Text(' · ', style: tt.bodySmall?.copyWith(color: AegisColors.textTertiary)),
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(word),
+                  child: Text('Skip voice step',
+                      style: tt.bodySmall?.copyWith(color: AegisColors.textTertiary)),
+                ),
+              ],
+            ],
           ),
         ],
       ),
