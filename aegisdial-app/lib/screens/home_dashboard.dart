@@ -340,6 +340,25 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     ],
                   ],
                 ),
+                const SizedBox(height: 20),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(
+                      Icons.lock_outline_rounded,
+                      size: 12,
+                      color: AegisColors.textTertiary,
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      'All analysis stays on your device. We never see your data.',
+                      style: tt.labelSmall?.copyWith(
+                        color: AegisColors.textTertiary,
+                        fontSize: 11,
+                      ),
+                    ),
+                  ],
+                ),
               ],
             ),
           ),
