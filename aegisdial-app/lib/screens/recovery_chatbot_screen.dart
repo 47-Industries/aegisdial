@@ -61,6 +61,9 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   int _daysLeft = TrialService.trialDays;
   int _messagesLeft = TrialService.dailyLimit;
 
+  bool get _isGuest =>
+      auth.session == null || auth.session?.userId == 'guest';
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +92,7 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   }
 
   Future<void> _loadChat() async {
+    if (_isGuest) return;
     final p = await SharedPreferences.getInstance();
     final raw = p.getString(_kChatKey);
     if (raw == null) return;
@@ -109,6 +113,7 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   }
 
   Future<void> _saveChat() async {
+    if (_isGuest) return;
     final p = await SharedPreferences.getInstance();
     final toSave = _messages
         .where((m) => !m.isLimit)
@@ -133,6 +138,18 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   }
 
   Future<void> _loadTrial() async {
+    if (_isGuest) {
+      // Guests always see a clean 7-day trial — nothing persisted.
+      if (mounted) {
+        setState(() {
+          _trialActive = true;
+          _isPro = false;
+          _daysLeft = TrialService.trialDays;
+          _messagesLeft = TrialService.dailyLimit;
+        });
+      }
+      return;
+    }
     final active = await TrialService.isTrialActive();
     final days = await TrialService.daysRemaining();
     final msgs = await TrialService.messagesRemainingToday();
@@ -186,12 +203,14 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
     });
     _scrollToBottom();
 
-    await TrialService.recordMessage();
+    if (!_isGuest) await TrialService.recordMessage();
 
     final reply = await _callBackend(value);
     if (!mounted) return;
 
-    final msgs = await TrialService.messagesRemainingToday();
+    final msgs = _isGuest
+        ? TrialService.dailyLimit
+        : await TrialService.messagesRemainingToday();
     setState(() {
       _messages.add(_ChatMessage(fromUser: false, text: reply));
       _sending = false;

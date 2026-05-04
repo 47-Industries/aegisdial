@@ -75,7 +75,7 @@ class _HomeShellState extends State<HomeShell> {
   @override
   Widget build(BuildContext context) {
     final tabs = <Widget>[
-      HomeDashboard(onOpenRecovery: () => _select(1)),
+      const HomeDashboard(),
       const RecoveryChatbotScreen(),
       const FamilyScreen(),
       const SettingsScreen(),

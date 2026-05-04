@@ -14,8 +14,7 @@ class HomeDashboard extends StatefulWidget {
   static final smsFilterKey = GlobalKey();
   static final breachKey = GlobalKey();
 
-  final VoidCallback? onOpenRecovery;
-  const HomeDashboard({super.key, this.onOpenRecovery});
+  const HomeDashboard({super.key});
 
   @override
   State<HomeDashboard> createState() => _HomeDashboardState();
@@ -237,57 +236,6 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 14),
-                GlassCard(
-                  accent: AegisColors.blue,
-                  onTap: () => widget.onOpenRecovery?.call(),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Container(
-                            padding: const EdgeInsets.all(10),
-                            decoration: BoxDecoration(
-                              color: AegisColors.blue.withValues(alpha: 0.14),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: const Icon(
-                              Icons.healing,
-                              color: AegisColors.blueAccent,
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  'Recovery Concierge',
-                                  style: tt.titleMedium?.copyWith(
-                                    fontWeight: FontWeight.w700,
-                                  ),
-                                ),
-                                const SizedBox(height: 2),
-                                Text(
-                                  'Just got scammed? Start here.',
-                                  style: tt.bodySmall?.copyWith(
-                                    color: AegisColors.textTertiary,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                          const Icon(
-                            Icons.arrow_forward_ios_rounded,
-                            color: AegisColors.textTertiary,
-                            size: 16,
-                          ),
-                        ],
                       ),
                     ],
                   ),
