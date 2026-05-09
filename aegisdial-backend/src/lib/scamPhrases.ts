@@ -159,6 +159,78 @@ export const SCAM_PATTERNS: PhrasePattern[] = [
     weight: 1.0,
     label: 'IRS / tax warrant threat',
   },
+  // Live Shield v2 hero-scam coverage — IRS impersonation. The scripted
+  // phrases below are pulled from FTC complaint corpora and AARP's 2025
+  // scam-call dataset. Each is a near-certain scam signal on its own;
+  // they trip even before authority+payment co-occurrence kicks in.
+  {
+    id: 'irs_final_notice',
+    category: 'impersonation_authority',
+    patterns: [
+      '\\bfinal\\s+notice\\b.*\\b(irs|internal\\s+revenue|tax)\\b',
+      '\\b(irs|internal\\s+revenue)\\b.*\\bfinal\\s+notice\\b',
+      '\\bthis\\s+is\\s+(your|a)\\s+final\\s+(notice|warning|attempt)\\b.*\\btax\\b',
+    ],
+    severity: 5,
+    weight: 1.0,
+    label: '"Final notice from the IRS" — universal opener',
+  },
+  {
+    id: 'irs_ssn_suspended',
+    category: 'impersonation_authority',
+    patterns: [
+      '\\b(your|the)\\s+(social\\s+security|ssn)\\s+(number\\s+)?(has\\s+been\\s+|is\\s+being\\s+|will\\s+be\\s+)?(suspend|cancel|block|frozen|deactivat)',
+      '\\bssn\\s+(suspended|cancelled|blocked)\\b',
+    ],
+    severity: 5,
+    weight: 1.0,
+    label: '"Your SSN is suspended" — IRS/SSA impersonation hook',
+  },
+  {
+    id: 'irs_press_one',
+    category: 'impersonation_authority',
+    patterns: [
+      '\\bpress\\s+(1|one)\\b.*\\b(speak|connect|agent|officer|representative|case)\\b',
+      '\\b(speak|connect)\\s+(to|with)\\s+(an?\\s+)?(officer|agent|representative)\\b.*\\b(irs|tax|investigation|case)\\b',
+    ],
+    severity: 4,
+    weight: 0.9,
+    label: '"Press 1 to speak to an agent" — IRS robocall pattern',
+  },
+  {
+    id: 'irs_outstanding_balance',
+    category: 'impersonation_authority',
+    patterns: [
+      '\\boutstanding\\s+(tax\\s+)?(balance|debt|amount|payment|liabilit)\\b',
+      '\\b(unpaid|delinquent)\\s+(tax|federal\\s+tax|tax\\s+balance)\\b',
+      '\\byou\\s+(owe|have\\s+(an?\\s+)?(unpaid|outstanding))\\b.*\\b(irs|tax|federal)\\b',
+    ],
+    severity: 4,
+    weight: 0.9,
+    label: '"You have an outstanding tax balance" — payment pretext',
+  },
+  {
+    id: 'irs_criminal_division',
+    category: 'impersonation_authority',
+    patterns: [
+      '\\b(irs\\s+)?(criminal|enforcement|legal)\\s+(division|department|investigation)\\b',
+      '\\btax\\s+(crime|fraud)\\s+(unit|division)\\b',
+    ],
+    severity: 5,
+    weight: 1.0,
+    label: '"IRS criminal division" — false escalation tactic',
+  },
+  {
+    id: 'irs_account_freeze',
+    category: 'impersonation_authority',
+    patterns: [
+      '\\b(your|the)\\s+(bank|checking|savings)\\s+account\\s+(will\\s+be\\s+)?(frozen|seized|blocked|garnish)',
+      '\\bgarnish(ed|ment)\\s+(your\\s+)?(wages|paycheck|account)\\b',
+    ],
+    severity: 4,
+    weight: 0.9,
+    label: '"We will freeze your bank account" — coercion pattern',
+  },
   {
     id: 'law_enforcement_threat',
     category: 'impersonation_authority',

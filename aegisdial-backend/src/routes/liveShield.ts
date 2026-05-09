@@ -10,6 +10,14 @@ import { emitGuardianAlert } from '../services/guardianAlerts.js';
 import { track } from '../lib/analytics.js';
 import { trackCallBlocked } from '../lib/internalEvents.js';
 import { encryptString, readMaybeEncrypted } from '../lib/crypto.js';
+import {
+  shouldFireLlm,
+  mergeScores,
+  runLlmAndCache,
+  LLM_TRIGGER_THRESHOLD,
+  FAMILY_ALERT_THRESHOLD,
+} from '../services/liveShieldLlm.js';
+import { fireFamilyAlert } from '../services/liveShieldFamilyAlert.js';
 
 // Suggestion payload returned to the iOS app when an emergency-relative
 // pattern fires. The client uses it to render the "Call them back on
@@ -34,14 +42,6 @@ interface FamilySuggestion {
     relationship: string | null;
   }>;
   instruction: string;
-}
-
-async function peerLabel(sessionId: string): Promise<string> {
-  const r = await query<{ peer_e164: string | null }>(
-    `SELECT peer_e164 FROM call_sessions WHERE id = $1`,
-    [sessionId],
-  );
-  return r.rows[0]?.peer_e164 ?? 'an unknown number';
 }
 
 async function buildFamilySuggestion(
@@ -326,53 +326,117 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         familySuggest = await buildFamilySuggestion(user.id, id);
       }
 
-      // Guardian fan-out: the first time this session crosses into
-      // 'critical' (or hits an emergency-relative pattern), notify the
-      // user's guardians. We gate on "the hit set just changed" — if no
-      // new pattern fired this chunk, the alert was already emitted.
-      if (snapshot.newHitIds.length > 0) {
-        if (snapshot.score.risk_level === 'critical') {
-          void track('shield_critical', {
-            userId: user.id,
-            properties: {
-              risk_score: snapshot.score.risk_score,
-              categories: snapshot.score.triggered_categories,
-            },
-          });
-          void emitGuardianAlert({
-            subjectUserId: user.id,
-            kind: 'shield_critical',
-            severity: 'critical',
-            title: 'A shielded call just escalated to CRITICAL',
-            body:
-              `A call from ${await peerLabel(id)} is matching a scripted scam pattern right now. ` +
-              `Check in on them if you can.`,
-            payload: {
-              session_id: id,
-              risk_score: snapshot.score.risk_score,
-              categories: snapshot.score.triggered_categories,
-            },
-          });
-        } else if (emergency) {
-          void emitGuardianAlert({
-            subjectUserId: user.id,
-            kind: 'shield_family_emergency',
-            severity: 'warning',
-            title: 'Caller is claiming a family emergency',
-            body:
-              'Someone is claiming to be family and asking for money. We\'ve asked them to ' +
-              'verify with a safe word. A real family member will pass this check.',
-            payload: { session_id: id },
-          });
-        }
+      // Live Shield v2 — hybrid risk engine.
+      //
+      // Read the LLM cache that may have been populated by an earlier
+      // chunk's async LLM call. Merge regex + LLM scores (LLM can
+      // escalate, never demote — see services/liveShieldLlm.ts).
+      const llmRow = await query<{
+        llm_score: number | null;
+        llm_scam_type: string | null;
+        llm_coaching_line: string | null;
+        llm_last_called_at: Date | null;
+      }>(
+        `SELECT llm_score, llm_scam_type, llm_coaching_line, llm_last_called_at
+           FROM call_sessions WHERE id = $1`,
+        [id],
+      );
+      const llmScore = llmRow.rows[0]?.llm_score ?? null;
+      const llmCoachingLine = llmRow.rows[0]?.llm_coaching_line ?? null;
+      const llmScamType = llmRow.rows[0]?.llm_scam_type ?? null;
+      const llmLastCalledAt = llmRow.rows[0]?.llm_last_called_at ?? null;
+
+      const finalScore = mergeScores(snapshot.score.risk_score, llmScore);
+      const finalLevel: 'low' | 'medium' | 'high' | 'critical' =
+        finalScore >= 75 ? 'critical' :
+        finalScore >= 50 ? 'high' :
+        finalScore >= 25 ? 'medium' : 'low';
+
+      // If the merged score differs from the regex-only snapshot we just
+      // wrote inside the tx, persist the merged value so subsequent
+      // reads (auto-populate, dashboard, this same route on next chunk)
+      // see the truth.
+      if (finalScore !== snapshot.score.risk_score) {
+        await query(
+          `UPDATE call_sessions
+              SET risk_score = $2, risk_level = $3, updated_at = NOW()
+            WHERE id = $1`,
+          [id, finalScore, finalLevel],
+        );
+      }
+
+      // Fire Claude async if regex crossed the trigger threshold AND we're
+      // outside the 8-second debounce window. Fire-and-forget — the next
+      // chunk reads the updated cache. This is the key cost-control: the
+      // LLM only runs on suspicious calls (≈30% of shielded sessions).
+      if (
+        snapshot.score.risk_score >= LLM_TRIGGER_THRESHOLD &&
+        shouldFireLlm(llmLastCalledAt)
+      ) {
+        void runLlmAndCache({
+          session_id: id,
+          triggered_categories: snapshot.score.triggered_categories,
+          regex_score: snapshot.score.risk_score,
+          subject_user_id: user.id,
+        });
+      }
+
+      // Family alert fan-out at merged score ≥ 75. Idempotent per-session
+      // (fireFamilyAlert checks family_alert_fired_at atomically and
+      // refuses to fire twice). Privacy level (minimal/default/open) is
+      // looked up inside the helper from family_alert_preferences.
+      if (finalScore >= FAMILY_ALERT_THRESHOLD) {
+        void fireFamilyAlert({
+          session_id: id,
+          subject_user_id: user.id,
+          risk_score: finalScore,
+          scam_type: llmScamType ?? snapshot.score.triggered_categories[0] ?? 'unknown',
+          matched_red_flags: snapshot.score.rationale.slice(0, 5),
+        });
+      }
+
+      // Track shield_critical only when new patterns landed AND merged
+      // score is critical. Same trigger semantics as v1 but using the
+      // merged score so an LLM-escalated call still emits the event.
+      if (snapshot.newHitIds.length > 0 && finalLevel === 'critical') {
+        void track('shield_critical', {
+          userId: user.id,
+          properties: {
+            risk_score: finalScore,
+            categories: snapshot.score.triggered_categories,
+            llm_invoked: llmScore !== null,
+          },
+        });
+      }
+
+      // Family-emergency safe-word flow stays as a SECOND alert channel
+      // (different kind, different UX). Independent of the family-plan
+      // critical alert above — emergency-relative + non-critical can
+      // still fire here.
+      if (snapshot.newHitIds.length > 0 && emergency) {
+        void emitGuardianAlert({
+          subjectUserId: user.id,
+          kind: 'shield_family_emergency',
+          severity: 'warning',
+          title: 'Caller is claiming a family emergency',
+          body:
+            'Someone is claiming to be family and asking for money. We\'ve asked them to ' +
+            'verify with a safe word. A real family member will pass this check.',
+          payload: { session_id: id },
+        });
       }
 
       return reply.send({
         session_id: id,
-        risk_score: snapshot.score.risk_score,
-        risk_level: snapshot.score.risk_level,
+        risk_score: finalScore,
+        risk_level: finalLevel,
         triggered_categories: snapshot.score.triggered_categories,
         rationale: snapshot.score.rationale,
+        // v2 additions: surface the LLM coaching + scam type so iOS can
+        // render them inline. Both are null until Claude has spoken on
+        // this session for the first time.
+        coaching_line: llmCoachingLine,
+        llm_scam_type: llmScamType,
         new_warnings: newWarnings,
         family_verify_suggested: emergency,
         family_suggestion: familySuggest,

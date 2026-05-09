@@ -59,7 +59,12 @@ export type AnalyticsEvent =
   | 'protect_parent_invite_sent'
   | 'protect_parent_safeword_saved'
   | 'protect_parent_flow_completed'
-  | 'api_error_silenced';
+  | 'api_error_silenced'
+  // Live Shield v2 hybrid-risk-engine signals (see liveShieldLlm.ts):
+  //   live_shield_llm_invoked — Claude joined a regex-only session above threshold
+  //   family_alert_fired      — critical session pushed to family-plan members
+  | 'live_shield_llm_invoked'
+  | 'family_alert_fired';
 
 let client: PostHog | null = null;
 let initialized = false;

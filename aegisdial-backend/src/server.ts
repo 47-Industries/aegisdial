@@ -29,6 +29,7 @@ import { heatmapRoutes } from './routes/heatmap.js';
 import { banksRoutes } from './routes/banks.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { internalRoutes } from './routes/internal.js';
+import { familyAlertPreferencesRoutes } from './routes/familyAlertPreferences.js';
 import { startPushDispatcher, stopPushDispatcher } from './workers/pushDispatcher.js';
 import { optionalAppUser } from './lib/auth.js';
 import { shutdownDb } from './lib/db.js';
@@ -97,6 +98,7 @@ await app.register(reportRoutes);
 await app.register(adminRoutes);
 await app.register(analyticsRoutes);
 await app.register(internalRoutes);
+await app.register(familyAlertPreferencesRoutes);
 
 const scheduler = config.ENABLE_CRAWLERS ? startScheduler() : null;
 const breachRescanner = startBreachRescanner();
