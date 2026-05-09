@@ -165,6 +165,119 @@ describe('shouldFireLlm', () => {
   });
 });
 
+describe('coaching line sanitization', () => {
+  // The model's coaching_line renders verbatim on the iOS overlay and
+  // propagates to family push payloads at default+ privacy levels. A
+  // jailbroken / hallucinated coaching line MUST NOT be able to ship
+  // attacker-controlled instructions through to the user.
+
+  it('strips coaching lines containing phone numbers (replaces with template)', () => {
+    const v = parseVerdict(JSON.stringify({
+      score: 80,
+      scam_type: 'irs_impersonation',
+      coaching_line: 'Call us back at 555-123-4567 to confirm.',
+    }));
+    assert.ok(v);
+    assert.equal(v!.coaching_line.includes('555-123-4567'), false);
+    // Falls back to the IRS template.
+    assert.match(v!.coaching_line, /IRS|accountant/i);
+  });
+
+  it('strips coaching lines containing URLs', () => {
+    const v = parseVerdict(JSON.stringify({
+      score: 80,
+      scam_type: 'tech_support',
+      coaching_line: 'Visit https://fake-microsoft-support.example.com to verify.',
+    }));
+    assert.ok(v);
+    assert.equal(v!.coaching_line.includes('http'), false);
+    assert.match(v!.coaching_line, /tech support|repair shop|computer/i);
+  });
+
+  it('strips coaching lines mentioning bitcoin / wallet addresses', () => {
+    const v = parseVerdict(JSON.stringify({
+      score: 80,
+      scam_type: 'crypto_scam',
+      coaching_line: 'Send bitcoin to wallet address bc1q to confirm identity.',
+    }));
+    assert.ok(v);
+    assert.equal(/\bbitcoin\b/i.test(v!.coaching_line), false);
+  });
+
+  it('strips coaching lines mentioning Zelle / Venmo / wire transfer', () => {
+    for (const term of ['zelle', 'venmo', 'wire transfer']) {
+      const v = parseVerdict(JSON.stringify({
+        score: 80,
+        scam_type: 'wire_transfer_scam',
+        coaching_line: `Send via ${term} to confirm.`,
+      }));
+      assert.ok(v);
+      assert.equal(v!.coaching_line.toLowerCase().includes(term), false);
+    }
+  });
+
+  it('replaces coaching lines that include the user-side gift-card ASK with the warning template', () => {
+    // The scammer's "buy a gift card" instruction must NOT pass
+    // through to the user's screen verbatim. The warning template
+    // (which itself uses the words "gift cards" in protective context)
+    // is fine — that's a designed message saying "any gift card ask
+    // is a scam, hang up."
+    const attacker = 'Buy a gift card and read the numbers to me.';
+    const v = parseVerdict(JSON.stringify({
+      score: 80,
+      scam_type: 'gift_card_scam',
+      coaching_line: attacker,
+    }));
+    assert.ok(v);
+    assert.notEqual(v!.coaching_line, attacker);
+    // Should be the static fallback for gift_card_scam.
+    assert.match(v!.coaching_line, /scam|hang up/i);
+  });
+
+  it('strips coaching lines containing payment instructions', () => {
+    const v = parseVerdict(JSON.stringify({
+      score: 80,
+      scam_type: 'irs_impersonation',
+      coaching_line: 'Send $500 immediately to settle the balance.',
+    }));
+    assert.ok(v);
+    assert.equal(v!.coaching_line.includes('$500'), false);
+  });
+
+  it('preserves clean coaching lines', () => {
+    const clean = "Real IRS never calls. Hang up and call your accountant.";
+    const v = parseVerdict(JSON.stringify({
+      score: 80,
+      scam_type: 'irs_impersonation',
+      coaching_line: clean,
+    }));
+    assert.ok(v);
+    assert.equal(v!.coaching_line, clean);
+  });
+
+  it('always has a fallback for every taxonomy entry', () => {
+    // If sanitizer triggers, the fallback per-scam-type template must
+    // exist. parseVerdict would return null/empty otherwise.
+    for (const scam_type of [
+      'irs_impersonation', 'ssa_impersonation', 'law_enforcement_impersonation',
+      'bank_impersonation', 'medicare_impersonation', 'utility_shutoff',
+      'tech_support', 'gift_card_scam', 'wire_transfer_scam',
+      'grandchild_emergency', 'ai_voice_clone_family', 'romance_scam',
+      'crypto_scam', 'investment_scam', 'package_redelivery',
+      'unpaid_toll', 'employment_scam', 'unknown',
+    ]) {
+      // Force a sanitization fail by including a phone number
+      const v = parseVerdict(JSON.stringify({
+        score: 80,
+        scam_type,
+        coaching_line: 'Call 555-123-4567 to verify',
+      }));
+      assert.ok(v, `no fallback for ${scam_type}`);
+      assert.ok(v!.coaching_line.length > 0, `empty fallback for ${scam_type}`);
+    }
+  });
+});
+
 describe('threshold constants', () => {
   // These are referenced in COMPANY_OS.md and LIVE_SHIELD.md — pinned
   // here so a careless change to either constant breaks the test before

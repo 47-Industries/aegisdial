@@ -1,7 +1,7 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { query } from '../lib/db.js';
-import { requireAppUser } from '../lib/auth.js';
+import { requireAppUser, requireProTier } from '../lib/auth.js';
 import type { PrivacyLevel } from '../services/liveShieldFamilyAlert.js';
 
 // Live Shield v2: Mom-controlled privacy level for family-plan alerts.
@@ -25,7 +25,7 @@ const PUT_SCHEMA = z.object({
 export async function familyAlertPreferencesRoutes(app: FastifyInstance): Promise<void> {
   app.get(
     '/v1/family-alert/preferences',
-    { preHandler: [requireAppUser] },
+    { preHandler: [requireAppUser, requireProTier] },
     async (req, reply) => {
       const user = req.appUser!;
       const row = await query<{ privacy_level: PrivacyLevel }>(
@@ -41,7 +41,7 @@ export async function familyAlertPreferencesRoutes(app: FastifyInstance): Promis
 
   app.put(
     '/v1/family-alert/preferences',
-    { preHandler: [requireAppUser] },
+    { preHandler: [requireAppUser, requireProTier] },
     async (req, reply) => {
       const user = req.appUser!;
       const parsed = PUT_SCHEMA.safeParse(req.body ?? {});

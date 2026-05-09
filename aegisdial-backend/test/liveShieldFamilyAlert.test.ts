@@ -7,8 +7,9 @@ process.env.DATABASE_URL ||= 'postgres://u:p@localhost:5432/test';
 process.env.REDIS_URL ||= 'redis://localhost:6379';
 
 // Dynamic import — deferred until AFTER env setup.
-const { buildAlertPayload } = await import('../src/services/liveShieldFamilyAlert.ts');
-type PrivacyLevel = Awaited<ReturnType<typeof import('../src/services/liveShieldFamilyAlert.ts')['getFamilyAlertPrivacyLevel']>>;
+const fam = await import('../src/services/liveShieldFamilyAlert.ts');
+const { buildAlertPayload } = fam;
+type PrivacyLevel = 'minimal' | 'default' | 'open';
 
 // liveShieldFamilyAlert — payload-shaping tests. The privacy guarantee
 // of v2 is that Mom controls what her family sees; if buildAlertPayload

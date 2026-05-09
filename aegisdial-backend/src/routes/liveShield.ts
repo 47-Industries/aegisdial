@@ -132,6 +132,14 @@ const START_SCHEMA = z.object({
   peer_number: z.string().max(20).optional(),
   direction: z.enum(['inbound', 'outbound', 'unknown']).optional().default('inbound'),
   consent_given: z.boolean(),
+  // Live Shield v2: consent_version 1 = original "audio never leaves the
+  // phone" disclosure (regex-only, no LLM). consent_version 2 = updated
+  // v2 disclosure that explicitly informs the user transcripts may be
+  // sent to our AI partner when a call is detected as suspicious.
+  // Default to 1 so old iOS clients (pre-v2 build) cannot accidentally
+  // opt into the LLM path. The backend refuses to fire Claude on v1
+  // sessions — see services/liveShieldLlm.ts claimLlmFiringRights.
+  consent_version: z.number().int().min(1).max(2).optional().default(1),
 });
 
 const TRANSCRIPT_SCHEMA = z.object({
@@ -168,10 +176,10 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       const peer = parsed.data.peer_number ? normalizeE164(parsed.data.peer_number) : null;
 
       const row = await query<{ id: string; started_at: Date }>(
-        `INSERT INTO call_sessions (user_id, peer_e164, direction, consent_given)
-         VALUES ($1, $2, $3, TRUE)
+        `INSERT INTO call_sessions (user_id, peer_e164, direction, consent_given, consent_version)
+         VALUES ($1, $2, $3, TRUE, $4)
          RETURNING id, started_at`,
-        [user.id, peer, parsed.data.direction],
+        [user.id, peer, parsed.data.direction, parsed.data.consent_version],
       );
       const { id, started_at } = row.rows[0]!;
       void track('shield_started', {
@@ -385,7 +393,18 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       // (fireFamilyAlert checks family_alert_fired_at atomically and
       // refuses to fire twice). Privacy level (minimal/default/open) is
       // looked up inside the helper from family_alert_preferences.
-      if (finalScore >= FAMILY_ALERT_THRESHOLD) {
+      //
+      // Defense-in-depth: require regex_score ≥ FAMILY_ALERT_FLOOR (65)
+      // in addition to the merged-score threshold. This means the LLM
+      // can ESCALATE a strong regex signal into a family alert but
+      // cannot SINGLE-HANDEDLY cause one. Without this floor, a
+      // prompt-injected LLM could conjure a critical score from a
+      // borderline regex and fire family unnecessarily.
+      const FAMILY_ALERT_REGEX_FLOOR = 65;
+      if (
+        finalScore >= FAMILY_ALERT_THRESHOLD &&
+        snapshot.score.risk_score >= FAMILY_ALERT_REGEX_FLOOR
+      ) {
         void fireFamilyAlert({
           session_id: id,
           subject_user_id: user.id,
@@ -506,6 +525,80 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      // Live Shield v2 — Auto-handoff to Recovery Concierge.
+      //
+      // Trigger conditions (locked in LIVE_SHIELD.md):
+      //   - risk_level == 'critical' AND outcome in {'user_hung_up',
+      //     'user_called_guardian'}, OR
+      //   - 'payment_fraud' in triggered_categories AND risk_level == 'critical'
+      //
+      // The backend pre-creates a triage-mode recovery_sessions row with
+      // peer_e164 and llm_scam_type pre-populated. iOS surfaces it as
+      // "We saved you from a scam — want help with the next 15 minutes?"
+      // The user converts to full recovery via the existing triage/resolve
+      // endpoint, or abandons.
+      let recoveryHandoffSessionId: string | null = null;
+      const eligibleByOutcome =
+        row.risk_level === 'critical' &&
+        (parsed.data.outcome === 'user_hung_up' || parsed.data.outcome === 'user_called_guardian');
+      const eligibleByMoneyMoved =
+        row.risk_level === 'critical' && row.triggered_categories.includes('payment_fraud');
+
+      if (eligibleByOutcome || eligibleByMoneyMoved) {
+        try {
+          const callMeta = await query<{ peer_e164: string | null; llm_scam_type: string | null }>(
+            `SELECT peer_e164, llm_scam_type FROM call_sessions WHERE id = $1`,
+            [id],
+          );
+          const peerE164 = callMeta.rows[0]?.peer_e164 ?? null;
+          const llmScamType = callMeta.rows[0]?.llm_scam_type ?? null;
+
+          const familyPlan = await query<{ id: string }>(
+            `SELECT family_plan_id AS id FROM family_members WHERE user_id = $1`,
+            [user.id],
+          );
+          const familyPlanId = familyPlan.rows[0]?.id ?? null;
+
+          // Insert as 'triage' mode so the user has to confirm before we
+          // light up guardian alerts a second time. scam_type defaults
+          // to 'unknown_triage' if the LLM never classified — the user
+          // picks during triage resolution.
+          const recoveryRow = await query<{ id: string }>(
+            `INSERT INTO recovery_sessions (
+               user_id, family_plan_id, scam_e164, scam_e164_ct, scam_type,
+               amount_lost_cents, description, description_ct, mode
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'triage')
+             RETURNING id`,
+            [
+              user.id,
+              familyPlanId,
+              '',
+              peerE164 ? encryptString(peerE164) : null,
+              llmScamType ?? 'unknown_triage',
+              null,
+              '',
+              null,
+            ],
+          );
+          recoveryHandoffSessionId = recoveryRow.rows[0]?.id ?? null;
+
+          void track('recovery_started', {
+            userId: user.id,
+            properties: {
+              recovery_session_id: recoveryHandoffSessionId,
+              shield_session_id: id,
+              source: 'live_shield_auto_handoff',
+              scam_type: llmScamType ?? 'unknown_triage',
+              trigger: eligibleByMoneyMoved ? 'payment_fraud_critical' : 'critical_with_outcome',
+            },
+          });
+        } catch (err) {
+          // Don't block the /end response on a recovery-handoff failure.
+          // iOS still has /v1/recovery/auto-populate as a fallback.
+          req.log.warn({ err, session_id: id }, 'live_shield_auto_handoff_failed');
+        }
+      }
+
       return reply.send({
         session_id: id,
         started_at: row.started_at.toISOString(),
@@ -515,6 +608,8 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         risk_level: row.risk_level,
         triggered_categories: row.triggered_categories,
         outcome: parsed.data.outcome,
+        // v2: pre-created recovery session id (null when not eligible).
+        recovery_handoff_session_id: recoveryHandoffSessionId,
       });
     },
   );

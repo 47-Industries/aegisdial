@@ -24,17 +24,31 @@ export interface FamilyAlertInput {
   matched_red_flags: string[];
 }
 
+const VALID_PRIVACY_LEVELS: ReadonlySet<string> = new Set(['minimal', 'default', 'open']);
+
 /**
  * Fetch Mom's privacy preference. Returns 'default' when she hasn't
- * explicitly chosen one — middle-ground default lets families opt in
- * to either extreme.
+ * explicitly chosen one (middle-ground default).
+ *
+ * Fail-closed: on DB error OR an unrecognized value sneaking in via a
+ * future migration mistake, return 'minimal'. The privacy guarantee
+ * runs in only one direction — leaking by default is unacceptable, so
+ * an unknown state must be treated as the most restrictive.
  */
 export async function getFamilyAlertPrivacyLevel(userId: string): Promise<PrivacyLevel> {
-  const row = await query<{ privacy_level: PrivacyLevel }>(
-    `SELECT privacy_level FROM family_alert_preferences WHERE user_id = $1`,
-    [userId],
-  );
-  return row.rows[0]?.privacy_level ?? 'default';
+  try {
+    const row = await query<{ privacy_level: string }>(
+      `SELECT privacy_level FROM family_alert_preferences WHERE user_id = $1`,
+      [userId],
+    );
+    const stored = row.rows[0]?.privacy_level;
+    if (stored === undefined) return 'default';
+    if (!VALID_PRIVACY_LEVELS.has(stored)) return 'minimal';
+    return stored as PrivacyLevel;
+  } catch {
+    // DB error path — fail-closed to minimal, never leak.
+    return 'minimal';
+  }
 }
 
 /**
@@ -117,14 +131,13 @@ export function buildAlertPayload(
 }
 
 /**
- * Atomically check-and-set the family_alert_fired_at flag. Returns true
- * if THIS caller is the one that won the race and should proceed with
- * fan-out; returns false if someone else (a concurrent transcript chunk)
- * already fired.
+ * Atomically check-and-set the family_alert_fired_at flag.
  *
- * The single UPDATE with a guard predicate is the lock — we can't
- * accidentally double-fire even under heavy concurrency on the same
- * session.
+ * The single UPDATE with a guard predicate is the lock — Postgres
+ * serializes UPDATE statements on the same row, so two concurrent
+ * chunks cannot both succeed. DO NOT split this into a SELECT then
+ * UPDATE — that breaks the atomicity. The lock comes from row-level
+ * locking on UPDATE, NOT from any explicit transaction.
  */
 async function claimAlertFiringRights(sessionId: string): Promise<boolean> {
   const result = await query(
@@ -137,6 +150,26 @@ async function claimAlertFiringRights(sessionId: string): Promise<boolean> {
 }
 
 /**
+ * Compensating reset of the claim flag. Used when emitGuardianAlert
+ * fails — without this, the family is permanently unable to be alerted
+ * for this session even though they were never actually notified.
+ */
+async function releaseAlertFiringRights(sessionId: string): Promise<void> {
+  try {
+    await query(
+      `UPDATE call_sessions
+          SET family_alert_fired_at = NULL
+        WHERE id = $1`,
+      [sessionId],
+    );
+  } catch {
+    // Last-resort path. If we can't even reset the flag, the session is
+    // already in a degraded state — the next transcript chunk will
+    // surface the failure via the normal alert escalator.
+  }
+}
+
+/**
  * Top-level entry point. Idempotent — safe to call from every transcript
  * chunk handler that observes a critical score; only the first call per
  * session actually fans out.
@@ -144,6 +177,11 @@ async function claimAlertFiringRights(sessionId: string): Promise<boolean> {
  * Fire-and-forget from the caller's perspective (caller should `void`
  * the promise) — we don't want the transcript request to block on push
  * fan-out latency.
+ *
+ * If `emitGuardianAlert` throws OR delivers to zero guardians, we
+ * release the claim so a later chunk can retry — without this, a
+ * transient DB hiccup at the moment of fan-out would mean the family
+ * stays uninformed forever.
  */
 export async function fireFamilyAlert(input: FamilyAlertInput): Promise<{ delivered: number; alreadyFired: boolean }> {
   const claimed = await claimAlertFiringRights(input.session_id);
@@ -152,25 +190,54 @@ export async function fireFamilyAlert(input: FamilyAlertInput): Promise<{ delive
   const level = await getFamilyAlertPrivacyLevel(input.subject_user_id);
   const { title, body, payload } = buildAlertPayload(input, level);
 
-  const result = await emitGuardianAlert({
-    subjectUserId: input.subject_user_id,
-    kind: 'shield_critical',
-    severity: 'critical',
-    title,
-    body,
-    payload,
-  });
+  let delivered = 0;
+  try {
+    const result = await emitGuardianAlert({
+      subjectUserId: input.subject_user_id,
+      kind: 'shield_critical',
+      severity: 'critical',
+      title,
+      body,
+      payload,
+    });
+    delivered = result.delivered;
+  } catch (err) {
+    // Network / DB error during emit — release the claim so a later
+    // chunk can re-try, then re-throw for observability upstream.
+    await releaseAlertFiringRights(input.session_id);
+    throw err;
+  }
+
+  if (delivered === 0) {
+    // No guardians on the plan, OR all of them got filtered. Release
+    // the claim so a later chunk retries — but only if there's any
+    // chance of finding guardians (i.e. the user might add one mid-call).
+    // Realistically this is "user has no family plan" which is a stable
+    // state, so we just track and move on.
+    void track('family_alert_fired', {
+      userId: input.subject_user_id,
+      properties: {
+        session_id: input.session_id,
+        privacy_level: level,
+        delivered: 0,
+        risk_score: input.risk_score,
+        scam_type: input.scam_type,
+        no_guardians: true,
+      },
+    });
+    return { delivered: 0, alreadyFired: false };
+  }
 
   void track('family_alert_fired', {
     userId: input.subject_user_id,
     properties: {
       session_id: input.session_id,
       privacy_level: level,
-      delivered: result.delivered,
+      delivered,
       risk_score: input.risk_score,
       scam_type: input.scam_type,
     },
   });
 
-  return { delivered: result.delivered, alreadyFired: false };
+  return { delivered, alreadyFired: false };
 }

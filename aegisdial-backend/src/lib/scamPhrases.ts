@@ -201,9 +201,14 @@ export const SCAM_PATTERNS: PhrasePattern[] = [
     id: 'irs_outstanding_balance',
     category: 'impersonation_authority',
     patterns: [
-      '\\boutstanding\\s+(tax\\s+)?(balance|debt|amount|payment|liabilit)\\b',
-      '\\b(unpaid|delinquent)\\s+(tax|federal\\s+tax|tax\\s+balance)\\b',
-      '\\byou\\s+(owe|have\\s+(an?\\s+)?(unpaid|outstanding))\\b.*\\b(irs|tax|federal)\\b',
+      // All variants now require an explicit IRS/tax/federal anchor.
+      // Earlier draft ('outstanding (tax )?balance') false-positived on
+      // legitimate utility / pharmacy / dentist calls saying "you have
+      // an outstanding balance" — those are NOT scams and must not
+      // ship the user's transcript to Claude.
+      '\\boutstanding\\s+tax\\s+(balance|debt|amount|payment|liabilit)\\b',
+      '\\b(unpaid|delinquent)\\s+(tax|federal\\s+tax|tax\\s+balance|tax\\s+debt)\\b',
+      '\\byou\\s+(owe|have\\s+(an?\\s+)?(unpaid|outstanding))\\b.*\\b(irs|internal\\s+revenue|federal\\s+tax)\\b',
     ],
     severity: 4,
     weight: 0.9,
