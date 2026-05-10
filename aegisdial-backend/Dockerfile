@@ -14,6 +14,10 @@ RUN npm ci --omit=dev && npm cache clean --force
 COPY --from=build /app/dist ./dist
 COPY db ./db
 COPY certs ./certs
+# Internal founder dashboard HTML — served by src/routes/internal.ts
+# at /internal/dashboard. Without this COPY, /internal/dashboard
+# would 500 in prod even though the route handler is registered.
+COPY public ./public
 USER node
 EXPOSE 3000
 CMD ["node", "dist/server.js"]
