@@ -30,6 +30,10 @@ import { banksRoutes } from './routes/banks.js';
 import { analyticsRoutes } from './routes/analytics.js';
 import { internalRoutes } from './routes/internal.js';
 import { familyAlertPreferencesRoutes } from './routes/familyAlertPreferences.js';
+// Live Shield v3 — A1 lookup + A2 user-block routes. Each register()
+// is a no-op when its respective V3_*_ENABLED flag is OFF.
+import { lookupRoutes } from './routes/lookup.js';
+import { blocksRoutes } from './routes/blocks.js';
 import { startPushDispatcher, stopPushDispatcher } from './workers/pushDispatcher.js';
 import { optionalAppUser } from './lib/auth.js';
 import { shutdownDb } from './lib/db.js';
@@ -40,6 +44,9 @@ import { startRecoveryFollowup, stopRecoveryFollowup } from './workers/recoveryF
 import { startRetentionSweeper, stopRetentionSweeper } from './workers/retentionSweeper.js';
 import { startBulkCrimeReporter, stopBulkCrimeReporter } from './workers/bulkCrimeReporter.js';
 import { startCrawlPrewarmer, stopCrawlPrewarmer } from './workers/crawlPrewarmer.js';
+// Live Shield v3 — A1 hot-numbers cache populator. Returns null when
+// V3_A1_ENABLED is OFF; cron task does not register at all in that case.
+import { startA1HotNumbersPopulator } from './workers/a1HotNumbersPopulator.js';
 
 const app = Fastify({
   logger: {
@@ -99,6 +106,8 @@ await app.register(adminRoutes);
 await app.register(analyticsRoutes);
 await app.register(internalRoutes);
 await app.register(familyAlertPreferencesRoutes);
+await app.register(lookupRoutes);
+await app.register(blocksRoutes);
 
 const scheduler = config.ENABLE_CRAWLERS ? startScheduler() : null;
 const breachRescanner = startBreachRescanner();
@@ -111,6 +120,10 @@ const bulkCrimeReporter = startBulkCrimeReporter();
 const crawlPrewarmer = config.ENABLE_CRAWLERS ? startCrawlPrewarmer() : null;
 const pushDispatcher = startPushDispatcher();
 const recoveryFollowup = startRecoveryFollowup();
+// Live Shield v3 — A1 hot-numbers populator. Cron interval governed by
+// V3_A1_CACHE_RECOMPUTE_INTERVAL_MINUTES (default 6h). No-op when
+// V3_A1_ENABLED is OFF.
+const a1HotNumbersPopulator = startA1HotNumbersPopulator();
 
 app.setErrorHandler((err, req, reply) => {
   const fastifyErr = err as { statusCode?: number; code?: string; message: string };
@@ -160,6 +173,9 @@ const shutdown = async (signal: string): Promise<void> => {
     if (crawlPrewarmer) stopCrawlPrewarmer(crawlPrewarmer);
     stopPushDispatcher(pushDispatcher);
     stopRecoveryFollowup(recoveryFollowup);
+    if (a1HotNumbersPopulator) {
+      a1HotNumbersPopulator.task.stop();
+    }
     await shutdownAnalytics();
     await app.close();
     await shutdownDb();
