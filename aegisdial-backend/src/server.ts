@@ -44,6 +44,8 @@ import { startPostDismissWatcher, stopPostDismissWatcher } from './services/post
 // Live Shield v3 — B4 routes + orchestrator. Same V3_B4_ENABLED gate.
 import { findingsRoutes } from './routes/findings.js';
 import { startB4Orchestrator, stopB4Orchestrator } from './services/b4Orchestrator.js';
+// Live Shield v3 — B5 family-join routes. V3_B5_ENABLED gate.
+import { familyJoinRoutes } from './routes/familyJoin.js';
 import { startPushDispatcher, stopPushDispatcher } from './workers/pushDispatcher.js';
 import { optionalAppUser } from './lib/auth.js';
 import { shutdownDb } from './lib/db.js';
@@ -131,6 +133,7 @@ await app.register(findingsRoutes);
 // chunks from v3SessionEvents and runs the extract → verify →
 // dispatch pipeline. No-op when V3_B4_ENABLED is OFF.
 startB4Orchestrator();
+await app.register(familyJoinRoutes);
 
 const scheduler = config.ENABLE_CRAWLERS ? startScheduler() : null;
 const breachRescanner = startBreachRescanner();
