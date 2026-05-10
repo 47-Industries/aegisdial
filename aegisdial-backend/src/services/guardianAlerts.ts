@@ -19,7 +19,10 @@ export type GuardianAlertKind =
   | 'shield_family_emergency'
   | 'safe_word_failed'
   | 'breach_new'
-  | 'recovery_started';
+  | 'recovery_started'
+  // Live Shield v3 — B3 post-dismiss escalation. Fires when the user
+  // dismissed a B3 takeover and continued-critical persisted for 30+s.
+  | 'shield_post_dismiss';
 
 export type GuardianAlertSeverity = 'info' | 'warning' | 'critical';
 

@@ -34,6 +34,13 @@ import { familyAlertPreferencesRoutes } from './routes/familyAlertPreferences.js
 // is a no-op when its respective V3_*_ENABLED flag is OFF.
 import { lookupRoutes } from './routes/lookup.js';
 import { blocksRoutes } from './routes/blocks.js';
+// Live Shield v3 — B3 critical-takeover routes + sentinel matcher
+// fire-handler registration. Same V3_B3_ENABLED gate.
+import {
+  criticalTakeoverRoutes,
+  registerCriticalTakeoverHandlers,
+} from './routes/criticalTakeover.js';
+import { startPostDismissWatcher, stopPostDismissWatcher } from './services/postDismissWatcher.js';
 import { startPushDispatcher, stopPushDispatcher } from './workers/pushDispatcher.js';
 import { optionalAppUser } from './lib/auth.js';
 import { shutdownDb } from './lib/db.js';
@@ -108,6 +115,14 @@ await app.register(internalRoutes);
 await app.register(familyAlertPreferencesRoutes);
 await app.register(lookupRoutes);
 await app.register(blocksRoutes);
+await app.register(criticalTakeoverRoutes);
+// Wire the sentinel matcher's fire-handler into the takeover dispatch
+// path. Idempotent + no-op when V3_B3_ENABLED is OFF.
+registerCriticalTakeoverHandlers();
+// Start the B3 post-dismiss watcher. Subscribes to risk-transition
+// events from v3SessionEvents and drives per-session timers. No-op
+// when V3_B3_ENABLED is OFF.
+startPostDismissWatcher();
 
 const scheduler = config.ENABLE_CRAWLERS ? startScheduler() : null;
 const breachRescanner = startBreachRescanner();
@@ -176,6 +191,7 @@ const shutdown = async (signal: string): Promise<void> => {
     if (a1HotNumbersPopulator) {
       a1HotNumbersPopulator.task.stop();
     }
+    stopPostDismissWatcher();
     await shutdownAnalytics();
     await app.close();
     await shutdownDb();

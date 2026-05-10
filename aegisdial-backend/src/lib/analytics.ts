@@ -64,7 +64,10 @@ export type AnalyticsEvent =
   //   live_shield_llm_invoked — Claude joined a regex-only session above threshold
   //   family_alert_fired      — critical session pushed to family-plan members
   | 'live_shield_llm_invoked'
-  | 'family_alert_fired';
+  | 'family_alert_fired'
+  // Live Shield v3 B3 — escalation fired 30s after a takeover dismiss
+  // with continued-critical state. See src/services/postDismissWatcher.ts.
+  | 'family_alert_post_dismiss_fired';
 
 let client: PostHog | null = null;
 let initialized = false;

@@ -241,3 +241,114 @@ export async function fireFamilyAlert(input: FamilyAlertInput): Promise<{ delive
 
   return { delivered, alreadyFired: false };
 }
+
+// ===========================================================================
+// Live Shield v3 — B3 post-dismiss family alert.
+// ===========================================================================
+//
+// Distinct from the primary v2 family alert:
+//   - The primary alert (fireFamilyAlert above) fires when score
+//     first crosses critical. Idempotent on family_alert_fired_at.
+//   - This post-dismiss alert fires when the user dismissed a B3
+//     takeover and continued-critical-state persisted for 30+ seconds.
+//     Idempotent on family_alert_post_dismiss_fired_at.
+//
+// Idempotency for THIS function is the caller's responsibility — the
+// post-dismiss watcher already does the atomic UPDATE-with-WHERE-guard
+// against family_alert_post_dismiss_fired_at before calling here, so
+// we are guaranteed at-most-once delivery per session.
+//
+// Privacy levels reuse the same Mom-chosen privacy_level pref.
+
+/**
+ * Fire the B3 post-dismiss family alert. Caller MUST have already
+ * claimed firing rights via UPDATE family_alert_post_dismiss_fired_at —
+ * this function does NOT do its own idempotency check. It delivers
+ * the push and tracks the event.
+ *
+ * Distinct copy variant on the title + body that emphasizes the
+ * dismiss-then-still-in-danger scenario.
+ */
+export async function firePostDismissFamilyAlert(
+  input: FamilyAlertInput,
+): Promise<{ delivered: number }> {
+  const level = await getFamilyAlertPrivacyLevel(input.subject_user_id);
+
+  // The post-dismiss copy is intentionally more urgent than the
+  // primary alert: this means Mom got our warning, dismissed it,
+  // AND is still in danger. The kid needs to know this is the
+  // "she's not stopping" case, not the first signal.
+  const title = 'A family member dismissed our warning and is still on the call';
+  const scamLabel = input.scam_type
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  let body: string;
+  let payload: Record<string, unknown>;
+
+  if (level === 'minimal') {
+    body = `Risk score ${input.risk_score}/100. Pattern: ${scamLabel}.`;
+    payload = {
+      kind: 'live_shield_post_dismiss',
+      session_id: input.session_id,
+      subject_user_id: input.subject_user_id,
+      risk_score: input.risk_score,
+      scam_type: input.scam_type,
+      privacy_level: level,
+    };
+  } else if (level === 'default') {
+    body = `Score ${input.risk_score}/100, pattern: ${scamLabel}. Tap to call.`;
+    payload = {
+      kind: 'live_shield_post_dismiss',
+      session_id: input.session_id,
+      subject_user_id: input.subject_user_id,
+      risk_score: input.risk_score,
+      scam_type: input.scam_type,
+      matched_red_flags: input.matched_red_flags.slice(0, 3),
+      privacy_level: level,
+    };
+  } else {
+    body = `Score ${input.risk_score}/100. They dismissed our warning. Tap to join the call or open transcript.`;
+    payload = {
+      kind: 'live_shield_post_dismiss',
+      session_id: input.session_id,
+      subject_user_id: input.subject_user_id,
+      risk_score: input.risk_score,
+      scam_type: input.scam_type,
+      matched_red_flags: input.matched_red_flags.slice(0, 5),
+      transcript_view_available: true,
+      privacy_level: level,
+    };
+  }
+
+  let delivered = 0;
+  try {
+    const result = await emitGuardianAlert({
+      subjectUserId: input.subject_user_id,
+      kind: 'shield_post_dismiss',
+      severity: 'critical',
+      title,
+      body,
+      payload,
+    });
+    delivered = result.delivered;
+  } catch (err) {
+    // The caller already claimed firing rights. We can't undo the
+    // claim here without race risk against the timer's compensating
+    // release path; just let it bubble up.
+    throw err;
+  }
+
+  void track('family_alert_post_dismiss_fired', {
+    userId: input.subject_user_id,
+    properties: {
+      session_id: input.session_id,
+      privacy_level: level,
+      delivered,
+      risk_score: input.risk_score,
+      scam_type: input.scam_type,
+    },
+  });
+
+  return { delivered };
+}

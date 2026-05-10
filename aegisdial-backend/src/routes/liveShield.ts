@@ -18,6 +18,21 @@ import {
   FAMILY_ALERT_THRESHOLD,
 } from '../services/liveShieldLlm.js';
 import { fireFamilyAlert } from '../services/liveShieldFamilyAlert.js';
+// Live Shield v3 — single hook into v2's transcript hot path. Publishes
+// each chunk + level-transitions to v3 subscribers (sentinel matcher,
+// post-dismiss watcher, B4 claim extractor). All v3 work runs after
+// v2's response is built; failures in v3 subscribers cannot break v2's
+// transcript ingestion (see v3SessionEvents.notifyTranscriptChunk).
+import {
+  notifyTranscriptChunk as v3NotifyTranscriptChunk,
+  notifyRiskTransition as v3NotifyRiskTransition,
+} from '../services/v3SessionEvents.js';
+// B3 sentinel matcher session lifecycle. start/stop are fire-and-forget;
+// startForSession is async (loads patterns from DB) and the unsubscribe
+// fn is tracked here so /end can call it. No-ops when V3_B3_ENABLED off.
+import { startForSession as v3StartSentinelMatcher } from '../services/sentinelMatcher.js';
+import { disarmPostDismissWatch as v3DisarmPostDismissWatch } from '../services/postDismissWatcher.js';
+const v3SentinelStops = new Map<string, () => void>();
 
 // Suggestion payload returned to the iOS app when an emergency-relative
 // pattern fires. The client uses it to render the "Call them back on
@@ -186,6 +201,12 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         userId: user.id,
         properties: { direction: parsed.data.direction, has_peer: !!peer },
       });
+      // Live Shield v3 — kick off B3 sentinel matcher for this session.
+      // Fire-and-forget; the matcher loads its pattern set asynchronously.
+      // No-op if V3_B3_ENABLED is OFF.
+      void v3StartSentinelMatcher(id, user.id).then((stop) => {
+        v3SentinelStops.set(id, stop);
+      });
       return reply.send({
         session_id: id,
         started_at: started_at.toISOString(),
@@ -221,12 +242,15 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       const parsed = TRANSCRIPT_SCHEMA.safeParse(req.body ?? {});
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
-      const owned = await query<{ id: string; ended_at: Date | null }>(
-        `SELECT id, ended_at FROM call_sessions WHERE id = $1 AND user_id = $2`,
+      const owned = await query<{ id: string; ended_at: Date | null; risk_level: string }>(
+        `SELECT id, ended_at, risk_level FROM call_sessions WHERE id = $1 AND user_id = $2`,
         [id, user.id],
       );
       if (owned.rows.length === 0) return reply.code(404).send({ error: 'session_not_found' });
       if (owned.rows[0]!.ended_at) return reply.code(409).send({ error: 'session_ended' });
+      // Capture pre-update level so v3's risk-transition hook can fire
+      // only on actual transitions (not stable-state ticks).
+      const v3PriorRiskLevel = owned.rows[0]!.risk_level as 'low' | 'medium' | 'high' | 'critical';
 
       // Detect phrases against plaintext BEFORE encryption. The plaintext
       // never touches disk — only the ciphertext lands in transcript_events.
@@ -445,6 +469,34 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         });
       }
 
+      // Live Shield v3 — publish to v3 subscribers. Fire-and-forget;
+      // sentinel matcher, post-dismiss watcher, and B4 claim extractor
+      // each subscribe out from v3SessionEvents.
+      //
+      // Errors in v3 subscribers are caught inside the hub itself and
+      // do NOT bubble back to the v2 hot path. The void/no-await pattern
+      // here is a defense-in-depth against any subscriber that ignores
+      // the don't-throw rule.
+      void v3NotifyTranscriptChunk({
+        session_id: id,
+        user_id: user.id,
+        speaker: parsed.data.speaker,
+        text: parsed.data.text,
+        confidence: parsed.data.confidence ?? null,
+        spoken_at: new Date(),
+      });
+      const v3NewLevel = finalLevel as 'low' | 'medium' | 'high' | 'critical';
+      if (v3NewLevel !== v3PriorRiskLevel) {
+        void v3NotifyRiskTransition({
+          session_id: id,
+          user_id: user.id,
+          previous_level: v3PriorRiskLevel,
+          new_level: v3NewLevel,
+          current_score: finalScore,
+          occurred_at: new Date(),
+        });
+      }
+
       return reply.send({
         session_id: id,
         risk_score: finalScore,
@@ -494,6 +546,16 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         return reply.code(404).send({ error: 'session_not_found_or_already_ended' });
       }
       const row = result.rows[0]!;
+
+      // Live Shield v3 — tear down B3 per-session state. Both calls
+      // are no-ops when V3_B3_ENABLED is off OR when the session
+      // never had v3 state attached.
+      const stopSentinel = v3SentinelStops.get(id);
+      if (stopSentinel) {
+        try { stopSentinel(); } catch { /* swallow */ }
+        v3SentinelStops.delete(id);
+      }
+      v3DisarmPostDismissWatch(id);
 
       void track('shield_ended', {
         userId: user.id,
