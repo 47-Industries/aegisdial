@@ -6,6 +6,7 @@ import { normalizeE164 } from '../lib/phone.js';
 import { stepsForScamType, type ScamType } from '../lib/recoverySteps.js';
 import { emitGuardianAlert } from '../services/guardianAlerts.js';
 import { track } from '../lib/analytics.js';
+import { trackRecoveryCompleted } from '../lib/internalEvents.js';
 import {
   encryptJSON,
   readMaybeEncryptedJSON,
@@ -445,17 +446,39 @@ export async function recoveryRoutes(app: FastifyInstance): Promise<void> {
             WHERE session_id = $1 AND status NOT IN ('completed', 'skipped')`,
           [id],
         );
+        let justCompleted: {
+          scamType: string | null;
+          amountLostCents: number | null;
+          durationSeconds: number | null;
+        } | null = null;
         if (Number(remaining.rows[0]!.count) === 0) {
           // `AND status='active'` — re-completing a step on an already
           // closed session (abandoned, completed) must not rewrite
           // completed_at. The original win time is the one that matters
           // for analytics and the 24-hr recovery window.
-          await client.query(
+          const closeRes = await client.query<{
+            scam_type: string | null;
+            amount_lost_cents: number | null;
+            duration_seconds: number | null;
+          }>(
             `UPDATE recovery_sessions
                 SET status = 'completed', completed_at = NOW(), updated_at = NOW()
-              WHERE id = $1 AND status = 'active'`,
+              WHERE id = $1 AND status = 'active'
+            RETURNING scam_type, amount_lost_cents,
+                      EXTRACT(EPOCH FROM (NOW() - started_at))::INT AS duration_seconds`,
             [id],
           );
+          // rowCount > 0 only when the row was actually 'active' before —
+          // re-completing a step on an already-closed session no-ops here
+          // and we DON'T fire the event (would double-count).
+          if (closeRes.rowCount && closeRes.rows[0]) {
+            const r = closeRes.rows[0];
+            justCompleted = {
+              scamType: r.scam_type,
+              amountLostCents: r.amount_lost_cents,
+              durationSeconds: r.duration_seconds,
+            };
+          }
         } else if (body.data.status === 'in_progress') {
           // Undo path: the user reset a previously-completed step on a
           // session that had auto-closed. Reopen the session so the
@@ -479,8 +502,20 @@ export async function recoveryRoutes(app: FastifyInstance): Promise<void> {
             [id],
           );
         }
-        return { kind: 'ok' as const };
+        return { kind: 'ok' as const, justCompleted };
       });
+
+      // Founder-dashboard signal — fires only on the active→completed
+      // transition (justCompleted is null on every other path) so the
+      // count reflects unique session completions, not step taps.
+      if (outcome.kind === 'ok' && outcome.justCompleted) {
+        trackRecoveryCompleted(user.id, {
+          sessionId: id,
+          scamType: outcome.justCompleted.scamType,
+          amountLostCents: outcome.justCompleted.amountLostCents,
+          durationSeconds: outcome.justCompleted.durationSeconds,
+        });
+      }
 
       if (outcome.kind === 'session_not_found') {
         return reply.code(404).send({ error: 'session_not_found' });
@@ -1036,16 +1071,32 @@ export async function recoveryRoutes(app: FastifyInstance): Promise<void> {
       }
 
       // Terminal triage paths — update session + fire analytics.
+      // The UPDATE returns prior_status so we can fire recovery_completed
+      // only on the first active→completed transition (idempotent against
+      // re-submitting triage on an already-resolved session).
       const newStatus =
         parsed.data.resolved_as === 'unclear' ? 'active' : 'completed';
-      await query(
-        `UPDATE recovery_sessions
+      const updateRes = await query<{
+        prior_status: string;
+        scam_type: string | null;
+        amount_lost_cents: number | null;
+        duration_seconds: number | null;
+      }>(
+        `WITH prior AS (
+            SELECT status FROM recovery_sessions WHERE id = $1
+         )
+         UPDATE recovery_sessions s
             SET resolved_as = $2,
                 resolved_at = NOW(),
                 status = $3,
                 completed_at = CASE WHEN $3 = 'completed' THEN NOW() ELSE completed_at END,
                 updated_at = NOW()
-          WHERE id = $1`,
+           FROM prior
+          WHERE s.id = $1
+       RETURNING prior.status AS prior_status,
+                 s.scam_type,
+                 s.amount_lost_cents,
+                 EXTRACT(EPOCH FROM (NOW() - s.started_at))::INT AS duration_seconds`,
         [id, parsed.data.resolved_as, newStatus],
       );
 
@@ -1061,6 +1112,23 @@ export async function recoveryRoutes(app: FastifyInstance): Promise<void> {
         userId: user.id,
         properties: { resolved_as: parsed.data.resolved_as },
       });
+
+      // Founder-dashboard signal — fire only on the first active→completed
+      // transition. Re-submitting triage on an already-resolved session
+      // (prior_status === 'completed') is a no-op for this metric.
+      const updateRow = updateRes.rows[0];
+      if (
+        updateRow &&
+        newStatus === 'completed' &&
+        updateRow.prior_status !== 'completed'
+      ) {
+        trackRecoveryCompleted(user.id, {
+          sessionId: id,
+          scamType: updateRow.scam_type,
+          amountLostCents: updateRow.amount_lost_cents,
+          durationSeconds: updateRow.duration_seconds,
+        });
+      }
 
       return reply.send(await loadSession(id, user.id));
     },

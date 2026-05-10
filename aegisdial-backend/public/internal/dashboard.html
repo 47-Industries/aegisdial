@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="robots" content="noindex,nofollow" />
+<title>AegisDial · Founder Dashboard</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #07090C;
+    --surface:   #0F1318;
+    --surface2:  #161B22;
+    --border:    #232A33;
+    --teal:      #1FE08A;
+    --teal-dim:  rgba(31,224,138,0.10);
+    --red:       #FF4D6D;
+    --amber:     #FFB23F;
+    --text:      #FFFFFF;
+    --text2:     #B8C2CC;
+    --text3:     #6A7480;
+    --text4:     #3F4853;
+    --mono:      ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  }
+
+  html, body { height: 100%; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+  }
+
+  /* ── Layout ── */
+  .wrap {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 32px 24px 80px;
+  }
+
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 32px;
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  header .brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1.4px;
+    color: var(--text3);
+    text-transform: uppercase;
+  }
+  header .brand .dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--teal);
+    box-shadow: 0 0 10px var(--teal);
+  }
+
+  header .meta {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    font-size: 12px;
+    color: var(--text3);
+  }
+
+  header .refresh-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text2);
+    border-radius: 8px;
+    padding: 7px 14px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: border-color .15s, color .15s, background .15s;
+    font-family: inherit;
+  }
+  header .refresh-btn:hover {
+    border-color: var(--teal);
+    color: var(--teal);
+    background: var(--teal-dim);
+  }
+  header .refresh-btn:disabled { opacity: .5; cursor: wait; }
+
+  /* ── KPI grid ── */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 14px;
+    margin-bottom: 40px;
+  }
+  @media (max-width: 760px) { .kpi-grid { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 480px) { .kpi-grid { grid-template-columns: 1fr; } }
+
+  .kpi {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 20px 22px;
+    position: relative;
+    transition: border-color .15s;
+  }
+  .kpi:hover { border-color: var(--text4); }
+
+  .kpi-label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.4px;
+    color: var(--text3);
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+
+  .kpi-value {
+    font-family: var(--mono);
+    font-size: 30px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: var(--text);
+  }
+
+  .kpi-sub {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--text3);
+  }
+
+  .kpi.loading .kpi-value { color: var(--text4); }
+
+  /* ── Ask panel ── */
+  .ask {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+
+  .ask h2 {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.4px;
+    color: var(--text3);
+    text-transform: uppercase;
+    margin-bottom: 14px;
+  }
+
+  .ask-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .ask input {
+    flex: 1;
+    min-width: 280px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 14px;
+    color: var(--text);
+    outline: none;
+    transition: border-color .15s;
+    font-family: inherit;
+  }
+  .ask input::placeholder { color: var(--text4); }
+  .ask input:focus { border-color: var(--teal); }
+
+  .ask button {
+    background: var(--teal);
+    color: #000;
+    border: none;
+    border-radius: 10px;
+    padding: 12px 22px;
+    font-size: 14px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: opacity .15s, transform .1s;
+    font-family: inherit;
+  }
+  .ask button:hover { opacity: .9; }
+  .ask button:active { transform: scale(.98); }
+  .ask button:disabled { opacity: .4; cursor: wait; }
+
+  .examples {
+    margin-top: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .example-chip {
+    font-size: 12px;
+    color: var(--text3);
+    background: var(--surface2);
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    padding: 5px 11px;
+    cursor: pointer;
+    transition: color .15s, border-color .15s;
+  }
+  .example-chip:hover { color: var(--text); border-color: var(--text4); }
+
+  /* ── Result ── */
+  .result {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 24px;
+  }
+  .result.empty { display: none; }
+
+  .result-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+  }
+  .result-meta .label {
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 1.4px;
+    color: var(--text3);
+    text-transform: uppercase;
+  }
+  .result-meta .timing { font-size: 11px; color: var(--text3); font-family: var(--mono); }
+
+  .sql {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--teal);
+    overflow-x: auto;
+    margin-bottom: 18px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  th, td {
+    padding: 9px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  th {
+    background: var(--surface2);
+    color: var(--text3);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    font-size: 10px;
+  }
+  tr:last-child td { border-bottom: none; }
+  td { color: var(--text2); }
+
+  .empty-rows {
+    padding: 18px;
+    text-align: center;
+    color: var(--text3);
+    font-size: 13px;
+    font-family: var(--mono);
+  }
+
+  .error {
+    background: rgba(255,77,109,.06);
+    border: 1px solid rgba(255,77,109,.3);
+    color: var(--red);
+    border-radius: 10px;
+    padding: 14px 16px;
+    font-size: 13px;
+    font-family: var(--mono);
+    word-break: break-word;
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header>
+  <div class="brand"><span class="dot"></span>AegisDial · Founder</div>
+  <div class="meta">
+    <span id="refreshed-at">—</span>
+    <button id="refresh-btn" class="refresh-btn">Refresh</button>
+  </div>
+</header>
+
+<!-- KPI grid -->
+<div class="kpi-grid" id="kpi-grid">
+  <div class="kpi loading" data-key="mrr_cents">
+    <div class="kpi-label">MRR</div>
+    <div class="kpi-value">—</div>
+    <div class="kpi-sub">monthly recurring revenue</div>
+  </div>
+  <div class="kpi loading" data-key="active_subscribers">
+    <div class="kpi-label">Active Subs</div>
+    <div class="kpi-value">—</div>
+    <div class="kpi-sub">distinct paying users</div>
+  </div>
+  <div class="kpi loading" data-key="dau">
+    <div class="kpi-label">DAU</div>
+    <div class="kpi-value">—</div>
+    <div class="kpi-sub">events in last 24h</div>
+  </div>
+  <div class="kpi loading" data-key="blocks_today">
+    <div class="kpi-label">Blocks Today</div>
+    <div class="kpi-value">—</div>
+    <div class="kpi-sub">critical scams stopped</div>
+  </div>
+  <div class="kpi loading" data-key="recoveries_month">
+    <div class="kpi-label">Recoveries (mo)</div>
+    <div class="kpi-value">—</div>
+    <div class="kpi-sub">concierge flows completed</div>
+  </div>
+  <div class="kpi loading" data-key="cancellations_month">
+    <div class="kpi-label">Cancellations (mo)</div>
+    <div class="kpi-value">—</div>
+    <div class="kpi-sub">subscriptions churned</div>
+  </div>
+</div>
+
+<!-- Ask panel -->
+<div class="ask">
+  <h2>Ask the data</h2>
+  <div class="ask-row">
+    <input type="text" id="question"
+      placeholder='e.g. "How many people signed up last week?"'
+      autocomplete="off" spellcheck="false" />
+    <button id="ask-btn">Ask</button>
+  </div>
+  <div class="examples" id="examples">
+    <span class="example-chip">Top scam types this month</span>
+    <span class="example-chip">Sub product mix right now</span>
+    <span class="example-chip">Critical calls in the last 7 days</span>
+    <span class="example-chip">Daily signups for the last 14 days</span>
+  </div>
+</div>
+
+<!-- Result -->
+<div class="result empty" id="result">
+  <div class="result-meta">
+    <span class="label">Result</span>
+    <span class="timing" id="timing"></span>
+  </div>
+  <div id="result-body"></div>
+</div>
+
+</div>
+
+<script>
+  // ── KPI render ──────────────────────────────────────────────────
+  function fmtMRR(cents) {
+    if (cents == null) return '—';
+    const dollars = cents / 100;
+    if (dollars >= 1000) {
+      return '$' + (dollars / 1000).toFixed(1) + 'K';
+    }
+    return '$' + dollars.toFixed(2);
+  }
+  function fmtNum(n) {
+    if (n == null) return '—';
+    if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'K';
+    return String(n);
+  }
+  function fmtTimeAgo(iso) {
+    if (!iso) return '—';
+    const d = new Date(iso);
+    if (Number.isNaN(+d)) return '—';
+    const sec = Math.max(0, Math.round((Date.now() - d.getTime()) / 1000));
+    if (sec < 60)  return sec + 's ago';
+    if (sec < 3600) return Math.round(sec / 60) + 'm ago';
+    return Math.round(sec / 3600) + 'h ago';
+  }
+
+  let lastKpiAt = null;
+
+  async function loadKpis(force = false) {
+    const btn = document.getElementById('refresh-btn');
+    btn.disabled = true;
+    try {
+      const url = '/internal/kpis' + (force ? '?force=1' : '');
+      const res = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error('kpis ' + res.status);
+      const k = await res.json();
+      const map = {
+        mrr_cents:           fmtMRR(k.mrr_cents),
+        active_subscribers:  fmtNum(k.active_subscribers),
+        dau:                 fmtNum(k.dau),
+        blocks_today:        fmtNum(k.blocks_today),
+        recoveries_month:    fmtNum(k.recoveries_month),
+        cancellations_month: fmtNum(k.cancellations_month),
+      };
+      document.querySelectorAll('.kpi').forEach((el) => {
+        const key = el.dataset.key;
+        const v = map[key];
+        if (v != null) {
+          el.classList.remove('loading');
+          el.querySelector('.kpi-value').textContent = v;
+        }
+      });
+      lastKpiAt = k.refreshed_at;
+      document.getElementById('refreshed-at').textContent = 'updated ' + fmtTimeAgo(lastKpiAt);
+    } catch (err) {
+      document.getElementById('refreshed-at').textContent = 'load failed';
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
+  document.getElementById('refresh-btn').addEventListener('click', () => loadKpis(true));
+
+  // Tick the "updated Xs ago" label every 5s.
+  setInterval(() => {
+    if (lastKpiAt) {
+      document.getElementById('refreshed-at').textContent = 'updated ' + fmtTimeAgo(lastKpiAt);
+    }
+  }, 5000);
+
+  // Auto re-fetch every 60s.
+  setInterval(() => loadKpis(false), 60_000);
+
+  // ── Ask ─────────────────────────────────────────────────────────
+  const resultEl  = document.getElementById('result');
+  const bodyEl    = document.getElementById('result-body');
+  const timingEl  = document.getElementById('timing');
+  const askBtn    = document.getElementById('ask-btn');
+  const askInput  = document.getElementById('question');
+
+  function escapeHtml(s) {
+    return String(s ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function renderTable(columns, rows) {
+    if (!rows || rows.length === 0) {
+      return '<div class="empty-rows">No rows.</div>';
+    }
+    const cols = columns && columns.length ? columns : Object.keys(rows[0]);
+    let html = '<div class="table-wrap"><table><thead><tr>';
+    for (const c of cols) html += '<th>' + escapeHtml(c) + '</th>';
+    html += '</tr></thead><tbody>';
+    for (const row of rows) {
+      html += '<tr>';
+      for (const c of cols) {
+        let v = row[c];
+        if (v == null) v = '';
+        else if (typeof v === 'object') v = JSON.stringify(v);
+        html += '<td>' + escapeHtml(v) + '</td>';
+      }
+      html += '</tr>';
+    }
+    html += '</tbody></table></div>';
+    return html;
+  }
+
+  function showError(msg, sql) {
+    resultEl.classList.remove('empty');
+    timingEl.textContent = '';
+    let html = '<div class="error">' + escapeHtml(msg) + '</div>';
+    if (sql) html += '<div class="sql" style="margin-top:14px;">' + escapeHtml(sql) + '</div>';
+    bodyEl.innerHTML = html;
+  }
+
+  async function ask() {
+    const q = askInput.value.trim();
+    if (!q) return;
+    askBtn.disabled = true;
+    resultEl.classList.remove('empty');
+    timingEl.textContent = '';
+    bodyEl.innerHTML = '<div class="empty-rows">Thinking…</div>';
+    try {
+      const res = await fetch('/internal/ask', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ question: q }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        const msg =
+          data.error === 'sql_rejected'   ? 'Generated SQL was rejected: ' + (data.reason || 'unknown') :
+          data.error === 'sql_execute_failed' ? 'Query failed: ' + (data.detail || 'unknown') :
+          data.error === 'nl_sql_failed' ? 'AI failed: ' + (data.detail || 'unknown') :
+          'Request failed: ' + (data.error || res.status);
+        showError(msg, data.sql);
+        return;
+      }
+      let html = '<div class="sql">' + escapeHtml(data.sql) + '</div>';
+      html += renderTable(data.columns, data.rows);
+      bodyEl.innerHTML = html;
+      timingEl.textContent =
+        (data.duration_ms || 0) + 'ms · ' +
+        (data.rows ? data.rows.length : 0) + ' rows · ' +
+        (data.model_tokens
+          ? data.model_tokens.input + 'in/' + data.model_tokens.output + 'out tok'
+          : '');
+    } catch (err) {
+      showError('Network error: ' + (err && err.message ? err.message : err));
+    } finally {
+      askBtn.disabled = false;
+    }
+  }
+
+  askBtn.addEventListener('click', ask);
+  askInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') ask();
+  });
+
+  // Example chips: clicking inserts and runs.
+  document.querySelectorAll('.example-chip').forEach((el) => {
+    el.addEventListener('click', () => {
+      askInput.value = el.textContent;
+      ask();
+    });
+  });
+
+  // Initial load.
+  loadKpis(false);
+</script>
+</body>
+</html>

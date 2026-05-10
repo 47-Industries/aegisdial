@@ -71,6 +71,11 @@ const schema = z.object({
     .transform((v) => v === 'true'),
 
   API_SHARED_SECRET: z.string().min(8),
+  // Password gating /internal/* — the founder KPI dashboard. Optional
+  // in dev so a fresh checkout boots without secrets; the dashboard
+  // routes return 503 if it's unset rather than 200-with-no-password.
+  // Must be set in any deploy that exposes the dashboard.
+  INTERNAL_DASHBOARD_PASSWORD: z.string().min(8).optional(),
   // 32-byte AES-256 key, base64-encoded. Used for envelope-encrypting PII at
   // rest (monitored_identifiers.display_value, recovery_evidence.payload).
   // In dev we default to a deterministic key so local data stays readable

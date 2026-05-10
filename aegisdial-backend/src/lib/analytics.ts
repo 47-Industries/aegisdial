@@ -23,6 +23,11 @@ export type AnalyticsEvent =
   | 'family_invite_accepted'
   | 'recovery_started'
   | 'recovery_step_completed'
+  // Founder dashboard signals (see src/lib/internalEvents.ts):
+  //   recovery_completed — full Recovery Concierge flow finished
+  //   call_blocked       — critical scam call ended with hang-up / guardian escalation
+  | 'recovery_completed'
+  | 'call_blocked'
   | 'triage_started'
   | 'triage_resolved'
   | 'scam_prevented_triage'

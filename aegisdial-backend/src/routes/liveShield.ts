@@ -8,6 +8,7 @@ import { scoreHits } from '../services/liveShield.js';
 import type { PhraseHit } from '../lib/scamPhrases.js';
 import { emitGuardianAlert } from '../services/guardianAlerts.js';
 import { track } from '../lib/analytics.js';
+import { trackCallBlocked } from '../lib/internalEvents.js';
 import { encryptString, readMaybeEncrypted } from '../lib/crypto.js';
 
 // Suggestion payload returned to the iOS app when an emergency-relative
@@ -422,6 +423,24 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
           outcome: parsed.data.outcome,
         },
       });
+
+      // Founder-dashboard signal — fires only when a critical-risk call
+      // ends with the user disengaging (hung up or escalated to their
+      // guardian). user_completed / user_abandoned aren't counted because
+      // we can't tell from those whether the user fell for the scam.
+      if (
+        row.risk_level === 'critical' &&
+        (parsed.data.outcome === 'user_hung_up' ||
+          parsed.data.outcome === 'user_called_guardian')
+      ) {
+        trackCallBlocked(user.id, {
+          sessionId: id,
+          riskScore: row.risk_score,
+          durationSeconds: row.duration_seconds,
+          outcome: parsed.data.outcome,
+          triggeredCategories: row.triggered_categories,
+        });
+      }
 
       return reply.send({
         session_id: id,
