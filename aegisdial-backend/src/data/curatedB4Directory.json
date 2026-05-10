@@ -1,0 +1,133 @@
+{
+  "_meta": {
+    "version": "1.0.0",
+    "last_updated": "2026-05-10",
+    "purpose": "Layer 1 of B4 verification. Hand-curated, high-precision lookups for the most-impersonated banks, federal agencies, and known-scam-script phrases. Phase 3 expands this seed; runtime additions go to b4_curated_overrides table without an app release.",
+    "review_cadence": "quarterly",
+    "owner": "AegisDial product"
+  },
+  "banks": [
+    {
+      "id": "bank-wells-fargo",
+      "name": "Wells Fargo",
+      "aliases": ["wells", "wells fargo", "wf bank"],
+      "outbound_calling_rule": "Wells Fargo's fraud department does not initiate cold calls about suspicious activity. Customers are asked to call the number on the back of their card. Real outbound calls only occur in response to a customer-initiated case.",
+      "published_outbound_numbers": [],
+      "_note": "Official outbound numbers list pending bank-relations curation. Until populated, verifier returns 'cannot_verify' for bank_affiliation claims of Wells Fargo and the rule above is the contradicting evidence."
+    },
+    {
+      "id": "bank-chase",
+      "name": "Chase",
+      "aliases": ["chase", "jpmorgan chase", "jp morgan"],
+      "outbound_calling_rule": "Chase fraud alerts via call only happen when the customer has a recent transaction Chase flagged; Chase asks the customer to verify the transaction but never asks for full SSN, passwords, or one-time codes over the phone.",
+      "published_outbound_numbers": []
+    },
+    {
+      "id": "bank-bank-of-america",
+      "name": "Bank of America",
+      "aliases": ["bofa", "bank of america", "boa"],
+      "outbound_calling_rule": "Bank of America never asks for online banking passwords, full debit card PINs, or one-time security codes during a phone call.",
+      "published_outbound_numbers": []
+    },
+    {
+      "id": "bank-citi",
+      "name": "Citi",
+      "aliases": ["citi", "citibank"],
+      "outbound_calling_rule": "Citi fraud verification does not require the customer to share their full SSN, account number, or one-time codes over the phone.",
+      "published_outbound_numbers": []
+    },
+    {
+      "id": "bank-capital-one",
+      "name": "Capital One",
+      "aliases": ["capital one", "cap one"],
+      "outbound_calling_rule": "Capital One never calls to ask for a verification code that was just sent to the customer's phone.",
+      "published_outbound_numbers": []
+    },
+    {
+      "id": "bank-usbank",
+      "name": "U.S. Bank",
+      "aliases": ["us bank", "u.s. bank"],
+      "outbound_calling_rule": "U.S. Bank does not ask for full SSN, online banking PIN, or one-time codes during outbound calls.",
+      "published_outbound_numbers": []
+    }
+  ],
+  "agencies": [
+    {
+      "id": "agency-irs",
+      "name": "Internal Revenue Service",
+      "aliases": ["irs", "internal revenue", "irs agent"],
+      "outbound_calling_rule": "The IRS does not initiate cold calls about owed taxes. First contact about a tax debt is by mail. The IRS never threatens immediate arrest, demands payment via gift cards, wire transfer, or cryptocurrency, and never demands payment without giving the taxpayer the opportunity to question or appeal the amount.",
+      "published_contact_channels": [
+        "https://www.irs.gov/help/contact-your-local-irs-office"
+      ]
+    },
+    {
+      "id": "agency-ssa",
+      "name": "Social Security Administration",
+      "aliases": ["ssa", "social security", "social security administration"],
+      "outbound_calling_rule": "The SSA will never threaten arrest or legal action, demand immediate payment, require payment via gift card or wire transfer, or threaten to suspend a Social Security number. Real SSA calls are rare and are typically responses to a customer's prior request.",
+      "published_contact_channels": [
+        "https://www.ssa.gov/agency/contact/"
+      ]
+    },
+    {
+      "id": "agency-medicare",
+      "name": "Medicare",
+      "aliases": ["medicare"],
+      "outbound_calling_rule": "Medicare does not call beneficiaries to ask for personal information or money. Beneficiaries are asked to call 1-800-MEDICARE if there is a real issue.",
+      "published_contact_channels": [
+        "https://www.medicare.gov/talk-to-someone"
+      ]
+    },
+    {
+      "id": "agency-fbi",
+      "name": "FBI",
+      "aliases": ["fbi", "federal bureau", "f.b.i.", "federal bureau of investigation"],
+      "outbound_calling_rule": "The FBI does not call individuals to threaten arrest or extort money. Anyone claiming to be FBI on the phone demanding payment is a scammer.",
+      "published_contact_channels": [
+        "https://www.fbi.gov/contact-us"
+      ]
+    },
+    {
+      "id": "agency-us-marshals",
+      "name": "U.S. Marshals Service",
+      "aliases": ["us marshals", "marshals", "u.s. marshals", "u s marshals"],
+      "outbound_calling_rule": "The U.S. Marshals Service does not call about missed jury duty and demand a fine via gift card, wire transfer, or cryptocurrency. Missed-jury-duty issues are handled in writing by the relevant court.",
+      "published_contact_channels": [
+        "https://www.usmarshals.gov/contact-us"
+      ]
+    }
+  ],
+  "scam_script_phrases": [
+    {
+      "id": "rule-itunes-payment",
+      "pattern": "itunes gift card|apple gift card|google play card",
+      "rationale": "No legitimate institution accepts payment via consumer gift cards. This phrase in the context of any payment demand is a near-certain scam indicator."
+    },
+    {
+      "id": "rule-immediate-arrest",
+      "pattern": "warrant for your arrest|police are on their way|arrest you in (one|24) hours?",
+      "rationale": "Government agencies do not announce imminent arrest by phone. This is high-pressure scam scripting."
+    },
+    {
+      "id": "rule-suspended-ssn",
+      "pattern": "social security number (has been )?suspended|suspended your social",
+      "rationale": "Social Security numbers are never suspended. This phrase originates from the largest US-targeted phone scam category by dollar volume."
+    },
+    {
+      "id": "rule-bitcoin-payment",
+      "pattern": "bitcoin atm|wire it to|crypto payment|cryptocurrency payment",
+      "rationale": "Government agencies, banks, and utilities never demand payment via cryptocurrency."
+    },
+    {
+      "id": "rule-stay-on-the-line",
+      "pattern": "do not hang up|stay on the line|don't tell anyone|don't talk to anyone",
+      "rationale": "Isolation language is a hallmark of high-pressure scams. Real institutions encourage customers to verify by calling published numbers."
+    },
+    {
+      "id": "rule-verification-code",
+      "pattern": "read me the (verification|security|authorization|auth) code|read back the code",
+      "rationale": "MFA codes are never shared with callers. Any caller asking for a code that was just texted is attempting account takeover."
+    }
+  ]
+}
