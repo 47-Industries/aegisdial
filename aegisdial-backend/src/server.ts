@@ -41,6 +41,9 @@ import {
   registerCriticalTakeoverHandlers,
 } from './routes/criticalTakeover.js';
 import { startPostDismissWatcher, stopPostDismissWatcher } from './services/postDismissWatcher.js';
+// Live Shield v3 — B4 routes + orchestrator. Same V3_B4_ENABLED gate.
+import { findingsRoutes } from './routes/findings.js';
+import { startB4Orchestrator, stopB4Orchestrator } from './services/b4Orchestrator.js';
 import { startPushDispatcher, stopPushDispatcher } from './workers/pushDispatcher.js';
 import { optionalAppUser } from './lib/auth.js';
 import { shutdownDb } from './lib/db.js';
@@ -123,6 +126,11 @@ registerCriticalTakeoverHandlers();
 // events from v3SessionEvents and drives per-session timers. No-op
 // when V3_B3_ENABLED is OFF.
 startPostDismissWatcher();
+await app.register(findingsRoutes);
+// Start the B4 orchestrator. Subscribes to scammer-side transcript
+// chunks from v3SessionEvents and runs the extract → verify →
+// dispatch pipeline. No-op when V3_B4_ENABLED is OFF.
+startB4Orchestrator();
 
 const scheduler = config.ENABLE_CRAWLERS ? startScheduler() : null;
 const breachRescanner = startBreachRescanner();
@@ -192,6 +200,7 @@ const shutdown = async (signal: string): Promise<void> => {
       a1HotNumbersPopulator.task.stop();
     }
     stopPostDismissWatcher();
+    stopB4Orchestrator();
     await shutdownAnalytics();
     await app.close();
     await shutdownDb();
