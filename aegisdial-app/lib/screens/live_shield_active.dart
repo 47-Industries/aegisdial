@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
+import '../services/live_shield_service.dart';
 
 class LiveShieldActiveScreen extends StatefulWidget {
   const LiveShieldActiveScreen({super.key});
@@ -85,6 +86,15 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
   Timer? _demoTimer;
   final List<_DemoCall> _callHistory = [];
 
+  // Backend integration state. When `_sessionId` is non-null the demo is
+  // also driving a real /v1/live-shield session — the score we render is
+  // what the v2 hybrid engine returned (regex + Claude). When null we
+  // fall back to scripted scores so the demo still works for non-Pro
+  // accounts, offline, or any backend hiccup.
+  String? _sessionId;
+  String? _coachingLine;
+  int _backendChunkSeq = 0;
+
   @override
   void initState() {
     super.initState();
@@ -113,22 +123,60 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
       _demoPhase = _DemoPhase.ringing;
       _transcript.clear();
       _fraudScore = 0;
+      _coachingLine = null;
+      _sessionId = null;
+      _backendChunkSeq = 0;
     });
     HapticFeedback.heavyImpact();
 
+    // Kick off a real backend session in parallel with the "ringing"
+    // animation. If this Pro-gated call fails (non-Pro, offline, 5xx)
+    // we just won't have a session_id and the demo runs in fallback
+    // mode with scripted scores. Never blocks the user-facing flow.
+    final startFuture = liveShield.start(peerNumber: scenario.number);
+
     await Future.delayed(const Duration(milliseconds: 1800));
     if (!mounted) return;
+    final startResult = await startFuture;
+    if (mounted && startResult != null) {
+      _sessionId = startResult.sessionId;
+    }
     setState(() => _demoPhase = _DemoPhase.transcribing);
 
     const delays = [0, 1400, 1600, 1500, 1700];
     for (int i = 0; i < scenario.lines.length; i++) {
       await Future.delayed(Duration(milliseconds: delays[i]));
       if (!mounted) return;
+      final line = scenario.lines[i];
       setState(() {
-        _transcript.add(scenario.lines[i]);
+        _transcript.add(line);
+        // Optimistic: show scripted score immediately. If backend
+        // returns one for this chunk we'll overwrite it below.
         _fraudScore = scenario.scores[i];
       });
       HapticFeedback.selectionClick();
+
+      // Send the chunk to the backend (if we got a session). Backend
+      // computes its own score from the same line — if it differs from
+      // the scripted score it's because the real v2 engine had a
+      // different read, which is exactly what we want to surface.
+      final sid = _sessionId;
+      if (sid != null) {
+        final chunkResult = await liveShield.sendChunk(
+          sessionId: sid,
+          seq: _backendChunkSeq++,
+          text: line,
+          speaker: 'caller',
+        );
+        if (chunkResult != null && mounted) {
+          setState(() {
+            _fraudScore = chunkResult.riskScore;
+            if (chunkResult.coachingLine != null) {
+              _coachingLine = chunkResult.coachingLine;
+            }
+          });
+        }
+      }
     }
 
     await Future.delayed(const Duration(milliseconds: 600));
@@ -139,6 +187,14 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
 
   void _dismissDemo() {
     if (_demoPhase == _DemoPhase.verdict) {
+      // Close the backend session if one was opened. Use `user_hung_up`
+      // because tapping "Block" on the verdict card is the closest
+      // analogue to disengaging the call — and that's the outcome the
+      // backend uses to fire the `call_blocked` analytic.
+      final sid = _sessionId;
+      if (sid != null) {
+        liveShield.end(sessionId: sid, outcome: 'user_hung_up');
+      }
       setState(() {
         _callHistory.insert(0, _DemoCall(
           List.from(_transcript), _fraudScore,
@@ -147,6 +203,8 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
         _demoPhase = _DemoPhase.done;
         _transcript.clear();
         _fraudScore = 0;
+        _coachingLine = null;
+        _sessionId = null;
       });
       Future.delayed(const Duration(milliseconds: 400), () {
         if (mounted) setState(() => _demoPhase = _DemoPhase.idle);
@@ -267,6 +325,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                               lines: _transcript,
                               score: _fraudScore,
                               verdict: _demoPhase == _DemoPhase.verdict,
+                              coachingLine: _coachingLine,
                               onBlock: _dismissDemo,
                               onAnswer: _dismissDemo,
                             )
@@ -728,6 +787,7 @@ class _LiveCallCard extends StatelessWidget {
   final int score;
   final bool verdict;
   final String scenarioName;
+  final String? coachingLine; // v2 LLM coaching — only set on Pro accounts post-consent-v2
   final VoidCallback onBlock;
   final VoidCallback onAnswer;
 
@@ -738,6 +798,7 @@ class _LiveCallCard extends StatelessWidget {
     required this.score,
     required this.verdict,
     required this.scenarioName,
+    this.coachingLine,
     required this.onBlock,
     required this.onAnswer,
   });
@@ -801,6 +862,60 @@ class _LiveCallCard extends StatelessWidget {
               ],
             ),
           ),
+          // v2 coaching banner — only present when the backend's LLM
+          // returned a sanitized coaching line for this session. iOS
+          // shows it above the transcript so the user has a concrete
+          // line to say back ("Tell them you'll call back on the
+          // official number...") at the moment they need it.
+          if (coachingLine != null && coachingLine!.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              padding: const EdgeInsets.fromLTRB(12, 10, 12, 12),
+              decoration: BoxDecoration(
+                color: AegisColors.turquoise.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AegisColors.turquoise.withValues(alpha: 0.35),
+                  width: 0.8,
+                ),
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(
+                    Icons.auto_awesome_rounded,
+                    size: 14,
+                    color: AegisColors.turquoise,
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'WHAT TO SAY',
+                          style: tt.labelSmall?.copyWith(
+                            color: AegisColors.turquoise,
+                            letterSpacing: 1.2,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          coachingLine!,
+                          style: tt.bodySmall?.copyWith(
+                            color: AegisColors.textPrimary,
+                            height: 1.45,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
           // Transcript
           Container(
             margin: const EdgeInsets.symmetric(horizontal: 12),
