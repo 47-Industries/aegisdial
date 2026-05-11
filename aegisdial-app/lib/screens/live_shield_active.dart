@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../services/live_shield_service.dart';
+import '../widgets/live_shield_consent_v2_sheet.dart';
 
 class LiveShieldActiveScreen extends StatefulWidget {
   const LiveShieldActiveScreen({super.key});
@@ -118,6 +119,15 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
 
   Future<void> _runDemo() async {
     if (_demoPhase != _DemoPhase.idle && _demoPhase != _DemoPhase.done) return;
+
+    // Surface the v2 consent sheet on first run after install. If the
+    // user declines, we still run the demo — the backend session just
+    // opens as consent_version=1 (regex-only, no coaching line). The
+    // decline path is intentional: we never block a user from seeing
+    // the demo just because they don't want LLM coaching today.
+    await showLiveShieldConsentV2Sheet(context);
+    if (!mounted) return;
+
     final scenario = _kScenarios[_scenarioIndex];
     setState(() {
       _demoPhase = _DemoPhase.ringing;

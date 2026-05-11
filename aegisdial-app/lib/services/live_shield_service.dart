@@ -15,6 +15,7 @@
 // asks for it (the LLM service has its own gate). Safe to ship now.
 
 import 'api_service.dart';
+import 'consent_service.dart';
 
 class LiveShieldStartResult {
   final String sessionId;
@@ -62,15 +63,18 @@ class LiveShieldService {
 
   /// Open a real backend session. Returns null if auth/non-Pro/network
   /// fails — the caller should fall back to local demo mode.
+  ///
+  /// `consent_version` is resolved from the on-device flag set by the
+  /// v2 disclosure sheet. Until the user has explicitly accepted v2,
+  /// this falls back to 1 and the backend keeps the session regex-only.
   Future<LiveShieldStartResult?> start({String? peerNumber}) async {
     try {
+      final consentVersion = await consentService.activeConsentVersion();
       final res = await api.post('/v1/live-shield/start', {
         'peer_number': peerNumber,
         'direction': 'inbound',
         'consent_given': true,
-        // v2 consent — unlocks Claude coaching path on backend. The
-        // disclosure copy must be presented before this point.
-        'consent_version': 2,
+        'consent_version': consentVersion,
       });
       final sessionId = res['session_id'] as String?;
       final startedAtStr = res['started_at'] as String?;
