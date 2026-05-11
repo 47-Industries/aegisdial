@@ -10,6 +10,40 @@ interface CacheClient {
    * process already held the key.
    */
   setNX(key: string, value: string, ttlSeconds: number): Promise<'OK' | null>;
+  /**
+   * Atomic INCR — increments the counter at `key` by 1 (creating it
+   * at 0 if absent) and returns the new value. Paired with `expire`
+   * to build per-window rate-limit counters.
+   *
+   * NOTE: INCR alone does NOT set TTL — the resulting key persists
+   * forever unless `expire` is set afterward. For atomic
+   * INCR+EXPIRE-on-first-incr semantics (no crash window where the
+   * key exists without TTL), use `incrWithTtl` instead.
+   */
+  incr(key: string): Promise<number>;
+  /**
+   * Set TTL on an existing key. Returns 1 when the key existed and
+   * the TTL was applied, 0 when the key was absent. Idempotent —
+   * calling it on a key with an existing TTL replaces the TTL.
+   */
+  expire(key: string, ttlSeconds: number): Promise<number>;
+  /**
+   * Atomic increment + TTL-on-first-creation in a single round-trip.
+   *
+   * Semantics: increments `key` by 1. If the key did not exist
+   * before this call (i.e., the new value is 1), also sets the TTL
+   * to `ttlSeconds`. Otherwise the existing TTL is left untouched.
+   * Returns the new value.
+   *
+   * Replaces the two-RTT `incr(); if (==1) expire()` pattern. The
+   * old pattern had a crash window between INCR and EXPIRE where a
+   * process death would leave the key alive forever without a TTL —
+   * orphan-key leak over time, plus stuck counters for unlucky users
+   * (see adversarial review M-1 on commit fabc900).
+   *
+   * Use this for any per-window rate-limit counter.
+   */
+  incrWithTtl(key: string, ttlSeconds: number): Promise<number>;
   del(key: string): Promise<number>;
   ping(): Promise<string>;
   quit(): Promise<'OK'>;
@@ -47,6 +81,50 @@ class InMemoryCache implements CacheClient {
       expiresAt: Date.now() + ttlSeconds * 1000,
     });
     return 'OK';
+  }
+
+  async incr(key: string): Promise<number> {
+    const entry = this.store.get(key);
+    // Treat expired or absent entries as starting from 0.
+    const expired = entry && entry.expiresAt !== null && entry.expiresAt < Date.now();
+    const current = !entry || expired ? 0 : parseInt(entry.value, 10) || 0;
+    const next = current + 1;
+    this.store.set(key, {
+      value: String(next),
+      // Preserve existing TTL on increment (Redis behavior). Callers
+      // who want a fresh TTL should call expire() after the first incr.
+      expiresAt: expired || !entry ? null : entry.expiresAt,
+    });
+    return next;
+  }
+
+  async expire(key: string, ttlSeconds: number): Promise<number> {
+    const entry = this.store.get(key);
+    if (!entry) return 0;
+    if (entry.expiresAt !== null && entry.expiresAt < Date.now()) {
+      this.store.delete(key);
+      return 0;
+    }
+    this.store.set(key, {
+      value: entry.value,
+      expiresAt: Date.now() + ttlSeconds * 1000,
+    });
+    return 1;
+  }
+
+  async incrWithTtl(key: string, ttlSeconds: number): Promise<number> {
+    const entry = this.store.get(key);
+    const expired = entry && entry.expiresAt !== null && entry.expiresAt < Date.now();
+    const current = !entry || expired ? 0 : parseInt(entry.value, 10) || 0;
+    const next = current + 1;
+    // If the key did not exist OR was expired, this is effectively a
+    // fresh counter — set the TTL. Otherwise preserve the existing
+    // TTL (same semantics as the Redis Lua EVAL).
+    const expiresAt = !entry || expired
+      ? Date.now() + ttlSeconds * 1000
+      : entry.expiresAt;
+    this.store.set(key, { value: String(next), expiresAt });
+    return next;
   }
 
   async del(key: string): Promise<number> {
@@ -93,6 +171,26 @@ function createClient(): CacheClient {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const res = await (client as any).set(key, value, 'EX', ttlSeconds, 'NX');
       return res === 'OK' ? 'OK' : null;
+    },
+    incr: (key) => client.incr(key),
+    expire: (key, ttlSeconds) => client.expire(key, ttlSeconds),
+    // Atomic INCR + EXPIRE-on-first-incr via Lua. Single RTT, no
+    // crash window. ioredis serializes the script to Redis (Upstash
+    // supports EVAL). The script returns the new counter value.
+    incrWithTtl: async (key, ttlSeconds) => {
+      const SCRIPT = `
+        local v = redis.call('INCR', KEYS[1])
+        if v == 1 then
+          redis.call('EXPIRE', KEYS[1], ARGV[1])
+        end
+        return v
+      `;
+      // ioredis.eval returns `string | number | Buffer | null` — INCR
+      // always yields an integer so a number-cast is safe.
+      const res = await (client as unknown as {
+        eval: (s: string, n: number, k: string, a: string) => Promise<number | string>;
+      }).eval(SCRIPT, 1, key, String(ttlSeconds));
+      return typeof res === 'number' ? res : parseInt(String(res), 10);
     },
     del: (key) => client.del(key),
     ping: () => client.ping(),

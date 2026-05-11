@@ -46,6 +46,11 @@ import { findingsRoutes } from './routes/findings.js';
 import { startB4Orchestrator, stopB4Orchestrator } from './services/b4Orchestrator.js';
 // Live Shield v3 — B5 family-join routes. V3_B5_ENABLED gate.
 import { familyJoinRoutes } from './routes/familyJoin.js';
+// Live Shield v3 — family-transcript SSE stream (Gap #2 audit fix).
+// Always registered (no flag gate): the route's content depends on
+// what the producers (transcript route, emitSystemEvent) emit, which
+// are themselves flag-gated upstream.
+import { familyTranscriptStreamRoutes } from './routes/familyTranscriptStream.js';
 import { startPushDispatcher, stopPushDispatcher } from './workers/pushDispatcher.js';
 import { optionalAppUser } from './lib/auth.js';
 import { shutdownDb } from './lib/db.js';
@@ -125,15 +130,18 @@ await app.register(criticalTakeoverRoutes);
 // path. Idempotent + no-op when V3_B3_ENABLED is OFF.
 registerCriticalTakeoverHandlers();
 // Start the B3 post-dismiss watcher. Subscribes to risk-transition
-// events from v3SessionEvents and drives per-session timers. No-op
-// when V3_B3_ENABLED is OFF.
-startPostDismissWatcher();
+// events from v3SessionEvents and drives per-session timers.
+// Rehydrates any in-flight watches from the DB so a process restart
+// mid-call doesn't drop the post-dismiss family-alert safety net.
+// No-op when V3_B3_ENABLED is OFF.
+await startPostDismissWatcher();
 await app.register(findingsRoutes);
 // Start the B4 orchestrator. Subscribes to scammer-side transcript
 // chunks from v3SessionEvents and runs the extract → verify →
 // dispatch pipeline. No-op when V3_B4_ENABLED is OFF.
 startB4Orchestrator();
 await app.register(familyJoinRoutes);
+await app.register(familyTranscriptStreamRoutes);
 
 const scheduler = config.ENABLE_CRAWLERS ? startScheduler() : null;
 const breachRescanner = startBreachRescanner();

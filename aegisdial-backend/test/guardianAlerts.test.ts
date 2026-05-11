@@ -24,7 +24,9 @@ process.env.REDIS_URL ||= 'memory://guardian-alerts-test';
 
 const db = await import('../src/lib/db.ts');
 const email = await import('../src/lib/email.ts');
-const { emitGuardianAlert } = await import('../src/services/guardianAlerts.ts');
+const { emitGuardianAlert, _resetCooldownForTests } = await import(
+  '../src/services/guardianAlerts.ts'
+);
 
 const SUBJECT = '00000000-0000-0000-0000-000000000001';
 const GUARDIANS = ['g1', 'g2', 'g3', 'g4', 'g5'].map(
@@ -113,8 +115,12 @@ before(() => {
   assert.equal(typeof emitGuardianAlert, 'function');
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   queryLog.length = 0;
+  // R8 cooldown is process-level state — clear it between cases so a
+  // prior test's emit doesn't suppress this one. Production path never
+  // touches the helper.
+  await _resetCooldownForTests(SUBJECT, GUARDIANS);
 });
 
 function insertCall(): QueryCall | undefined {

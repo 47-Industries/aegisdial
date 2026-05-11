@@ -163,6 +163,15 @@ const schema = z.object({
   V3_A2_RETRY_NOTIFY_RATE_PER_24H: z.coerce.number().int().positive().default(3),
   // Per-(user, e164) hourly coalesce — autodialer pattern protection.
   V3_A2_RETRY_NOTIFY_PER_NUMBER_HOURLY: z.coerce.number().int().positive().default(1),
+  // Emergency kill-switch — when true, every A2 retry-attempt is
+  // routed to the daily digest regardless of caps. Flip to fail
+  // closed during a Redis outage or a confirmed push-spam event
+  // without a deploy. Surfaced via the rate-limit decision
+  // (`reason: 'kill_switch'`) so observability dashboards show it.
+  V3_A2_RETRY_NOTIFY_KILL_SWITCH: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
 
   // B3 — Visual takeover at moment of compromise
   V3_B3_ENABLED: z.string().default('false').transform((v) => v === 'true'),
@@ -196,6 +205,37 @@ const schema = z.object({
   // shrug shouldn't push toward critical the way an actual contradiction
   // should.
   V3_B4_SCORE_BOOST_CANNOT_VERIFY_WEIGHT: z.coerce.number().min(0).max(1).default(0.05),
+  // B4 Layer 2 — web-search verifier. Independent of V3_B4_ENABLED so we
+  // can keep Layer 1 (curated directory) live in production while testing
+  // Layer 2 with smaller cohorts. OFF by default because L2 burns paid
+  // API calls (Serper + Claude) per claim.
+  V3_B4_LAYER2_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  // Per-session cap on L2 verifications. Beyond this, additional claims
+  // skip L2 and return cannot_verify. Bursty extraction (e.g. a
+  // monologue-heavy scammer) shouldn't burn the entire daily Serper
+  // budget on one call.
+  V3_B4_LAYER2_PER_SESSION_CAP: z.coerce.number().int().positive().default(8),
+  // Cache TTL for L2 verifications keyed by claim signature. One hour
+  // is long enough to absorb call-campaign repetition (same scammer
+  // claiming "Wells Fargo" across 200 calls) and short enough to
+  // pick up curated overrides via the routine refresh path.
+  V3_B4_LAYER2_CACHE_TTL_SECONDS: z.coerce.number().int().positive().default(3600),
+
+  // Adaptive transcript-flush cadence — the response from
+  // /v1/live-shield/:id/transcript carries a `next_flush_ms` that
+  // iOS uses to decide when to send the next chunk. Default cadence
+  // by risk level:
+  //   low (0–24)      → 8000 ms — same as v2's static cadence
+  //   medium (25–49)  → 5000 ms — start tightening when red flags appear
+  //   high (50–74)    → 3000 ms — close to takeover; we want responsiveness
+  //   critical (≥75)  → 2000 ms — every second of detection latency hurts
+  // Also: any session with B4 claim activity tightens to at least medium
+  // even when score hasn't crossed thresholds yet (so an impersonation
+  // call doesn't get the slow cadence while we're still verifying).
+  V3_FLUSH_MS_LOW:      z.coerce.number().int().positive().default(8000),
+  V3_FLUSH_MS_MEDIUM:   z.coerce.number().int().positive().default(5000),
+  V3_FLUSH_MS_HIGH:     z.coerce.number().int().positive().default(3000),
+  V3_FLUSH_MS_CRITICAL: z.coerce.number().int().positive().default(2000),
 
   // B5 — Family one-tap join via direct dial
   V3_B5_ENABLED: z.string().default('false').transform((v) => v === 'true'),

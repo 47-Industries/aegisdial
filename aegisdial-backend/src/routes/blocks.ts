@@ -5,6 +5,8 @@ import { query } from '../lib/db.js';
 import { normalizeE164 } from '../lib/phone.js';
 import { requireAppUser, requireProTier } from '../lib/auth.js';
 import { emitMetric } from '../lib/observability.js';
+import { enqueueBlockRetryPush } from '../services/v3PushDispatcher.js';
+import { tryReserveRetryNotification } from '../services/a2RetryRateLimit.js';
 
 // Live Shield v3 — A2 user-block routes.
 //
@@ -322,9 +324,10 @@ export async function blocksRoutes(app: FastifyInstance): Promise<void> {
   //
   // Rate-limited per V3_A2_RETRY_NOTIFY_RATE_PER_24H AND per-number
   // hourly coalescing per V3_A2_RETRY_NOTIFY_PER_NUMBER_HOURLY. The
-  // actual push is dispatched asynchronously by a worker (Phase 2 wires
-  // the worker; for now this route just records the attempt and
-  // sets notification_sent based on rate-limit eligibility).
+  // actual push is enqueued via enqueueBlockRetryPush below and
+  // delivered asynchronously by src/workers/pushDispatcher.ts.
+  // This route records the attempt + sets notification_sent based
+  // on rate-limit eligibility; the worker handles APNs delivery.
 
   app.post(
     '/v1/blocks/retry-attempt',
@@ -359,35 +362,14 @@ export async function blocksRoutes(app: FastifyInstance): Promise<void> {
         ? new Date(parsed.data.attempted_at)
         : new Date();
 
-      // Rate-limit logic. Atomically count attempts by this user in
-      // the last 24h AND attempts to/from this number in the last
-      // hour, then decide whether to flag this attempt as
-      // notification-eligible or roll into the daily digest.
-      const dayCount = await query<{ count: string }>(
-        `SELECT COUNT(*)::TEXT AS count
-           FROM block_retry_attempts
-          WHERE user_id = $1
-            AND attempted_at > NOW() - INTERVAL '24 hours'
-            AND notification_sent = TRUE
-            AND notification_grouped = FALSE`,
-        [user.id],
-      );
-      const recentDayCount = parseInt(dayCount.rows[0]?.count ?? '0', 10);
-
-      const hourCount = await query<{ count: string }>(
-        `SELECT COUNT(*)::TEXT AS count
-           FROM block_retry_attempts
-          WHERE user_id = $1
-            AND e164 = $2
-            AND attempted_at > NOW() - INTERVAL '1 hour'
-            AND notification_sent = TRUE`,
-        [user.id, e164],
-      );
-      const recentHourCount = parseInt(hourCount.rows[0]?.count ?? '0', 10);
-
-      const eligibleForIndividualPush =
-        recentDayCount < config.V3_A2_RETRY_NOTIFY_RATE_PER_24H &&
-        recentHourCount < config.V3_A2_RETRY_NOTIFY_PER_NUMBER_HOURLY;
+      // HIGH #7 fix: atomic Redis-backed rate limit (was: two non-atomic
+      // Postgres COUNTs followed by an INSERT — a burst of requests
+      // from one user could see "0 prior eligible" in parallel and all
+      // blow past the cap). The new path uses Redis INCR + EXPIRE
+      // per (user, day) and per (user, e164, hour) — single atomic
+      // increment, immediate decision. See a2RetryRateLimit.ts.
+      const rateLimit = await tryReserveRetryNotification(user.id, e164);
+      const eligibleForIndividualPush = rateLimit.eligible;
 
       const inserted = await query<{ id: string }>(
         `INSERT INTO block_retry_attempts
@@ -407,10 +389,16 @@ export async function blocksRoutes(app: FastifyInstance): Promise<void> {
         eligible_for_individual_push: eligibleForIndividualPush,
       });
 
-      // TODO(Phase 2 worker): if eligibleForIndividualPush, enqueue an
-      // APNs send for the AEGISDIAL_BLOCK_RETRY category. For now the
-      // attempt is recorded and the iOS client can poll
-      // GET /v1/blocks/explain to see retry history.
+      // Phase 5 — enqueue the APNs push when the retry is eligible.
+      // Grouped/digest pushes are deferred to a daily summary worker
+      // (out of scope for this PR; iOS shows them via the in-app log).
+      if (eligibleForIndividualPush) {
+        void enqueueBlockRetryPush({
+          user_id: user.id,
+          e164,
+          attempted_at: attemptedAt,
+        });
+      }
 
       return reply.code(201).send({
         id: inserted.rows[0]!.id,
@@ -452,8 +440,47 @@ export async function blocksRoutes(app: FastifyInstance): Promise<void> {
         [user.id, parsed.data.enabled],
       );
 
+      // Privacy guarantee enforcement (CRITICAL bug fix from Phase 5
+      // adversarial review): when the user toggles contribution OFF,
+      // retract their previously-contributed mentions from the
+      // cross-user fraud graph. Without this, "toggle off" only
+      // stopped future contributions; past signals continued to
+      // influence A1's hot-numbers cache forever — violating the
+      // locked spec guarantee that the user controls their data.
+      //
+      // The DELETE targets only rows derived from THIS user's
+      // user_blocks via the source_ref linkage. Other users' block
+      // signals for the same number are unaffected. Audit-trail:
+      // user_blocks.contributed_to_graph is flipped to FALSE on the
+      // retracted rows so historical analysis can distinguish
+      // never-contributed vs since-retracted.
+      let retracted = 0;
+      if (parsed.data.enabled === false) {
+        const del = await query(
+          `DELETE FROM mentions
+            WHERE source = 'aegisdial_user_block'
+              AND source_ref IN (
+                SELECT 'block:' || id::TEXT FROM user_blocks WHERE user_id = $1
+              )`,
+          [user.id],
+        );
+        retracted = del.rowCount ?? 0;
+
+        await query(
+          `UPDATE user_blocks
+              SET contributed_to_graph = FALSE
+            WHERE user_id = $1 AND contributed_to_graph = TRUE`,
+          [user.id],
+        );
+
+        emitMetric('v3.a2.contribution_retracted', { rows: retracted });
+      }
+
       emitMetric('v3.a2.contribution_toggled', { enabled: parsed.data.enabled });
-      return reply.send({ cross_user_contribution_enabled: parsed.data.enabled });
+      return reply.send({
+        cross_user_contribution_enabled: parsed.data.enabled,
+        mentions_retracted: retracted,
+      });
     },
   );
 }

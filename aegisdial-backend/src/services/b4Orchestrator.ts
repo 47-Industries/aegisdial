@@ -10,6 +10,7 @@ import {
   b4FindingContradicted,
   b4TakeoverFired,
 } from './transcriptEvents.js';
+import { enqueueCriticalTakeoverPush } from './v3PushDispatcher.js';
 
 // Live Shield v3 — B4 orchestrator.
 //
@@ -36,8 +37,10 @@ import {
 // Per-session rolling 60s scammer-side context buffer lives here for
 // grounding the claim extractor's input (avoids each chunk having
 // to fetch its own context from DB). Bounded by the session's
-// duration; cleaned up when the session ends (TODO: hook into
-// session-end; for now it self-prunes by time).
+// duration; cleaned up via endSession() called from the live-shield
+// session-end route (Phase 5 second-pass adversarial fix — the first
+// pass claimed this was wired but it wasn't, leading to monotonic Map
+// growth on long-running prod processes).
 
 interface SessionContext {
   rolling_text: Array<{ text: string; spoken_at: Date }>;
@@ -46,6 +49,20 @@ const sessionContexts = new Map<string, SessionContext>();
 
 let unsubscribe: (() => void) | null = null;
 let userAccountLast4Cache = new Map<string, string | null>();
+
+/**
+ * Drop per-session in-memory state. Called from the live-shield
+ * session-end route so prod processes don't accumulate unbounded
+ * `sessionContexts` entries over time. Idempotent — fine to call on
+ * a session that already ended or never had any B4 activity.
+ *
+ * Does NOT drop `userAccountLast4Cache` (keyed by user_id, bounded by
+ * subscriber count). If/when account_tail collection ships and that
+ * cache grows real entries, add an LRU bound instead.
+ */
+export function endSession(session_id: string): void {
+  sessionContexts.delete(session_id);
+}
 
 /**
  * Wire the orchestrator up at app startup. Subscribes to scammer-side
@@ -128,6 +145,7 @@ async function handleScammerChunk(event: TranscriptChunkEvent): Promise<void> {
       claim,
       user_account_last_4: userLast4,
       calling_number_e164: callingNumber,
+      session_id: event.session_id,
     });
 
     let finding_id: string | null = null;
@@ -181,10 +199,24 @@ async function dispatchFinding(
   // to the score. They produce nothing.
   if (finding.result === 'consistent') return;
 
-  // cannot_verify findings: log to metrics for tuning; no UI, no score
-  // boost (Phase 3+ may add a small boost, but absent any actual
-  // contradiction we don't want to escalate).
-  if (finding.result === 'cannot_verify') return;
+  // cannot_verify findings: small additive score boost (Gap #3). The
+  // verifier couldn't decide either way — mildly suspicious but a
+  // single such finding shouldn't escalate alone. The transcript
+  // route reads call_sessions.b4_score_boost and merges it into
+  // the running risk_score, so multiple weak signals stack.
+  if (finding.result === 'cannot_verify') {
+    const boost = Math.round(
+      config.V3_B4_SCORE_BOOST_CANNOT_VERIFY_WEIGHT * finding.confidence * 100,
+    );
+    if (boost > 0) {
+      await applyB4ScoreBoost(event.session_id, boost);
+      emitMetric('v3.b4.cannot_verify_score_boost', {
+        claim_type: claim.type,
+        boost: String(boost),
+      });
+    }
+    return;
+  }
 
   // contradicted — emit transcript marker regardless of confidence so
   // the family-plan member sees it land.
@@ -199,15 +231,25 @@ async function dispatchFinding(
     );
   }
 
-  // Below-threshold contradictions: log only.
+  // Below-threshold contradictions: score-boost (Gap #3 fix).
+  // V3_B4_SCORE_BOOST_LOW_CONF_WEIGHT * confidence as integer
+  // points, additive on call_sessions.b4_score_boost. Multiple
+  // weak contradictions stack toward critical without any single
+  // one needing to clear the takeover threshold.
   if (finding.confidence < config.V3_B4_TAKEOVER_THRESHOLD) {
     emitMetric('v3.b4.contradiction_below_threshold', {
       claim_type: claim.type,
     });
-    // TODO(Phase 3+): boost the Live Shield score by
-    //   V3_B4_SCORE_BOOST_LOW_CONF_WEIGHT * confidence
-    // Requires a v2-side hook to merge external boosts into the
-    // running risk_score; out of scope for this PR.
+    const boost = Math.round(
+      config.V3_B4_SCORE_BOOST_LOW_CONF_WEIGHT * finding.confidence * 100,
+    );
+    if (boost > 0) {
+      await applyB4ScoreBoost(event.session_id, boost);
+      emitMetric('v3.b4.low_conf_score_boost', {
+        claim_type: claim.type,
+        boost: String(boost),
+      });
+    }
     return;
   }
 
@@ -223,16 +265,29 @@ async function dispatchFinding(
   // Atomically claim b3_takeover_fired_at on the call session — same
   // pattern B3 uses. The takeover view is shared (CriticalInterruptView);
   // B4 just reuses the same dispatch path with different copy.
-  await query(
+  //
+  // CRITICAL bug fix from the second adversarial-review pass: the prior
+  // version used `SET b3_takeover_fired_at = COALESCE(...)` which always
+  // succeeded for an existing session and made the enqueue
+  // unconditional. A scammer who landed contradicted claims of two
+  // different `claim_type`s (e.g. bank_affiliation + agency_affiliation)
+  // would punch through `claimTakeoverDispatch` twice (different PK
+  // rows) and produce two critical-priority pushes per call. The
+  // WHERE-guard below restores the wasFirstTakeover semantics the B3
+  // route uses; subsequent B4 findings still record their audit row
+  // via the b4_takeover_dispatched table but don't re-fire APNs.
+  const claimSession = await query(
     `UPDATE call_sessions
-        SET b3_takeover_fired_at = COALESCE(b3_takeover_fired_at, NOW())
-      WHERE id = $1`,
+        SET b3_takeover_fired_at = NOW()
+      WHERE id = $1 AND b3_takeover_fired_at IS NULL`,
     [event.session_id],
   );
+  const wasFirstTakeover = (claimSession.rowCount ?? 0) > 0;
 
   emitMetric('v3.b4.takeover_fired', {
     claim_type: claim.type,
     confidence_bucket: bucketConfidence(finding.confidence),
+    was_first: wasFirstTakeover,
   });
 
   void emitSystemEvent(
@@ -242,10 +297,31 @@ async function dispatchFinding(
     }),
   );
 
-  // TODO(Phase 3+): enqueue an APNs critical-priority push with
-  // category AEGISDIAL_CRITICAL_TAKEOVER and the B4 finding payload
-  // so the iOS CriticalInterruptView renders the verbatim-quote +
-  // tap-to-source UX.
+  // Phase 5 — enqueue the actual APNs critical-priority push, gated
+  // on wasFirstTakeover. The iOS CriticalInterruptView renders the
+  // verbatim-quote + tap-to-source UX from the payload context.
+  // When wasFirstTakeover is false a B3-side takeover already won the
+  // race; the user is already looking at the takeover and a second
+  // critical push would just churn the UI. We still record the
+  // findings audit-trail (via claimTakeoverDispatch above) and emit
+  // the transcript event.
+  if (wasFirstTakeover) {
+    void enqueueCriticalTakeoverPush({
+      session_id: event.session_id,
+      user_id: event.user_id,
+      trigger_path: 'b4_finding',
+      risk_score: Math.round(finding.confidence * 100),
+      context: {
+        claim_type: claim.type,
+        raw_quote: claim.raw_quote,
+        reasoning: finding.reasoning,
+        finding_id,
+        source_url: finding.source_url,
+        source_snippet: finding.source_snippet,
+        source_layer: finding.source_layer,
+      },
+    });
+  }
 }
 
 async function claimTakeoverDispatch(
@@ -306,6 +382,41 @@ function bucketConfidence(c: number): string {
 }
 
 // ---------------------------------------------------------------------------
+/**
+ * Apply an additive integer boost to the session's b4_score_boost
+ * accumulator. The transcript route reads this column in its
+ * score-merge pipeline. Capped at 100 (the column's CHECK
+ * constraint) via LEAST() — defense-in-depth in case a runaway
+ * confidence value tries to push the column out of range.
+ *
+ * Idempotency: torn write only undercounts by `boost`, same loss
+ * tolerance as the existing b4_findings_count UPDATE. We don't
+ * wrap in withTx because the orchestrator's caller doesn't open
+ * a transaction either.
+ */
+async function applyB4ScoreBoost(session_id: string, boost: number): Promise<void> {
+  try {
+    await query(
+      `UPDATE call_sessions
+          SET b4_score_boost = LEAST(100, b4_score_boost + $2),
+              updated_at = NOW()
+        WHERE id = $1`,
+      [session_id, boost],
+    );
+  } catch (err) {
+    emitMetric('v3.b4.score_boost_update_failed', {});
+    // eslint-disable-next-line no-console
+    console.error('[b4Orchestrator] applyB4ScoreBoost failed', {
+      session_id,
+      boost,
+      err: err instanceof Error ? err.message : String(err),
+    });
+    // Swallow — boost is best-effort. A failure here means the next
+    // chunk's risk merge sees an undercounted boost; not catastrophic.
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Test helpers
 // ---------------------------------------------------------------------------
 
@@ -316,6 +427,25 @@ export function _resetForTests(): void {
   }
   sessionContexts.clear();
   userAccountLast4Cache.clear();
+}
+
+/** Test-only — exercise the score-boost UPDATE in isolation. */
+export async function _applyB4ScoreBoostForTests(session_id: string, boost: number): Promise<void> {
+  await applyB4ScoreBoost(session_id, boost);
+}
+
+/** Test-only — exercise dispatchFinding's branching directly. Lets
+ * unit tests pin which branch (takeover / cannot_verify boost /
+ * sub-threshold boost / consistent no-op) fires for a given
+ * (claim, finding) pair without needing Anthropic/Serper mocks.
+ */
+export async function _dispatchFindingForTests(
+  event: TranscriptChunkEvent,
+  claim: ExtractedClaim,
+  finding: Finding,
+  finding_id: string | null,
+): Promise<void> {
+  await dispatchFinding(event, claim, finding, finding_id);
 }
 
 /** Test-only — drive the pipeline directly without going through the subscriber. */

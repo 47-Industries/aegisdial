@@ -9,6 +9,7 @@ import type { PhraseHit } from '../lib/scamPhrases.js';
 import { emitGuardianAlert } from '../services/guardianAlerts.js';
 import { track } from '../lib/analytics.js';
 import { trackCallBlocked } from '../lib/internalEvents.js';
+import { emitMetric } from '../lib/observability.js';
 import { encryptString, readMaybeEncrypted } from '../lib/crypto.js';
 import {
   shouldFireLlm,
@@ -27,12 +28,59 @@ import {
   notifyTranscriptChunk as v3NotifyTranscriptChunk,
   notifyRiskTransition as v3NotifyRiskTransition,
 } from '../services/v3SessionEvents.js';
+// Mom-side STT dispatch. The transcript route is the producer that
+// feeds momSideStt.emitChunk — without this wire, the B3 sentinel
+// matcher's evaluateChunk path is dormant in production and Mom's
+// SSN/card/MFA pattern detection never fires.
+import { emitChunk as v3EmitMomSideChunk } from '../services/momSideStt.js';
+// v3 Gap #2 — family-transcript live stream. Family members watching
+// via SSE see each chunk land in real time. Both speakers flow
+// through ONLY when subject's privacy_level === 'open' — the
+// minimal/default levels never reveal transcript text, matching the
+// v2 family-alert contract (see liveShieldFamilyAlert.buildAlertPayload).
+import { publish as publishToFamilyStream } from '../services/familyTranscriptStream.js';
+import { getFamilyAlertPrivacyLevel } from '../services/liveShieldFamilyAlert.js';
+
+// Per-session cache of the subject's privacy_level. The transcript
+// route fires N times per session (~7-30/min × call duration). Looking
+// up family_alert_preferences on every chunk would be wasteful — the
+// preference can't change mid-call from the user's perspective
+// (Settings UI requires app foreground; an active call has the app
+// in the call surface). Cache for the session's lifetime, evicted
+// at /end. Keyed by session_id, not user_id, because the eviction
+// is session-scoped.
+const transcriptPrivacyCache = new Map<string, 'minimal' | 'default' | 'open'>();
 // B3 sentinel matcher session lifecycle. start/stop are fire-and-forget;
 // startForSession is async (loads patterns from DB) and the unsubscribe
 // fn is tracked here so /end can call it. No-ops when V3_B3_ENABLED off.
 import { startForSession as v3StartSentinelMatcher } from '../services/sentinelMatcher.js';
 import { disarmPostDismissWatch as v3DisarmPostDismissWatch } from '../services/postDismissWatcher.js';
+import { endSession as v3EndB4Session } from '../services/b4Orchestrator.js';
+import { pickFlushCadenceMs } from '../services/adaptiveCadence.js';
 const v3SentinelStops = new Map<string, () => void>();
+// Tracks sessions whose /end ran BEFORE the async sentinel-start resolved.
+// Without this, a fast iOS client (e.g., user hangs up immediately after
+// pickup, or the call drops mid-handshake) could call /end between the
+// /start response and the v3StartSentinelMatcher Promise resolving — at
+// which point the .then(stop => v3SentinelStops.set(id, stop)) would
+// stash the stop fn AFTER /end already missed it. The Map entry would
+// leak permanently, holding stale session state until process restart.
+//
+// On /end, if the stop fn isn't in the Map yet, we add the session_id
+// here. The .then() resolver checks this Set first and tears down
+// synchronously instead of stashing. A 60-second TTL on the marker
+// prevents this Set itself from leaking when loadPatterns() rejects
+// (the .then never fires). The TTL value is decoupled from the worst-
+// case load latency by the M1 fix below: if load takes >60s and the
+// marker has evicted, the .then() falls through to a DB read of
+// call_sessions.ended_at as source of truth before stashing.
+const v3SentinelEndedBeforeStart = new Set<string>();
+// Holds the eviction NodeJS.Timeout per session so the happy-path
+// .then() can cancel it instead of letting it tick for 60s before
+// no-op-deleting an already-deleted Set key. Bounded by concurrent
+// in-flight-start count; cleared in both the .then() happy path and
+// when the eviction tick itself fires.
+const v3SentinelEndedBeforeStartTimers = new Map<string, NodeJS.Timeout>();
 
 // Suggestion payload returned to the iOS app when an emergency-relative
 // pattern fires. The client uses it to render the "Call them back on
@@ -204,9 +252,100 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       // Live Shield v3 — kick off B3 sentinel matcher for this session.
       // Fire-and-forget; the matcher loads its pattern set asynchronously.
       // No-op if V3_B3_ENABLED is OFF.
-      void v3StartSentinelMatcher(id, user.id).then((stop) => {
-        v3SentinelStops.set(id, stop);
-      });
+      //
+      // Race handling: if /end runs before this Promise resolves, the
+      // `v3SentinelEndedBeforeStart` Set will have our id, and we tear
+      // down the stop fn immediately instead of stashing. The .catch
+      // ensures a loadPatterns rejection doesn't become an unhandled
+      // promise rejection.
+      //
+      // M1 fallback: the 60s eviction on the Set was originally the
+      // only safety net. If `loadPatterns()` blocks longer than 60s
+      // (Neon control-plane hiccup, pool starvation, no pg
+      // statement_timeout), the marker is gone by the time .then()
+      // resolves and the original HIGH #6 leak resurrects. As a defense
+      // we ALSO check the DB before stashing: if the session is
+      // already ended_at IS NOT NULL, tear down via stop() instead of
+      // storing it. DB is source of truth.
+      void v3StartSentinelMatcher(id, user.id)
+        .then(async (stop) => {
+          // Fast path: marker still alive — /end ran recently.
+          if (v3SentinelEndedBeforeStart.has(id)) {
+            v3SentinelEndedBeforeStart.delete(id);
+            const t = v3SentinelEndedBeforeStartTimers.get(id);
+            if (t) {
+              clearTimeout(t);
+              v3SentinelEndedBeforeStartTimers.delete(id);
+            }
+            try { stop(); } catch { /* swallow */ }
+            return;
+          }
+          // Slow path: marker may have evicted (loadPatterns > 60s)
+          // OR /start happened with the call still active. Either way
+          // we go to the DB as source of truth.
+          //
+          // Observability: this path runs on every active /start
+          // (most common path — call is still ongoing when the
+          // sentinel matcher finishes loading) so the metric is high-
+          // volume. Tag with `marker_present=false` since we already
+          // bailed out of the fast path. Filter on this in dashboards
+          // to spot pool-pressure regressions.
+          emitMetric('v3.sentinel.start_slow_path', {});
+          try {
+            const r = await query<{ ended_at: Date | null }>(
+              `SELECT ended_at FROM call_sessions WHERE id = $1`,
+              [id],
+            );
+            if (r.rows.length === 0 || r.rows[0]!.ended_at) {
+              try { stop(); } catch { /* swallow */ }
+              return;
+            }
+          } catch (err) {
+            // DB error checking end-state — fall through and stash.
+            // Better to leak one stop fn until process restart than
+            // tear down a still-active sentinel and miss a takeover.
+            // eslint-disable-next-line no-console
+            console.warn('[liveShield] sentinel .then DB recheck failed', {
+              session_id: id,
+              err: err instanceof Error ? err.message : String(err),
+            });
+          }
+          // POST-AWAIT RE-CHECK (MEDIUM-1 from fifth-pass review):
+          // /end can run during the SELECT roundtrip. Even if /end's
+          // UPDATE was concurrent and committed, the snapshot taken
+          // server-side at the SELECT's statement-start could predate
+          // the UPDATE → we'd see ended_at=NULL and fall through to
+          // stash. Meanwhile /end already saw the empty Map, added to
+          // the Set, scheduled the 60s eviction (which only cleans Set
+          // + Timers, NOT v3SentinelStops). Re-checking the Set after
+          // the await closes that window — the Set is the authoritative
+          // signal that /end actually ran.
+          if (v3SentinelEndedBeforeStart.has(id)) {
+            v3SentinelEndedBeforeStart.delete(id);
+            const t = v3SentinelEndedBeforeStartTimers.get(id);
+            if (t) {
+              clearTimeout(t);
+              v3SentinelEndedBeforeStartTimers.delete(id);
+            }
+            emitMetric('v3.sentinel.start_lost_to_end_post_await', {});
+            try { stop(); } catch { /* swallow */ }
+            return;
+          }
+          v3SentinelStops.set(id, stop);
+        })
+        .catch((err) => {
+          v3SentinelEndedBeforeStart.delete(id);
+          const t = v3SentinelEndedBeforeStartTimers.get(id);
+          if (t) {
+            clearTimeout(t);
+            v3SentinelEndedBeforeStartTimers.delete(id);
+          }
+          // eslint-disable-next-line no-console
+          console.warn('[liveShield] v3StartSentinelMatcher failed', {
+            session_id: id,
+            err: err instanceof Error ? err.message : String(err),
+          });
+        });
       return reply.send({
         session_id: id,
         started_at: started_at.toISOString(),
@@ -225,9 +364,15 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
     '/v1/live-shield/:id/transcript',
     {
       preHandler: [requireAppUser, requireProTier],
-      // Per-user limiter. At our ~8s flush cadence a single call emits
-      // ~7 chunks/min. 120/min per user gives a 15× margin for a
-      // chatty call without opening a DoS vector.
+      // Per-user limiter. Adaptive cadence (adaptiveCadence.ts) means
+      // chunks/min depends on risk_level:
+      //   low    → 8s  → ~7 chunks/min  (~17× margin)
+      //   medium → 5s  → ~12 chunks/min (~10× margin)
+      //   high   → 3s  → ~20 chunks/min (~6× margin)
+      //   crit   → 2s  → ~30 chunks/min (~4× margin)
+      // 120/min still leaves headroom at every level; critical
+      // sessions typically end in seconds (takeover fires) so the
+      // 4× margin at that level isn't a real DoS concern.
       config: {
         rateLimit: {
           max: 120,
@@ -242,8 +387,13 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       const parsed = TRANSCRIPT_SCHEMA.safeParse(req.body ?? {});
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
 
-      const owned = await query<{ id: string; ended_at: Date | null; risk_level: string }>(
-        `SELECT id, ended_at, risk_level FROM call_sessions WHERE id = $1 AND user_id = $2`,
+      const owned = await query<{
+        id: string;
+        ended_at: Date | null;
+        risk_level: string;
+        started_at: Date;
+      }>(
+        `SELECT id, ended_at, risk_level, started_at FROM call_sessions WHERE id = $1 AND user_id = $2`,
         [id, user.id],
       );
       if (owned.rows.length === 0) return reply.code(404).send({ error: 'session_not_found' });
@@ -251,6 +401,9 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       // Capture pre-update level so v3's risk-transition hook can fire
       // only on actual transitions (not stable-state ticks).
       const v3PriorRiskLevel = owned.rows[0]!.risk_level as 'low' | 'medium' | 'high' | 'critical';
+      // Migration 007 column is named `started_at`, not `created_at`.
+      // Used for offset_seconds in the mom-side STT dispatch below.
+      const sessionStartedAt = owned.rows[0]!.started_at;
 
       // Detect phrases against plaintext BEFORE encryption. The plaintext
       // never touches disk — only the ciphertext lands in transcript_events.
@@ -368,8 +521,11 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         llm_scam_type: string | null;
         llm_coaching_line: string | null;
         llm_last_called_at: Date | null;
+        b4_findings_count: number;
+        b4_score_boost: number;
       }>(
-        `SELECT llm_score, llm_scam_type, llm_coaching_line, llm_last_called_at
+        `SELECT llm_score, llm_scam_type, llm_coaching_line, llm_last_called_at,
+                b4_findings_count, b4_score_boost
            FROM call_sessions WHERE id = $1`,
         [id],
       );
@@ -377,8 +533,33 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       const llmCoachingLine = llmRow.rows[0]?.llm_coaching_line ?? null;
       const llmScamType = llmRow.rows[0]?.llm_scam_type ?? null;
       const llmLastCalledAt = llmRow.rows[0]?.llm_last_called_at ?? null;
+      const b4FindingsCount = llmRow.rows[0]?.b4_findings_count ?? 0;
+      const b4ScoreBoost = llmRow.rows[0]?.b4_score_boost ?? 0;
 
-      const finalScore = mergeScores(snapshot.score.risk_score, llmScore);
+      // v3 Gap #3 — additive B4 sub-threshold boost. Stacks weak
+      // signals (cannot_verify + sub-threshold contradicted) onto
+      // the merged regex+LLM score. Cap at 100 because risk_score
+      // is bounded; without the cap, a session with several boost
+      // accumulations could push the merged value above 100 and
+      // break downstream consumers that key off level thresholds.
+      // The boost itself is already capped at 100 in the DB CHECK
+      // constraint, but additive saturation here is defense-in-depth.
+      //
+      // ONE-CHUNK LAG: the boost read here is the snapshot AT-CHUNK-
+      // START. Any B4 findings derived from THIS chunk's transcript
+      // can only surface in the NEXT chunk's merge — the orchestrator
+      // subscribes to v3NotifyTranscriptChunk (fired below), then
+      // runs extract → verify → applyB4ScoreBoost asynchronously,
+      // which won't have committed by the time this route returns.
+      // Same lag pattern as the LLM cache (mergeScores) — accept it
+      // rather than blocking the hot path on B4's Claude/Serper
+      // latency. Adaptive cadence keeps the lag at 2-8s depending
+      // on risk level, which is fast enough for the critical-
+      // transition UX.
+      const finalScore = Math.min(
+        100,
+        mergeScores(snapshot.score.risk_score, llmScore) + b4ScoreBoost,
+      );
       const finalLevel: 'low' | 'medium' | 'high' | 'critical' =
         finalScore >= 75 ? 'critical' :
         finalScore >= 50 ? 'high' :
@@ -485,6 +666,86 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         confidence: parsed.data.confidence ?? null,
         spoken_at: new Date(),
       });
+
+      // v3 Gap #2 — fan the chunk out to family-plan members
+      // subscribed via SSE. HIGH-1 adversarial fix: gate on Mom's
+      // privacy_level preference. Only `open` permits live transcript
+      // text to flow to family viewers — matches the v2 family-alert
+      // contract where minimal/default never reveal transcript content.
+      // System events (B3/B4 takeover markers, family-alert dispatch)
+      // flow independently through emitSystemEvent → publishToFamilyStream
+      // and are always visible regardless of privacy_level, because
+      // those are meta-events about Mom's safety, not transcript words.
+      //
+      // Cache hit on every chunk after the first per session — saves
+      // ~7-30 DB roundtrips/min. Evicted at /end.
+      try {
+        let level = transcriptPrivacyCache.get(id);
+        if (!level) {
+          level = await getFamilyAlertPrivacyLevel(user.id);
+          transcriptPrivacyCache.set(id, level);
+        }
+        if (level === 'open') {
+          publishToFamilyStream({
+            type: 'transcript',
+            subject_user_id: user.id,
+            session_id: id,
+            speaker: parsed.data.speaker,
+            text: parsed.data.text,
+            spoken_at: new Date().toISOString(),
+          });
+        }
+      } catch {
+        /* swallow — never break the v2 transcript hot path on a
+           family-stream publish error. Fail-closed by default
+           because getFamilyAlertPrivacyLevel's own catch returns
+           'minimal' (no publish). */
+      }
+
+      // Mom-side STT dispatch — feed the B3 sentinelMatcher's
+      // evaluateChunk path. Only `self`-speaker chunks (Mom's voice
+      // as labeled by iOS's on-device speaker diarization) flow here;
+      // caller-side flows through v3SessionEvents to the
+      // sentinelMatcher's scammer-context buffer instead. The
+      // V3_B3_MOM_SIDE_STT_ENABLED kill-switch is checked inside
+      // emitChunk; gating duplicated here would just slow the hot
+      // path.
+      //
+      // Confidence default of `0.0` (NOT 0.8 — see below): the
+      // sentinelMatcher gates at `< 0.6` to filter out misheard
+      // audio that would false-positive the digit-pattern sentinels
+      // (ssn_spoken_aloud, card_number_spoken_aloud,
+      // mfa_code_spoken_aloud). The whole point of the gate is "we
+      // don't fire takeovers on uncertain transcription." A `?? 0.8`
+      // default would invert that — clients that don't send
+      // confidence (older iOS builds, transient SFSpeechRecognizer
+      // states) would PASS the gate as if they were high-confidence,
+      // exactly the case the gate is meant to exclude. With `?? 0.0`,
+      // old clients are gracefully degraded (no B3 firing) without
+      // errors; new iOS builds that ship `confidence` in every
+      // chunk get the full sentinel benefit. INTENTIONAL asymmetry
+      // with `v3NotifyTranscriptChunk` above (which passes `null` —
+      // the scammer-context-buffer path doesn't use confidence at
+      // all, only mom-side evaluateChunk does).
+      //
+      // Fire-and-forget: emitChunk dispatches to subscribers (regex
+      // eval is fast; takeover enqueue is itself fire-and-forget),
+      // so the transcript route doesn't block on B3 work.
+      if (parsed.data.speaker === 'self') {
+        const offsetSeconds = Math.max(
+          0,
+          Math.floor((Date.now() - sessionStartedAt.getTime()) / 1000),
+        );
+        void v3EmitMomSideChunk({
+          session_id: id,
+          user_id: user.id,
+          text: parsed.data.text,
+          confidence: parsed.data.confidence ?? 0.0,
+          offset_seconds: offsetSeconds,
+          emitted_at: new Date(),
+        });
+      }
+
       const v3NewLevel = finalLevel as 'low' | 'medium' | 'high' | 'critical';
       if (v3NewLevel !== v3PriorRiskLevel) {
         void v3NotifyRiskTransition({
@@ -496,6 +757,17 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
           occurred_at: new Date(),
         });
       }
+
+      // Adaptive transcript-flush cadence (Live Shield v3+).
+      // The server tells iOS how soon to send the next chunk based on
+      // current risk state. See src/services/adaptiveCadence.ts for
+      // the threshold table. Older iOS clients that don't read this
+      // field continue to use their compiled-in 8s default — safe to
+      // ship server-side without an iOS update.
+      const nextFlushMs = pickFlushCadenceMs({
+        risk_level: finalLevel,
+        has_any_b4_finding: b4FindingsCount > 0,
+      });
 
       return reply.send({
         session_id: id,
@@ -511,6 +783,9 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         new_warnings: newWarnings,
         family_verify_suggested: emergency,
         family_suggestion: familySuggest,
+        // Server-driven flush cadence; iOS reschedules its next
+        // /transcript POST after this many ms. See adaptiveCadence.ts.
+        next_flush_ms: nextFlushMs,
       });
     },
   );
@@ -524,6 +799,11 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       const { id } = req.params as { id: string };
       const parsed = END_SCHEMA.safeParse(req.body ?? {});
       if (!parsed.success) return reply.code(400).send({ error: 'invalid_body' });
+
+      // v3 Gap #2 — evict the per-session privacy-level cache. The
+      // transcript route populates it lazily; the session is the
+      // unit of lifetime.
+      transcriptPrivacyCache.delete(id);
 
       const result = await query<{
         started_at: Date;
@@ -554,8 +834,31 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       if (stopSentinel) {
         try { stopSentinel(); } catch { /* swallow */ }
         v3SentinelStops.delete(id);
+      } else {
+        // Sentinel start may still be in-flight (fast iOS hangup after
+        // pickup, or transient call drop). Mark the session as "ended
+        // before start" so the .then() resolver in /start tears down
+        // immediately instead of leaking into the Map. The 60s TTL is
+        // a defensive evict in case loadPatterns rejected (the .then
+        // never fires and would otherwise leave this entry stuck).
+        // The .then()'s DB-truth recheck (M1) catches any load that
+        // exceeds this 60s ceiling, so the value itself isn't safety-
+        // critical — it just controls how long this fast-path marker
+        // is kept around for a quick microtask-queue tear-down.
+        v3SentinelEndedBeforeStart.add(id);
+        const tick = setTimeout(() => {
+          v3SentinelEndedBeforeStart.delete(id);
+          v3SentinelEndedBeforeStartTimers.delete(id);
+        }, 60_000);
+        tick.unref();
+        v3SentinelEndedBeforeStartTimers.set(id, tick);
       }
       v3DisarmPostDismissWatch(id);
+      // Drop B4's per-session rolling-text context Map entry so
+      // long-running processes don't accumulate unbounded session
+      // state. No-op when V3_B4_ENABLED is off or the session never
+      // had B4 activity.
+      v3EndB4Session(id);
 
       void track('shield_ended', {
         userId: user.id,

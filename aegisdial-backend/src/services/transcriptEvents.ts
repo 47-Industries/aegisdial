@@ -1,5 +1,6 @@
 import { query } from '../lib/db.js';
-import { emitMetric } from '../lib/observability.js';
+import { emitMetric, captureError } from '../lib/observability.js';
+import { publish as publishToFamilyStream } from './familyTranscriptStream.js';
 
 // Live Shield v3 — transcript system_event taxonomy and emit helper.
 //
@@ -88,24 +89,39 @@ export async function emitSystemEvent(event: V3SystemEvent): Promise<void> {
       ],
     );
 
-    // TODO(Phase 1): publish to the v2 family-transcript SSE stream
-    // so the watching family member sees this event live. Today this
-    // is a no-op; the event is persisted but only visible on
-    // post-call recap until the streaming wire-up lands.
-    //
-    // The wire-up needs to:
-    //   1. Look up the family-plan members for `event.user_id`
-    //   2. Filter to those with privacy_level allowing system events
-    //      (minimal/default/open all currently allow — verify this)
-    //   3. Push a `{ type: 'system_event', ...event }` frame into
-    //      whatever channel the v2 transcript-streaming code uses
-    //      (likely an EventEmitter keyed by user_id; check
-    //      src/services/liveShield.ts for the exact mechanism)
+    // v3 Gap #2 fix: publish to the family-transcript SSE stream so
+    // the watching family member sees this event live. Mom is the
+    // subject; her family-plan members are the viewers. Auth (only
+    // family-plan members of `event.user_id` can subscribe) is
+    // enforced at the SSE route — this publish just fans out to
+    // whoever's currently subscribed. Privacy-level filtering will
+    // ride on top once the family_alert_preferences.privacy_level
+    // semantics are extended to live streams (today: all severity
+    // levels see all system_events; that matches v2's post-call
+    // recap which shows the same content unconditionally).
+    publishToFamilyStream({
+      type: 'system_event',
+      subject_user_id: event.user_id,
+      session_id: event.session_id,
+      event_type: event.type,
+      payload: event.payload ?? {},
+      occurred_at: event.occurred_at ?? new Date().toISOString(),
+    });
 
     emitMetric('v3.transcript_system_event.emitted', { type: event.type });
   } catch (err) {
     // Do not throw — feature flow must not abort on audit-log failures.
+    // M-14: also push to Sentry. The metric counter is itself a DB
+    // INSERT (metric_counters); if Postgres is down, BOTH the
+    // system-event write AND the metric write fail. Sentry is the
+    // only signal we'd have left. captureError is no-op when
+    // SENTRY_DSN is unset, so dev/CI stays silent.
     emitMetric('v3.transcript_system_event.emit_failed', { type: event.type });
+    captureError(err, {
+      component: 'transcriptEvents.emitSystemEvent',
+      event_type: event.type,
+      session_id: event.session_id,
+    });
     // eslint-disable-next-line no-console
     console.error('[transcriptEvents] failed to persist system event', {
       type: event.type,

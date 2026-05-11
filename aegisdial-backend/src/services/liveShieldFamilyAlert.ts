@@ -1,6 +1,7 @@
 import { query } from '../lib/db.js';
 import { emitGuardianAlert } from './guardianAlerts.js';
 import { track } from '../lib/analytics.js';
+import { emitMetric, captureError } from '../lib/observability.js';
 
 // Live Shield v2 — family alert fan-out at score ≥ 75.
 //
@@ -271,7 +272,7 @@ export async function fireFamilyAlert(input: FamilyAlertInput): Promise<{ delive
  */
 export async function firePostDismissFamilyAlert(
   input: FamilyAlertInput,
-): Promise<{ delivered: number }> {
+): Promise<{ delivered: number; recipients: number; outcome: 'delivered' | 'no_recipients' | 'all_delivery_failed' }> {
   const level = await getFamilyAlertPrivacyLevel(input.subject_user_id);
 
   // The post-dismiss copy is intentionally more urgent than the
@@ -322,6 +323,7 @@ export async function firePostDismissFamilyAlert(
   }
 
   let delivered = 0;
+  let recipients = 0;
   try {
     const result = await emitGuardianAlert({
       subjectUserId: input.subject_user_id,
@@ -332,11 +334,35 @@ export async function firePostDismissFamilyAlert(
       payload,
     });
     delivered = result.delivered;
+    recipients = result.recipients;
   } catch (err) {
     // The caller already claimed firing rights. We can't undo the
     // claim here without race risk against the timer's compensating
     // release path; just let it bubble up.
     throw err;
+  }
+
+  // M-15 fix: distinguish the three outcomes. The post-dismiss family
+  // alert is the LAST safety net — if it silently fails, Mom is
+  // alone on the call. We need ops to see the difference between
+  // "no family registered" (expected for solo users) and "family
+  // registered but all delivery failed" (real outage).
+  let outcome: 'delivered' | 'no_recipients' | 'all_delivery_failed';
+  if (recipients === 0) {
+    outcome = 'no_recipients';
+    emitMetric('v3.post_dismiss_watcher.alert_no_recipients', {});
+  } else if (delivered === 0) {
+    outcome = 'all_delivery_failed';
+    emitMetric('v3.post_dismiss_watcher.alert_all_delivery_failed', {});
+    captureError(new Error('post-dismiss family alert had recipients but 0 delivered'), {
+      component: 'firePostDismissFamilyAlert',
+      session_id: input.session_id,
+      subject_user_id: input.subject_user_id,
+      recipients,
+    });
+  } else {
+    outcome = 'delivered';
+    emitMetric('v3.post_dismiss_watcher.alert_delivered', {});
   }
 
   void track('family_alert_post_dismiss_fired', {
@@ -345,10 +371,12 @@ export async function firePostDismissFamilyAlert(
       session_id: input.session_id,
       privacy_level: level,
       delivered,
+      recipients,
+      outcome,
       risk_score: input.risk_score,
       scam_type: input.scam_type,
     },
   });
 
-  return { delivered };
+  return { delivered, recipients, outcome };
 }

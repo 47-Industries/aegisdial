@@ -4,7 +4,10 @@ import assert from 'node:assert/strict';
 process.env.DATA_ENCRYPTION_KEY ||= 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
 process.env.API_SHARED_SECRET ||= 'test-shared-secret-12345';
 process.env.DATABASE_URL ||= 'postgres://u:p@localhost:5432/test';
-process.env.REDIS_URL ||= 'redis://localhost:6379';
+// R8 cooldown imports redis at guardianAlerts module load — use the
+// in-memory backend so the test doesn't try to connect to a real Redis.
+// The tests in this file exercise pure functions (buildAlertPayload).
+process.env.REDIS_URL ||= 'memory://live-shield-family-alert-test';
 
 // Dynamic import — deferred until AFTER env setup.
 const fam = await import('../src/services/liveShieldFamilyAlert.ts');

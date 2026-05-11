@@ -35,6 +35,8 @@ const USER_ID = '00000000-0000-0000-0000-000000000000';
 interface SessionRow {
   id: string;
   family_alert_post_dismiss_fired_at: Date | null;
+  risk_level: 'low' | 'medium' | 'high' | 'critical';
+  ended_at: Date | null;
 }
 const sessions = new Map<string, SessionRow>();
 let firedAlerts: Array<{ session_id: string }> = [];
@@ -44,6 +46,18 @@ const fakeQuery = async (
   params: unknown[] = [],
 ): Promise<{ rows: unknown[]; rowCount: number }> => {
   const t = text.trim();
+
+  // Pre-escalate guard: re-read risk_level + ended_at before firing.
+  // Added in the LOW-1 fix from the second-pass adversarial review.
+  if (/SELECT risk_level, ended_at FROM call_sessions/i.test(t)) {
+    const id = params[0] as string;
+    const row = sessions.get(id);
+    if (!row) return { rows: [], rowCount: 0 };
+    return {
+      rows: [{ risk_level: row.risk_level, ended_at: row.ended_at }],
+      rowCount: 1,
+    };
+  }
 
   // Atomic claim of post-dismiss firing rights.
   if (/UPDATE call_sessions[\s\S]+SET family_alert_post_dismiss_fired_at = NOW\(\)/i.test(t)) {
@@ -100,6 +114,8 @@ beforeEach(() => {
   sessions.set(SESSION_ID, {
     id: SESSION_ID,
     family_alert_post_dismiss_fired_at: null,
+    risk_level: 'critical',
+    ended_at: null,
   });
 });
 

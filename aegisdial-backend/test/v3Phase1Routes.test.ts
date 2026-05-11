@@ -27,6 +27,7 @@ const Fastify = (await import('fastify')).default;
 const db = await import('../src/lib/db.ts');
 const { blocksRoutes } = await import('../src/routes/blocks.ts');
 const { lookupRoutes } = await import('../src/routes/lookup.ts');
+const { _resetRateLimitForTests } = await import('../src/services/a2RetryRateLimit.ts');
 
 const DEV_USER_ID = '00000000-0000-0000-0000-000000000000';
 const SHARED_SECRET = process.env.API_SHARED_SECRET!;
@@ -385,8 +386,12 @@ before(async () => {
   app = fastifyApp as unknown as FastifyAppLike;
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   resetDb();
+  // HIGH #7 fix moved A2 rate-limiting to Redis; reset counters per
+  // test so cross-case state doesn't poison assertions.
+  await _resetRateLimitForTests(DEV_USER_ID, TEST_E164);
+  await _resetRateLimitForTests(DEV_USER_ID, OTHER_E164);
 });
 
 const authHeaders = { authorization: `Bearer ${SHARED_SECRET}` };

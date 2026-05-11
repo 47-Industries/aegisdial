@@ -4,13 +4,14 @@ import { config } from '../config.js';
 import { query } from '../lib/db.js';
 import { requireAppUser, requireProTier } from '../lib/auth.js';
 import { emitMetric } from '../lib/observability.js';
-import { registerFireHandler } from '../services/sentinelMatcher.js';
+import { registerFireHandler, redactSensitiveDigits } from '../services/sentinelMatcher.js';
 import { armPostDismissWatch } from '../services/postDismissWatcher.js';
 import {
   emitSystemEvent,
   b3TakeoverFired,
   b3TakeoverDismissed,
 } from '../services/transcriptEvents.js';
+import { enqueueCriticalTakeoverPush } from '../services/v3PushDispatcher.js';
 
 // Live Shield v3 — B3 critical-takeover routes.
 //
@@ -20,8 +21,9 @@ import {
 //     Internal-only — the Live Shield risk scorer + sentinel matcher
 //     call this when they detect a critical event that warrants a
 //     full-screen takeover on Mom's iPhone. Records the takeover
-//     event and (Phase 3 wires the actual APNs delivery) queues
-//     the critical-priority push.
+//     event and enqueues the critical-priority APNs push (delivered
+//     by src/workers/pushDispatcher.ts via the apns2 client with
+//     interruption-level=critical when entitlement is present).
 //
 //   POST /v1/sessions/:id/dismiss
 //     iOS reports the user completed the 3-second long-press on
@@ -49,7 +51,15 @@ const CriticalTakeoverSchema = z.object({
   risk_score: z.number().int().min(0).max(100),
   // Optional payload that varies by trigger:
   //   live_shield_critical → empty
-  //   sentinel_keyword     → { pattern_name, matched_text, scammer_context_match }
+  //   sentinel_keyword     → { pattern_name, matched_text }
+  //                          (matched_text is digit-redacted before
+  //                           this point — see redactSensitiveDigits.
+  //                           scammer_context_match is computed by
+  //                           the matcher but intentionally dropped
+  //                           at this boundary — not needed for the
+  //                           iOS takeover UI and would propagate the
+  //                           scammer's verbatim words to the payload
+  //                           without an audit purpose.)
   //   b4_finding           → { claim_type, raw_quote, finding_id }
   context: z.record(z.unknown()).optional(),
 });
@@ -59,8 +69,30 @@ const DismissSchema = z.object({
   trigger_path: TriggerPathSchema,
   takeover_fired_at: z.string().datetime(),
   score_at_dismiss: z.number().int().min(0).max(100),
-  scam_type: z.string().min(1).max(64).default('unknown'),
-  matched_red_flags: z.array(z.string()).max(20).default([]),
+  // scam_type allowlist — prevents iOS-supplied strings (or a forged
+  // request) from injecting arbitrary content into the family-alert
+  // body. Limited to a-z + underscore, max 32 chars. Defaults to
+  // 'unknown' if iOS doesn't have a classifier label.
+  scam_type: z
+    .string()
+    .min(1)
+    .max(32)
+    .regex(/^[a-z_]+$/, 'scam_type must be lowercase a-z + underscore only')
+    .default('unknown'),
+  // matched_red_flags is rendered into the family-alert body at
+  // privacy-level "default" and above. Strip control characters and
+  // bound length per-string and per-array.
+  matched_red_flags: z
+    .array(
+      z
+        .string()
+        .min(1)
+        .max(60)
+        // eslint-disable-next-line no-control-regex
+        .regex(/^[^\x00-\x1f\x7f]+$/, 'matched_red_flags must not contain control chars'),
+    )
+    .max(10)
+    .default([]),
 });
 
 // ---------------------------------------------------------------------------
@@ -78,9 +110,10 @@ export async function criticalTakeoverRoutes(app: FastifyInstance): Promise<void
   //
   // Records the takeover event in call_sessions.b3_takeover_fired_at
   // and emits the system_event marker into the family transcript
-  // stream. Phase 3 wires the actual APNs critical-priority push;
-  // for now this route is the official "the takeover is happening"
-  // signal, and iOS clients can be wired in Phase 3 to receive it.
+  // stream. The actual APNs critical-priority push is enqueued via
+  // enqueueCriticalTakeoverPush below and delivered by the
+  // pushDispatcher worker (apns2 client, interruption-level=critical
+  // when entitlement is present).
 
   app.post(
     '/v1/push/critical-takeover',
@@ -127,13 +160,20 @@ export async function criticalTakeoverRoutes(app: FastifyInstance): Promise<void
         }),
       );
 
-      // TODO(Phase 3): enqueue an APNs critical-priority push via
-      // pushDispatcher with category AEGISDIAL_CRITICAL_TAKEOVER.
-      // The push payload should carry trigger_path + context so the
-      // iOS CriticalInterruptView can render the right copy:
-      //   live_shield_critical → "STOP — SCAM CONFIRMED"
-      //   sentinel_keyword     → "STOP — DO NOT SHARE INFO"
-      //   b4_finding           → "AT 3:14 PM, THE CALLER SAID..."
+      // Phase 5 — enqueue the actual critical-priority push, gated
+      // on wasFirstTakeover. Without this gate, repeated POSTs from
+      // iOS retries/replays would fire multiple critical pushes per
+      // session. The v3PushDispatcher also enforces a 60s suppression
+      // as defense-in-depth.
+      if (wasFirstTakeover) {
+        void enqueueCriticalTakeoverPush({
+          session_id: parsed.data.session_id,
+          user_id: user.id,
+          trigger_path: parsed.data.trigger_path,
+          risk_score: parsed.data.risk_score,
+          context: parsed.data.context,
+        });
+      }
 
       return reply.code(201).send({
         session_id: parsed.data.session_id,
@@ -159,8 +199,14 @@ export async function criticalTakeoverRoutes(app: FastifyInstance): Promise<void
         return reply.code(400).send({ error: 'invalid_body', details: parsed.error.flatten() });
       }
 
-      const owned = await query<{ ended_at: Date | null; risk_level: string; risk_score: number }>(
-        `SELECT ended_at, risk_level, risk_score
+      const owned = await query<{
+        ended_at: Date | null;
+        risk_level: string;
+        risk_score: number;
+        started_at: Date;
+        b3_takeover_fired_at: Date | null;
+      }>(
+        `SELECT ended_at, risk_level, risk_score, started_at, b3_takeover_fired_at
            FROM call_sessions WHERE id = $1 AND user_id = $2`,
         [id, user.id],
       );
@@ -170,9 +216,30 @@ export async function criticalTakeoverRoutes(app: FastifyInstance): Promise<void
       if (owned.rows[0]!.ended_at) {
         return reply.code(409).send({ error: 'session_ended' });
       }
+      // CRITICAL bug fix from Phase 5 adversarial review: the dismiss
+      // route previously did NOT verify that a takeover actually
+      // fired before accepting the dismiss + arming the post-dismiss
+      // watcher. A malicious client could trigger the family-alert
+      // escalation on demand. Require b3_takeover_fired_at to be
+      // populated; reject otherwise.
+      if (owned.rows[0]!.b3_takeover_fired_at === null) {
+        return reply.code(409).send({ error: 'no_active_takeover_to_dismiss' });
+      }
 
       const takeoverFiredAt = new Date(parsed.data.takeover_fired_at);
       const dismissedAt = new Date();
+
+      // Bound takeover_fired_at to a sensible range. Outside this
+      // window means iOS forged a timestamp (or has a deeply wrong
+      // clock). Reject rather than persist nonsense audit data.
+      const sessionStart = owned.rows[0]!.started_at.getTime();
+      const tenSecondsFromNow = Date.now() + 10_000;
+      if (
+        takeoverFiredAt.getTime() < sessionStart ||
+        takeoverFiredAt.getTime() > tenSecondsFromNow
+      ) {
+        return reply.code(400).send({ error: 'takeover_fired_at_out_of_range' });
+      }
 
       // Persist audit-trail row in b3_dismiss_events.
       await query(
@@ -279,11 +346,31 @@ export function registerCriticalTakeoverHandlers(): void {
         }),
       );
 
-      // TODO(Phase 3): enqueue APNs critical-priority push for the
-      // iOS app. Same dispatch path the POST route uses; for now we
-      // record the event and the iOS post-call recap shows the
-      // pattern that fired.
-      void matched_text; // kept for the upcoming push payload wire-up
+      // Phase 5 — enqueue critical-priority push for iOS, gated on
+      // wasFirst. Without this gate, sentinel + v2 risk-scorer both
+      // firing for the same session would dupe. The 60s suppression
+      // in v3PushDispatcher catches edge cases this misses.
+      if (wasFirst) {
+        // Reviewer note from original Phase 5 review: matched_text
+        // captures literal digits from Mom's transcript side (SSN,
+        // card number, MFA code — see migration 047 patterns). The
+        // verbatim text encrypts at rest in live_shield_sentinel_hits
+        // but flows plaintext into guardian_alerts.payload via this
+        // enqueue path, where ops staff with DB access would see it.
+        // Redact digit runs ≥ 4 to length-markers before the payload
+        // crosses the encryption boundary. The pattern_name still
+        // tells the recipient WHAT category of data Mom was about
+        // to share — the redacted text just doesn't ship the data
+        // itself.
+        const matched_text_redacted = redactSensitiveDigits(matched_text);
+        void enqueueCriticalTakeoverPush({
+          session_id,
+          user_id,
+          trigger_path: 'sentinel_keyword',
+          risk_score: 100,
+          context: { pattern_name, matched_text: matched_text_redacted },
+        });
+      }
     } catch (err) {
       emitMetric('v3.b3.sentinel_fire_handler_threw', { pattern: pattern_name });
       // eslint-disable-next-line no-console

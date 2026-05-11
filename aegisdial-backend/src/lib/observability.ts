@@ -21,6 +21,24 @@ const PII_KEYS: ReadonlySet<string> = new Set([
   'body',
   'email',
   'phone',
+  // E.164 — same data as `phone_number`/`phone` under the column name
+  // our v3 code happens to use. Scrub the alias too so v3PushDispatcher
+  // (and any future caller) can attach `{ e164 }` for triage without
+  // leaking the actual number off-box to Sentry. The companion lock-
+  // screen rationale lives in v3PushDispatcher.ts — the SAME number is
+  // protected from the lock screen and from Sentry for the same reason.
+  'e164',
+  // Sentinel-fire literal capture. `matched_text` is the verbatim
+  // string Mom said when a B3 sentinel pattern fired — contains
+  // literal SSN/card/MFA digits for the digit-capturing patterns
+  // in migration 047. `scammer_context_match` is the scammer-side
+  // gate phrase ("verify your identity", etc.) — less sensitive but
+  // still PII-adjacent. The push-enqueue path redacts matched_text
+  // via `redactSensitiveDigits` before it lands in guardian_alerts
+  // .payload; this scrub set is the defense-in-depth for any future
+  // caller that attaches the RAW value to a captureError() context.
+  'matched_text',
+  'scammer_context_match',
   'tokenOnJws',
   'raw_payload',
 ]);

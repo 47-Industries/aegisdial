@@ -23,14 +23,16 @@ import { emitMetric } from '../lib/observability.js';
 // real. The V3_B3_MOM_SIDE_STT_ENABLED flag is a runtime kill-switch
 // if production cost spikes.
 //
-// Phase 0 status (this file):
-//   - Public interface is FINAL. Subscribers (sentinelMatcher,
-//     claimExtractor) can be wired against this surface today.
-//   - The actual STT path (consume audio chunk → Whisper → emit text
-//     chunk to subscribers) is wired in Phase 2 alongside the
-//     sentinel matcher. For now, this file exposes the consumer
-//     interface and a no-op subscribe() so feature work in B3/B4
-//     compiles against it without blocking on Phase 2.
+// Wiring (as of v3 Gap #1 closure, commit 4492e3f):
+//   - Public interface is FINAL. Subscribers (sentinelMatcher) wire
+//     against this surface.
+//   - The producer is `/v1/live-shield/:id/transcript` in
+//     routes/liveShield.ts: chunks with `speaker: 'self'` (Mom's
+//     on-device STT, NOT backend Whisper — v2's architecture is
+//     on-device STT with text uploads) call emitChunk() directly.
+//   - No backend audio path. The original Phase 2 design assumed a
+//     Whisper worker; audit revealed v2 was on-device STT all along
+//     and the spec was aspirational on this point.
 
 export interface MomSideTranscriptChunk {
   session_id: string;
@@ -61,10 +63,9 @@ const subscribers = new Map<string, Set<MomSideSubscriber>>();
  * leaks. The B3 sentinelMatcher and the B4 claimExtractor both
  * subscribe; both should unsubscribe in their own session-end handlers.
  *
- * Phase 0 NOTE: subscribe() works (in-memory dispatch is wired) but
- * no chunks are being emitted yet. Phase 2 wires the iOS audio →
- * Whisper → emitChunk() path. Until then, all subscribers will see
- * zero events — which is fine for getting the integration shape right.
+ * Wired (v3 Gap #1): chunks flow from `/v1/live-shield/:id/transcript`
+ * for `speaker: 'self'` (iOS on-device STT). See liveShield.ts where
+ * `v3EmitMomSideChunk` is called.
  */
 export function subscribe(session_id: string, fn: MomSideSubscriber): () => void {
   let set = subscribers.get(session_id);

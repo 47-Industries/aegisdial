@@ -66,11 +66,47 @@ export async function dispatchPending(): Promise<{ delivered: number; attempted:
         const row = rows[idx++]!;
         attempted++;
         try {
+          // CRITICAL bug fix from Phase 5 adversarial review: lift the
+          // interruption-level / relevance-score hints from payload
+          // up to the typed PushPayload fields so apns.ts actually
+          // sets the aps.interruption-level header. Without this,
+          // every shield_takeover would silently downgrade to default
+          // priority and Mom on Silent/DND would never see it.
+          const interruption =
+            (row.payload?.interruption_level_request as
+              | 'passive'
+              | 'active'
+              | 'time-sensitive'
+              | 'critical'
+              | undefined) ?? undefined;
+          const interruptionFallback =
+            (row.payload?.interruption_level_fallback as
+              | 'passive'
+              | 'active'
+              | 'time-sensitive'
+              | 'critical'
+              | undefined) ?? undefined;
+          const relevance =
+            typeof row.payload?.relevance_score === 'number'
+              ? (row.payload.relevance_score as number)
+              : undefined;
+
           const count = await sendToUser({
             userId: row.guardian_user_id,
             title: row.title,
             body: row.body,
             threadId: `guardian-${row.kind}`,
+            // Effective interruption level: requested if the entitlement
+            // path is wired (handled inside apns.ts when we have the
+            // Critical Alerts entitlement); fallback otherwise.
+            interruptionLevel: interruption ?? interruptionFallback,
+            // High urgency for shield_takeover and shield_post_dismiss.
+            // block_retry uses passive (default priority is fine).
+            priority:
+              row.kind === 'shield_takeover' || row.kind === 'shield_post_dismiss'
+                ? 10
+                : undefined,
+            relevanceScore: relevance,
             data: {
               alert_id: row.id,
               kind: row.kind,
