@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/auth_service.dart';
 import 'welcome_screen.dart';
+import 'family_alert_privacy_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
@@ -328,6 +329,15 @@ class SettingsScreen extends StatelessWidget {
               context,
               'On-device processing',
               'Every call transcript and SMS scan runs entirely on your iPhone. AegisDial never uploads your conversations, transcripts, or message content to any server. Only anonymized fraud verdicts are synced.',
+            ),
+          ),
+          _SettingsTile(
+            icon: Icons.shield_outlined,
+            title: 'Family alert privacy',
+            onTap: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => const FamilyAlertPrivacyScreen(),
+              ),
             ),
           ),
           _SettingsTile(

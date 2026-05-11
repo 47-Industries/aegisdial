@@ -52,6 +52,17 @@ class ApiService {
     return _handle(res);
   }
 
+  Future<Map<String, dynamic>> put(String path, Map<String, dynamic> body) async {
+    final res = await http
+        .put(
+          Uri.parse('$baseUrl$path'),
+          headers: _headers,
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 20));
+    return _handle(res);
+  }
+
   Map<String, dynamic> _handle(http.Response res) {
     Map<String, dynamic> body = {};
     try {
