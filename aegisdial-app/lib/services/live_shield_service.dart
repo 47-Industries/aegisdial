@@ -31,6 +31,14 @@ class LiveShieldChunkResult {
   final String? llmScamType;      // 'irs_impersonation' | 'tech_support' | ...
   final List<String> newWarnings;
   final bool familyVerifySuggested;
+  // v4 — playbook-aware counter-scripts. Populated when:
+  //   - V4_PLAYBOOK_COACHING_ENABLED is true on the backend
+  //   - The classifier has locked onto a playbook with ≥0.7 confidence
+  //   - The session sent consent_version=2
+  // iOS renders these as a numbered "Say this to make them hang up" card
+  // below the v2 coaching line.
+  final String? v4PlaybookId;
+  final List<String> v4CounterScripts;
 
   LiveShieldChunkResult({
     required this.riskScore,
@@ -40,9 +48,12 @@ class LiveShieldChunkResult {
     this.llmScamType,
     required this.newWarnings,
     required this.familyVerifySuggested,
+    this.v4PlaybookId,
+    this.v4CounterScripts = const [],
   });
 
   factory LiveShieldChunkResult.fromJson(Map<String, dynamic> j) {
+    final v4 = j['v4_coaching'] as Map<String, dynamic>?;
     return LiveShieldChunkResult(
       riskScore: (j['risk_score'] as num?)?.toInt() ?? 0,
       riskLevel: (j['risk_level'] as String?) ?? 'low',
@@ -53,6 +64,9 @@ class LiveShieldChunkResult {
       newWarnings:
           ((j['new_warnings'] as List?) ?? const []).cast<String>(),
       familyVerifySuggested: (j['family_verify_suggested'] as bool?) ?? false,
+      v4PlaybookId: v4?['playbook_id'] as String?,
+      v4CounterScripts:
+          ((v4?['counter_scripts'] as List?) ?? const []).cast<String>(),
     );
   }
 }

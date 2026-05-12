@@ -399,11 +399,11 @@ class SettingsScreen extends StatelessWidget {
           _SettingsTile(
             icon: Icons.info_outline,
             title: 'About AegisDial',
-            trailing: 'v1.0.0 (3)',
+            trailing: 'v1.0.0 (4)',
             onTap: () => _showInfo(
               context,
               'About AegisDial',
-              'AegisDial v1.0.0 (3)\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: support@aegisdial.com',
+              'AegisDial v1.0.0 (4)\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: support@aegisdial.com',
             ),
           ),
           const SizedBox(height: 24),

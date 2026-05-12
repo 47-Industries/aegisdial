@@ -94,6 +94,12 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
   // accounts, offline, or any backend hiccup.
   String? _sessionId;
   String? _coachingLine;
+  // v4 — counter-script coaching surface. Populated when the backend's
+  // playbook classifier locks on with ≥0.7 confidence AND
+  // V4_PLAYBOOK_COACHING_ENABLED is on. iOS renders these as a numbered
+  // card below the v2 coaching line.
+  List<String> _counterScripts = const [];
+  String? _v4PlaybookId;
   int _backendChunkSeq = 0;
 
   @override
@@ -134,6 +140,8 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
       _transcript.clear();
       _fraudScore = 0;
       _coachingLine = null;
+      _counterScripts = const [];
+      _v4PlaybookId = null;
       _sessionId = null;
       _backendChunkSeq = 0;
     });
@@ -184,6 +192,14 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
             if (chunkResult.coachingLine != null) {
               _coachingLine = chunkResult.coachingLine;
             }
+            // v4 counter-scripts only update when the backend returns a
+            // non-empty list — once the playbook locks on it tends to
+            // stay locked for the rest of the call, so we don't want a
+            // momentary null to erase the card mid-demo.
+            if (chunkResult.v4CounterScripts.isNotEmpty) {
+              _counterScripts = chunkResult.v4CounterScripts;
+              _v4PlaybookId = chunkResult.v4PlaybookId;
+            }
           });
         }
       }
@@ -214,6 +230,8 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
         _transcript.clear();
         _fraudScore = 0;
         _coachingLine = null;
+        _counterScripts = const [];
+        _v4PlaybookId = null;
         _sessionId = null;
       });
       Future.delayed(const Duration(milliseconds: 400), () {
@@ -336,6 +354,8 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                               score: _fraudScore,
                               verdict: _demoPhase == _DemoPhase.verdict,
                               coachingLine: _coachingLine,
+                              counterScripts: _counterScripts,
+                              v4PlaybookId: _v4PlaybookId,
                               onBlock: _dismissDemo,
                               onAnswer: _dismissDemo,
                             )
@@ -798,6 +818,8 @@ class _LiveCallCard extends StatelessWidget {
   final bool verdict;
   final String scenarioName;
   final String? coachingLine; // v2 LLM coaching — only set on Pro accounts post-consent-v2
+  final List<String> counterScripts; // v4 counter-scripts — playbook-aware, ≥0.7 confidence
+  final String? v4PlaybookId; // for the small "playbook detected" tag
   final VoidCallback onBlock;
   final VoidCallback onAnswer;
 
@@ -809,6 +831,8 @@ class _LiveCallCard extends StatelessWidget {
     required this.verdict,
     required this.scenarioName,
     this.coachingLine,
+    this.counterScripts = const [],
+    this.v4PlaybookId,
     required this.onBlock,
     required this.onAnswer,
   });
@@ -923,6 +947,120 @@ class _LiveCallCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                ],
+              ),
+            ),
+          // v4 counter-script card — playbook-specific scripts the user
+          // can read straight off the screen to disengage. Sourced from
+          // the seeded `b4_playbooks.counter_scripts` array, top-N
+          // strongest. Surfaces only when v4 classifier has locked on
+          // ≥0.7 confidence AND backend's V4_PLAYBOOK_COACHING_ENABLED.
+          if (counterScripts.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 0, 12, 10),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    AegisColors.blue.withValues(alpha: 0.14),
+                    AegisColors.turquoise.withValues(alpha: 0.08),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AegisColors.blue.withValues(alpha: 0.35),
+                  width: 0.8,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.menu_book_rounded,
+                        size: 14,
+                        color: AegisColors.blueAccent,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'SAY THIS TO MAKE THEM HANG UP',
+                        style: tt.labelSmall?.copyWith(
+                          color: AegisColors.blueAccent,
+                          letterSpacing: 1.2,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                      if (v4PlaybookId != null) ...[
+                        const Spacer(),
+                        Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 7, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: AegisColors.blue.withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            _formatPlaybookLabel(v4PlaybookId!),
+                            style: tt.labelSmall?.copyWith(
+                              color: AegisColors.blueAccent,
+                              fontSize: 9,
+                              fontWeight: FontWeight.w700,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  for (int i = 0; i < counterScripts.length; i++)
+                    Padding(
+                      padding: EdgeInsets.only(
+                          bottom: i == counterScripts.length - 1 ? 0 : 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 18,
+                            height: 18,
+                            margin: const EdgeInsets.only(top: 1, right: 8),
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AegisColors.blue.withValues(alpha: 0.2),
+                              border: Border.all(
+                                color: AegisColors.blueAccent
+                                    .withValues(alpha: 0.55),
+                                width: 0.8,
+                              ),
+                            ),
+                            alignment: Alignment.center,
+                            child: Text(
+                              '${i + 1}',
+                              style: TextStyle(
+                                color: AegisColors.blueAccent,
+                                fontSize: 10,
+                                fontWeight: FontWeight.w800,
+                                height: 1,
+                              ),
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              '"${counterScripts[i]}"',
+                              style: tt.bodySmall?.copyWith(
+                                color: AegisColors.textPrimary,
+                                height: 1.45,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
@@ -1121,4 +1259,31 @@ class _CallHistoryTile extends StatelessWidget {
       ),
     );
   }
+}
+
+// Convert v4 playbook id like 'irs_impersonation' to a short display
+// label for the counter-script card tag — 'IRS' / 'BANK' / etc. If the
+// id isn't in the canonical short-labels map we fall back to the full
+// title-cased name truncated to 18 chars.
+String _formatPlaybookLabel(String playbookId) {
+  const shortLabels = <String, String>{
+    'irs_impersonation': 'IRS',
+    'ssa_impersonation': 'SSA',
+    'medicare_impersonation': 'MEDICARE',
+    'bank_impersonation': 'BANK',
+    'tech_support_scam': 'TECH SUPPORT',
+    'grandparent_scam': 'GRANDPARENT',
+    'police_warrant_scam': 'POLICE',
+    'utility_shutoff_scam': 'UTILITY',
+    'romance_scam': 'ROMANCE',
+    'sweepstakes_lottery_scam': 'LOTTERY',
+    'gift_card_payment_scam': 'GIFT CARD',
+    'crypto_investment_scam': 'CRYPTO',
+    'charity_disaster_scam': 'CHARITY',
+    'job_offer_scam': 'JOB OFFER',
+  };
+  final hit = shortLabels[playbookId];
+  if (hit != null) return hit;
+  final cleaned = playbookId.replaceAll('_', ' ').toUpperCase();
+  return cleaned.length > 18 ? '${cleaned.substring(0, 17)}…' : cleaned;
 }
