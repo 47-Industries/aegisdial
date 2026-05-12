@@ -13,6 +13,8 @@ import {
   stopGuardianAlertEscalator,
   type EscalatorHandle,
 } from './guardianAlertEscalator.js';
+import { runCalibrationCheckSingleFlight } from './v4CalibrationAlerter.js';
+import { captureMessage, emitMetric } from '../lib/observability.js';
 import type { Crawler, CrawlResult } from '../crawlers/types.js';
 
 export interface ScheduledCrawler {
@@ -20,6 +22,14 @@ export interface ScheduledCrawler {
   task: cron.ScheduledTask;
   lastResult?: CrawlResult;
   running: boolean;
+}
+
+export interface SchedulerHandles {
+  crawlers: ScheduledCrawler[];
+  rescorerTask: cron.ScheduledTask;
+  spoofVerifierTask: cron.ScheduledTask;
+  guardianEscalator: EscalatorHandle;
+  v4CalibrationTask: cron.ScheduledTask;
 }
 
 export function buildCrawlers(): Crawler[] {
@@ -75,12 +85,7 @@ export async function runCrawlerOnce(crawler: Crawler): Promise<CrawlResult> {
   }
 }
 
-export function startScheduler(): {
-  crawlers: ScheduledCrawler[];
-  rescorerTask: cron.ScheduledTask;
-  spoofVerifierTask: cron.ScheduledTask;
-  guardianEscalator: EscalatorHandle;
-} {
+export function startScheduler(): SchedulerHandles {
   const crawlers = buildCrawlers();
   const scheduled: ScheduledCrawler[] = [];
 
@@ -151,19 +156,52 @@ export function startScheduler(): {
   // the shared scheduler lifecycle so start/stop stays centralized.
   const guardianEscalator = startGuardianAlertEscalator();
 
-  return { crawlers: scheduled, rescorerTask, spoofVerifierTask, guardianEscalator };
+  // Live Shield v4 — Phase 16 — calibration alerter. Runs hourly,
+  // compares the current scorecard verdict against the previous
+  // snapshot in Redis, emits a Sentry message + metric on
+  // regression. Suppressed when V4_PLAYBOOK_AWARE_ENABLED is off
+  // (the worker itself checks and short-circuits — same defense as
+  // Phase 1 subscriber install).
+  const v4CalibrationTask = cron.schedule('27 * * * *', async () => {
+    try {
+      const r = await runCalibrationCheckSingleFlight();
+      if ('error' in r) {
+        console.error('[v4-calibration] check returned error', r.error);
+      } else if ('skipped' in r) {
+        // Another instance ran it; that's the whole point of the lock.
+        // Silent at INFO, surfaced via metric for visibility.
+      } else if (r.regression.severity !== 'none') {
+        console.log(
+          `[v4-calibration] ${r.regression.severity}: ${r.regression.reason}`,
+        );
+      }
+    } catch (err) {
+      // L-6 adversarial fix — the inner runCalibrationCheck already
+      // catches its own errors and returns {error}, so reaching this
+      // outer catch means something REALLY broke (import failure,
+      // OOM, etc). Make sure it leaves a trail.
+      emitMetric('v4.scorecard.cron_task_failed', {});
+      captureMessage('[v4-calibration] cron task threw', 'error');
+      console.error('[v4-calibration] task threw', err);
+    }
+  });
+  console.log('[scheduler] v4-calibration @ minute 27 hourly');
+
+  return {
+    crawlers: scheduled,
+    rescorerTask,
+    spoofVerifierTask,
+    guardianEscalator,
+    v4CalibrationTask,
+  };
 }
 
-export function stopScheduler(s: {
-  crawlers: ScheduledCrawler[];
-  rescorerTask: cron.ScheduledTask;
-  spoofVerifierTask: cron.ScheduledTask;
-  guardianEscalator: EscalatorHandle;
-}): void {
+export function stopScheduler(s: SchedulerHandles): void {
   for (const { task } of s.crawlers) task.stop();
   s.rescorerTask.stop();
   s.spoofVerifierTask.stop();
   stopGuardianAlertEscalator(s.guardianEscalator);
+  s.v4CalibrationTask.stop();
 }
 
 export function getLastResults(): Record<string, CrawlResult | undefined> {

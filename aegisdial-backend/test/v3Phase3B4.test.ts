@@ -122,11 +122,17 @@ const fakeQuery = async (
     return { rows: [], rowCount: 1 };
   }
 
-  // call_sessions lookups.
-  if (/SELECT peer_e164 FROM call_sessions/i.test(t)) {
+  // call_sessions lookups. v4 Phase 5 widened the orchestrator's SELECT
+  // to also pull v4_playbook_id for the claim-extractor grounding bias.
+  // Regex tolerates both the legacy 1-column and the new 2-column shape
+  // so other tests in this file that drive the legacy path keep working.
+  if (/SELECT peer_e164(?:, v4_playbook_id)? FROM call_sessions/i.test(t)) {
     const id = params[0] as string;
     const row = dbState.call_sessions.get(id);
-    return { rows: row ? [{ peer_e164: row.peer_e164 }] : [], rowCount: row ? 1 : 0 };
+    return {
+      rows: row ? [{ peer_e164: row.peer_e164, v4_playbook_id: null }] : [],
+      rowCount: row ? 1 : 0,
+    };
   }
 
   // call_sessions UPDATE for b3_takeover_fired_at.

@@ -1,5 +1,6 @@
 import type { FastifyInstance } from 'fastify';
 import { z } from 'zod';
+import { config } from '../config.js';
 import { query, withTx } from '../lib/db.js';
 import { requireAppUser, requireProTier } from '../lib/auth.js';
 import { normalizeE164 } from '../lib/phone.js';
@@ -56,6 +57,11 @@ const transcriptPrivacyCache = new Map<string, 'minimal' | 'default' | 'open'>()
 import { startForSession as v3StartSentinelMatcher } from '../services/sentinelMatcher.js';
 import { disarmPostDismissWatch as v3DisarmPostDismissWatch } from '../services/postDismissWatcher.js';
 import { endSession as v3EndB4Session } from '../services/b4Orchestrator.js';
+// Live Shield v4 — Phase 1 — playbook subscriber session-end hook.
+// Same monotonic-Map-growth prevention rationale as v3EndB4Session.
+import { endSession as v4EndPlaybookSession } from '../services/playbookSubscriber.js';
+import { resolveCoachingSurface } from '../services/v4Coaching.js';
+import { resolveEffectiveScamType } from '../services/v4RecoveryScamType.js';
 import { pickFlushCadenceMs } from '../services/adaptiveCadence.js';
 const v3SentinelStops = new Map<string, () => void>();
 // Tracks sessions whose /end ran BEFORE the async sentinel-start resolved.
@@ -523,9 +529,14 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         llm_last_called_at: Date | null;
         b4_findings_count: number;
         b4_score_boost: number;
+        v4_score_boost: number;
+        v4_playbook_id: string | null;
+        v4_stage: string | null;
+        v4_stage_confidence: number | null;
       }>(
         `SELECT llm_score, llm_scam_type, llm_coaching_line, llm_last_called_at,
-                b4_findings_count, b4_score_boost
+                b4_findings_count, b4_score_boost, v4_score_boost,
+                v4_playbook_id, v4_stage, v4_stage_confidence
            FROM call_sessions WHERE id = $1`,
         [id],
       );
@@ -535,6 +546,20 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       const llmLastCalledAt = llmRow.rows[0]?.llm_last_called_at ?? null;
       const b4FindingsCount = llmRow.rows[0]?.b4_findings_count ?? 0;
       const b4ScoreBoost = llmRow.rows[0]?.b4_score_boost ?? 0;
+      // v4 Phase 2 — playbook-stage boost. Gated read: when the v4 flag
+      // is OFF, we ignore the column even if it carries a value (e.g. a
+      // session classified before the flag flipped). Avoids surprising
+      // ops with "why did this session jump 15 points after I disabled
+      // v4" stories. Same one-chunk-lag pattern as b4ScoreBoost.
+      const v4ScoreBoost = config.V4_PLAYBOOK_SCORE_BOOST_ENABLED
+        ? (llmRow.rows[0]?.v4_score_boost ?? 0)
+        : 0;
+      // v4 Phase 3 — playbook coaching surface. Gated read: ALL three
+      // pieces (playbook id, stage, confidence) must be present AND
+      // the coaching flag must be on. Read here so the response build
+      // below can include counter_scripts without a second DB hit.
+      const v4PlaybookIdRaw = llmRow.rows[0]?.v4_playbook_id ?? null;
+      const v4StageConfidenceRaw = llmRow.rows[0]?.v4_stage_confidence ?? null;
 
       // v3 Gap #3 — additive B4 sub-threshold boost. Stacks weak
       // signals (cannot_verify + sub-threshold contradicted) onto
@@ -558,7 +583,7 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       // transition UX.
       const finalScore = Math.min(
         100,
-        mergeScores(snapshot.score.risk_score, llmScore) + b4ScoreBoost,
+        mergeScores(snapshot.score.risk_score, llmScore) + b4ScoreBoost + v4ScoreBoost,
       );
       const finalLevel: 'low' | 'medium' | 'high' | 'critical' =
         finalScore >= 75 ? 'critical' :
@@ -769,6 +794,17 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         has_any_b4_finding: b4FindingsCount > 0,
       });
 
+      // v4 Phase 3 — counter-script coaching surface. Resolved here so
+      // the response either includes the field (object with playbook_id
+      // + counter_scripts) or omits it via NULL — iOS treats NULL as
+      // "no v4 coaching available." All three gates (flag, confidence
+      // floor, playbook lookup) live inside resolveCoachingSurface;
+      // failure paths return NULL and don't crash the route.
+      const v4Coaching = resolveCoachingSurface({
+        v4_playbook_id: v4PlaybookIdRaw,
+        v4_stage_confidence: v4StageConfidenceRaw,
+      });
+
       return reply.send({
         session_id: id,
         risk_score: finalScore,
@@ -783,6 +819,11 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
         new_warnings: newWarnings,
         family_verify_suggested: emergency,
         family_suggestion: familySuggest,
+        // v4 Phase 3 — playbook-specific counter-scripts. NULL when no
+        // v4 detection has crossed the coaching-confidence floor, or
+        // when the V4_PLAYBOOK_COACHING_ENABLED flag is OFF. iOS reads
+        // this as "show coaching card with these lines."
+        v4_coaching: v4Coaching,
         // Server-driven flush cadence; iOS reschedules its next
         // /transcript POST after this many ms. See adaptiveCadence.ts.
         next_flush_ms: nextFlushMs,
@@ -859,6 +900,10 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
       // state. No-op when V3_B4_ENABLED is off or the session never
       // had B4 activity.
       v3EndB4Session(id);
+      // Drop v4's per-session classifier state. No-op when
+      // V4_PLAYBOOK_AWARE_ENABLED is OFF or the session never had
+      // a caller-side chunk processed.
+      v4EndPlaybookSession(id);
 
       void track('shield_ended', {
         userId: user.id,
@@ -911,12 +956,51 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
 
       if (eligibleByOutcome || eligibleByMoneyMoved) {
         try {
-          const callMeta = await query<{ peer_e164: string | null; llm_scam_type: string | null }>(
-            `SELECT peer_e164, llm_scam_type FROM call_sessions WHERE id = $1`,
+          // v4 Phase 2 — also pull v4 playbook + stage so Recovery
+          // Concierge can preload playbook-specific steps. Persisted
+          // unconditionally (so the audit trail survives a flag flip);
+          // read-side consumers gate on V4_PLAYBOOK_RECOVERY_PRELOAD_ENABLED.
+          //
+          // v4 Phase 9 — also pull v4_stage_confidence for the
+          // playbook-derived scam_type substitution. The substitution
+          // gates on the column being above
+          // V4_PLAYBOOK_RECOVERY_SCAM_TYPE_MIN_CONFIDENCE.
+          const callMeta = await query<{
+            peer_e164: string | null;
+            llm_scam_type: string | null;
+            v4_playbook_id: string | null;
+            v4_stage: string | null;
+            v4_stage_confidence: number | null;
+          }>(
+            `SELECT peer_e164, llm_scam_type, v4_playbook_id, v4_stage, v4_stage_confidence
+               FROM call_sessions WHERE id = $1`,
             [id],
           );
           const peerE164 = callMeta.rows[0]?.peer_e164 ?? null;
           const llmScamType = callMeta.rows[0]?.llm_scam_type ?? null;
+          const v4PlaybookId = callMeta.rows[0]?.v4_playbook_id ?? null;
+          const v4Stage = callMeta.rows[0]?.v4_stage ?? null;
+          const v4StageConfidencePct = callMeta.rows[0]?.v4_stage_confidence ?? null;
+
+          // v4 Phase 9 — resolve the effective scam_type via the pure
+          // resolver in v4RecoveryScamType. Composes all gates:
+          // flag + playbook + confidence floor + "LLM signal is vague"
+          // + PLAYBOOKS_BY_ID validation. The resolver returns the
+          // legacy `llmScamType ?? 'unknown_triage'` fallback when any
+          // gate fails, so legacy behavior is preserved exactly when
+          // the flag is off.
+          const scamTypeResolution = resolveEffectiveScamType({
+            v4_playbook_id: v4PlaybookId,
+            v4_stage_confidence_pct: v4StageConfidencePct,
+            llm_scam_type: llmScamType,
+          });
+          const effectiveScamType = scamTypeResolution.scam_type;
+          if (scamTypeResolution.from_playbook) {
+            emitMetric('v4.recovery.scam_type_from_playbook', {
+              playbook_id: v4PlaybookId ?? 'null',
+              fallback_llm_scam_type: llmScamType ?? 'null',
+            });
+          }
 
           const familyPlan = await query<{ id: string }>(
             `SELECT family_plan_id AS id FROM family_members WHERE user_id = $1`,
@@ -928,21 +1012,33 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
           // light up guardian alerts a second time. scam_type defaults
           // to 'unknown_triage' if the LLM never classified — the user
           // picks during triage resolution.
+          //
+          // v4: v4_playbook_id + v4_stage carry the playbook-level
+          // detection across the v2→recovery handoff. Recovery Concierge
+          // reads these to preload playbook-specific recovery steps
+          // (e.g. "we saw IRS impersonation — here are your 4 steps")
+          // instead of generic triage prompts. Persistence is
+          // unconditional so the audit trail is preserved on a flag
+          // flip; downstream consumers gate on
+          // V4_PLAYBOOK_RECOVERY_PRELOAD_ENABLED.
           const recoveryRow = await query<{ id: string }>(
             `INSERT INTO recovery_sessions (
                user_id, family_plan_id, scam_e164, scam_e164_ct, scam_type,
-               amount_lost_cents, description, description_ct, mode
-             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'triage')
+               amount_lost_cents, description, description_ct, mode,
+               v4_playbook_id, v4_stage
+             ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'triage', $9, $10)
              RETURNING id`,
             [
               user.id,
               familyPlanId,
               '',
               peerE164 ? encryptString(peerE164) : null,
-              llmScamType ?? 'unknown_triage',
+              effectiveScamType,
               null,
               '',
               null,
+              v4PlaybookId,
+              v4Stage,
             ],
           );
           recoveryHandoffSessionId = recoveryRow.rows[0]?.id ?? null;
@@ -953,7 +1049,7 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
               recovery_session_id: recoveryHandoffSessionId,
               shield_session_id: id,
               source: 'live_shield_auto_handoff',
-              scam_type: llmScamType ?? 'unknown_triage',
+              scam_type: effectiveScamType,
               trigger: eligibleByMoneyMoved ? 'payment_fraud_critical' : 'critical_with_outcome',
             },
           });
@@ -1052,6 +1148,109 @@ export async function liveShieldRoutes(app: FastifyInstance): Promise<void> {
           severity: h.severity,
           matched_text: readMaybeEncrypted(h.matched_text_ct) || h.matched_text || null,
           at: h.created_at.toISOString(),
+        })),
+      });
+    },
+  );
+
+  // Live Shield v4 — Phase 3B — post-call recap of stage transitions.
+  //
+  // Returns the chronological trail of (playbook, stage) transitions
+  // for one session. iOS renders this as the "what happened" summary on
+  // the post-call screen: "Mom got the IRS call. The scammer ran
+  // rapport → authority → fear → ask over 4 minutes. Mom hung up at the
+  // ask stage."
+  //
+  // Unflagged: this is an audit endpoint over the user's OWN data, so
+  // it stays available regardless of V4_PLAYBOOK_AWARE_ENABLED state.
+  // A session classified while the flag was on (and then flipped off
+  // later) keeps its history readable here — we never want to hide
+  // events that already happened to the caller's family. Sessions that
+  // never had v4 activity simply return 200 with an empty transitions
+  // array (NOT 404) so iOS can render "no v4 detection" gracefully.
+  //
+  // Auth: same shape as GET /:id — session ownership verified via
+  // user_id in the WHERE clause. Cross-user access returns 404 (NOT
+  // 200-empty) to avoid existence-leak distinguishability.
+  app.get(
+    '/v1/live-shield/:id/recap',
+    { preHandler: [requireAppUser, requireProTier] },
+    async (req, reply) => {
+      const user = req.appUser!;
+      const { id } = req.params as { id: string };
+
+      // Verify session ownership first. Returns 404 on a foreign
+      // session-id so we don't leak "this session exists but isn't
+      // yours" via a 200 empty-list response vs. a different shape.
+      const owner = await query<{ id: string }>(
+        `SELECT id FROM call_sessions WHERE id = $1 AND user_id = $2`,
+        [id, user.id],
+      );
+      if (owner.rows.length === 0) {
+        return reply.code(404).send({ error: 'session_not_found' });
+      }
+
+      // Latest committed tuple lives on call_sessions for fast access.
+      // Carried alongside the transition trail so the recap UI can
+      // show "Latest: bank_impersonation @ fear (85%)" at the top of
+      // the screen without having to take last(transitions).
+      const latest = await query<{
+        v4_playbook_id: string | null;
+        v4_stage: string | null;
+        v4_stage_confidence: number | null;
+        v4_classified_at: Date | null;
+        v4_transition_count: number;
+      }>(
+        `SELECT v4_playbook_id, v4_stage, v4_stage_confidence,
+                v4_classified_at, v4_transition_count
+           FROM call_sessions WHERE id = $1`,
+        [id],
+      );
+      const latestRow = latest.rows[0];
+
+      // Adversarial H1 fix — DELIBERATELY OMIT `reasoning` from the
+      // response. The b4_playbook_stage_events.reasoning column is
+      // classifier-paraphrased scammer-side transcript content and the
+      // rest of the system treats transcript text as encrypted-at-rest
+      // (migration 020). Surfacing it to a user-facing GET would
+      // violate that invariant. The recap UX ("Mom's call ran
+      // rapport → authority → fear → ask") doesn't need the
+      // reasoning text; ops-tuning use cases still have direct DB
+      // access to the column.
+      const trail = await query<{
+        from_playbook_id: string | null;
+        from_stage: string | null;
+        to_playbook_id: string;
+        to_stage: string;
+        confidence: number;
+        occurred_at: Date;
+      }>(
+        `SELECT from_playbook_id, from_stage, to_playbook_id, to_stage,
+                confidence, occurred_at
+           FROM b4_playbook_stage_events
+          WHERE session_id = $1
+          ORDER BY occurred_at ASC`,
+        [id],
+      );
+
+      return reply.send({
+        session_id: id,
+        latest: latestRow
+          ? {
+              playbook_id: latestRow.v4_playbook_id,
+              stage: latestRow.v4_stage,
+              stage_confidence: latestRow.v4_stage_confidence,
+              classified_at: latestRow.v4_classified_at?.toISOString() ?? null,
+              transition_count: latestRow.v4_transition_count,
+            }
+          : null,
+        transitions: trail.rows.map((t) => ({
+          from_playbook_id: t.from_playbook_id,
+          from_stage: t.from_stage,
+          to_playbook_id: t.to_playbook_id,
+          to_stage: t.to_stage,
+          confidence: t.confidence,
+          at: t.occurred_at.toISOString(),
         })),
       });
     },

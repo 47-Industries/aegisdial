@@ -46,6 +46,15 @@ import { findingsRoutes } from './routes/findings.js';
 import { startB4Orchestrator, stopB4Orchestrator } from './services/b4Orchestrator.js';
 // Live Shield v3 — B5 family-join routes. V3_B5_ENABLED gate.
 import { familyJoinRoutes } from './routes/familyJoin.js';
+// Live Shield v4 — Phase 1 — playbook subscriber + seed bootstrap.
+// Subscribes to caller-side transcript chunks via v3SessionEvents
+// and drives the stage classifier per session. Both no-op when
+// V4_PLAYBOOK_AWARE_ENABLED is OFF.
+import {
+  startV4PlaybookSubscriber,
+  stopV4PlaybookSubscriber,
+} from './services/playbookSubscriber.js';
+import { seedV4Playbooks } from './scripts/seedV4Playbooks.js';
 // Live Shield v3 — family-transcript SSE stream (Gap #2 audit fix).
 // Always registered (no flag gate): the route's content depends on
 // what the producers (transcript route, emitSystemEvent) emit, which
@@ -140,6 +149,21 @@ await app.register(findingsRoutes);
 // chunks from v3SessionEvents and runs the extract → verify →
 // dispatch pipeline. No-op when V3_B4_ENABLED is OFF.
 startB4Orchestrator();
+// v4 Phase 1: subscribe to caller-side chunks and run the stage
+// classifier. No-op when V4_PLAYBOOK_AWARE_ENABLED is OFF, so this
+// is safe to call unconditionally.
+startV4PlaybookSubscriber();
+// v4 Phase 1: sync the playbook library from canonical JS to the
+// runtime DB mirror. Fire-and-forget — the classifier reads
+// PLAYBOOKS from code, not from the DB, so a seed failure is not
+// a boot blocker. The mirror exists for admin tools + future
+// runtime tuning paths.
+if (config.V4_PLAYBOOK_AWARE_ENABLED) {
+  void seedV4Playbooks().catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('[v4 seed] failed', err);
+  });
+}
 await app.register(familyJoinRoutes);
 await app.register(familyTranscriptStreamRoutes);
 
@@ -212,6 +236,7 @@ const shutdown = async (signal: string): Promise<void> => {
     }
     stopPostDismissWatcher();
     stopB4Orchestrator();
+    stopV4PlaybookSubscriber();
     await shutdownAnalytics();
     await app.close();
     await shutdownDb();

@@ -1,7 +1,9 @@
 import { query } from '../lib/db.js';
+import { config } from '../config.js';
 import { emitGuardianAlert } from './guardianAlerts.js';
 import { track } from '../lib/analytics.js';
 import { emitMetric, captureError } from '../lib/observability.js';
+import { PLAYBOOKS_BY_ID, STAGE_IDS, type PlaybookId, type StageId } from '../data/playbooks.js';
 
 // Live Shield v2 — family alert fan-out at score ≥ 75.
 //
@@ -23,6 +25,64 @@ export interface FamilyAlertInput {
   scam_type: string;
   /** Plain-language labels of the regex hits that triggered this call. */
   matched_red_flags: string[];
+}
+
+/**
+ * Optional v4 playbook context. When present + flag is on, the
+ * non-minimal alert bodies are enriched with the playbook blurb and
+ * a stage-aware urgency cue.
+ *
+ * Resolved at fire-time inside fireFamilyAlert (caller doesn't need to
+ * pass it). Optional so existing callers and tests don't break.
+ */
+export interface V4AlertContext {
+  playbook_id: PlaybookId;
+  stage: StageId;
+}
+
+/**
+ * Per-stage urgency cue. Same line across all playbooks — the playbook
+ * blurb names WHAT the scam is, the stage cue names WHERE in the script
+ * the scammer is. Mom-side family member sees both, reading the push
+ * notification on a lock screen in 3 seconds.
+ */
+const STAGE_URGENCY: Record<StageId, string> = {
+  rapport: 'She is early in the call — call her now while she still has time.',
+  authority: 'They are establishing fake authority — call her now.',
+  fear: 'They are applying pressure right now — call her immediately.',
+  ask: 'They are asking for money RIGHT NOW. Call her immediately.',
+  close: 'The call may be ending — confirm she did not send money.',
+};
+
+/**
+ * Compose the v4 enrichment payload pieces. Both fireFamilyAlert (via
+ * buildAlertPayload) and firePostDismissFamilyAlert call through this
+ * so a single both-valid gate covers privacy/safety for both code paths.
+ *
+ * Returns NULL when:
+ *   - v4 ctx is missing
+ *   - V4_PLAYBOOK_FAMILY_ALERT_COPY_ENABLED flag is off
+ *   - playbook lookup misses (unknown id, e.g. stale post-rollback)
+ *   - stage urgency lookup misses (unknown stage label)
+ *
+ * NULL means: drop enrichment, fall through to legacy formatting. The
+ * wrapper text ("She may be on" vs "She is on") is supplied by the
+ * caller via `verb` since the two paths phrase it differently.
+ */
+export function composeV4Enrichment(
+  v4: V4AlertContext | null | undefined,
+  verb: 'may be on' | 'is on',
+): { bodySuffix: string; payloadFields: { v4_playbook_id: PlaybookId; v4_stage: StageId } } | null {
+  if (!v4) return null;
+  if (!config.V4_PLAYBOOK_FAMILY_ALERT_COPY_ENABLED) return null;
+  const playbook = PLAYBOOKS_BY_ID.get(v4.playbook_id);
+  if (!playbook) return null;
+  const stageCue = STAGE_URGENCY[v4.stage];
+  if (!stageCue) return null;
+  return {
+    bodySuffix: ` She ${verb} ${playbook.family_alert_blurb} ${stageCue}`,
+    payloadFields: { v4_playbook_id: v4.playbook_id, v4_stage: v4.stage },
+  };
 }
 
 const VALID_PRIVACY_LEVELS: ReadonlySet<string> = new Set(['minimal', 'default', 'open']);
@@ -68,6 +128,14 @@ export async function getFamilyAlertPrivacyLevel(userId: string): Promise<Privac
 export function buildAlertPayload(
   input: FamilyAlertInput,
   level: PrivacyLevel,
+  /**
+   * v4 Phase 2 — optional playbook context. When passed AND v4 flag is
+   * on, the non-minimal alert bodies get a playbook blurb + stage-aware
+   * urgency cue appended. Minimal stays minimal regardless (privacy
+   * guarantee outranks pitch value). Falls through to legacy formatting
+   * when null/undefined — every existing caller keeps working.
+   */
+  v4?: V4AlertContext | null,
 ): { title: string; body: string; payload: Record<string, unknown> } {
   const scamLabel = input.scam_type
     .replace(/_/g, ' ')
@@ -80,7 +148,22 @@ export function buildAlertPayload(
   // payload).
   const title = 'A family member is on a high-risk call';
 
+  // v4 enrichment: resolve playbook blurb + stage urgency once, gate
+  // application by privacy level below. Defensive: if the flag is on
+  // but v4 carries an unknown playbook_id (e.g. stale data after a code
+  // rollback), we silently skip — no half-built strings.
+  // Single source of truth for v4 enrichment composition (flag gate +
+  // playbook lookup + stage cue lookup). Both fire paths call through
+  // composeV4Enrichment so privacy + "no undefined" gates can't drift.
+  const v4Enrich = composeV4Enrichment(v4, 'may be on');
+  const v4Suffix = v4Enrich?.bodySuffix ?? '';
+  const v4PayloadFields = v4Enrich?.payloadFields ?? {};
+
   if (level === 'minimal') {
+    // Minimal stays minimal. No v4 enrichment — leaking the playbook
+    // name would defeat Mom's "send only what I need to call her back"
+    // preference. The kid still has the score; that's the signal they
+    // opted in for.
     return {
       title,
       body: `Risk score ${input.risk_score}/100. Pattern: ${scamLabel}.`,
@@ -101,7 +184,7 @@ export function buildAlertPayload(
       : '';
     return {
       title,
-      body: `Risk score ${input.risk_score}/100. Pattern: ${scamLabel}.${flagsBlurb}`,
+      body: `Risk score ${input.risk_score}/100. Pattern: ${scamLabel}.${flagsBlurb}${v4Suffix}`,
       payload: {
         kind: 'live_shield_critical',
         session_id: input.session_id,
@@ -110,6 +193,7 @@ export function buildAlertPayload(
         scam_type: input.scam_type,
         matched_red_flags: input.matched_red_flags.slice(0, 5),
         privacy_level: level,
+        ...v4PayloadFields,
       },
     };
   }
@@ -117,7 +201,7 @@ export function buildAlertPayload(
   // open
   return {
     title,
-    body: `Risk score ${input.risk_score}/100. Pattern: ${scamLabel}. Tap to view live.`,
+    body: `Risk score ${input.risk_score}/100. Pattern: ${scamLabel}.${v4Suffix} Tap to view live.`,
     payload: {
       kind: 'live_shield_critical',
       session_id: input.session_id,
@@ -127,8 +211,46 @@ export function buildAlertPayload(
       matched_red_flags: input.matched_red_flags.slice(0, 5),
       transcript_view_available: true,
       privacy_level: level,
+      ...v4PayloadFields,
     },
   };
+}
+
+/**
+ * Read the v4 playbook context for a session. NULL when the session
+ * never got classified, the flag is off, or the columns are stale.
+ *
+ * Internal helper called from fireFamilyAlert + firePostDismissFamilyAlert
+ * at fire time so callers don't have to pass v4 context explicitly.
+ * Fail-soft: any DB error → null (no enrichment, no crash). The alert
+ * still fires; it just doesn't get the playbook blurb.
+ */
+async function loadV4AlertContext(session_id: string): Promise<V4AlertContext | null> {
+  if (!config.V4_PLAYBOOK_FAMILY_ALERT_COPY_ENABLED) return null;
+  try {
+    const row = await query<{ v4_playbook_id: string | null; v4_stage: string | null }>(
+      `SELECT v4_playbook_id, v4_stage FROM call_sessions WHERE id = $1`,
+      [session_id],
+    );
+    const playbook_id = row.rows[0]?.v4_playbook_id ?? null;
+    const stage = row.rows[0]?.v4_stage ?? null;
+    if (!playbook_id || !stage) return null;
+    // Validate BOTH playbook_id and stage against the canonical
+    // taxonomies. An unvalidated stage cast would let STAGE_URGENCY[stage]
+    // return `undefined`, which then template-literal-stringifies into
+    // the push body as the literal text "undefined" — a real bug for
+    // family members reading the push notification. Drop enrichment on
+    // either mismatch (stale data after a code rollback, manual ops
+    // UPDATE writing a fresh label, etc.).
+    if (!PLAYBOOKS_BY_ID.has(playbook_id as PlaybookId)) return null;
+    if (!STAGE_IDS.includes(stage as StageId)) return null;
+    return {
+      playbook_id: playbook_id as PlaybookId,
+      stage: stage as StageId,
+    };
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -188,8 +310,15 @@ export async function fireFamilyAlert(input: FamilyAlertInput): Promise<{ delive
   const claimed = await claimAlertFiringRights(input.session_id);
   if (!claimed) return { delivered: 0, alreadyFired: true };
 
-  const level = await getFamilyAlertPrivacyLevel(input.subject_user_id);
-  const { title, body, payload } = buildAlertPayload(input, level);
+  // v4 Phase 2 — fetch playbook context in parallel with privacy
+  // preference. loadV4AlertContext returns null when the flag is OFF or
+  // no v4 detection has landed, so the legacy formatting path stays the
+  // default.
+  const [level, v4ctx] = await Promise.all([
+    getFamilyAlertPrivacyLevel(input.subject_user_id),
+    loadV4AlertContext(input.session_id),
+  ]);
+  const { title, body, payload } = buildAlertPayload(input, level, v4ctx);
 
   let delivered = 0;
   try {
@@ -273,7 +402,12 @@ export async function fireFamilyAlert(input: FamilyAlertInput): Promise<{ delive
 export async function firePostDismissFamilyAlert(
   input: FamilyAlertInput,
 ): Promise<{ delivered: number; recipients: number; outcome: 'delivered' | 'no_recipients' | 'all_delivery_failed' }> {
-  const level = await getFamilyAlertPrivacyLevel(input.subject_user_id);
+  // v4 Phase 2 — fetch privacy + playbook context in parallel. Same
+  // shape as fireFamilyAlert; v4 enrichment goes to non-minimal bodies.
+  const [level, v4ctx] = await Promise.all([
+    getFamilyAlertPrivacyLevel(input.subject_user_id),
+    loadV4AlertContext(input.session_id),
+  ]);
 
   // The post-dismiss copy is intentionally more urgent than the
   // primary alert: this means Mom got our warning, dismissed it,
@@ -283,6 +417,14 @@ export async function firePostDismissFamilyAlert(
   const scamLabel = input.scam_type
     .replace(/_/g, ' ')
     .replace(/\b\w/g, (c) => c.toUpperCase());
+
+  // v4 enrichment via the same shared composer used by buildAlertPayload.
+  // Only the verb differs ("is on" — more urgent now that we know Mom
+  // dismissed the original warning); the rest of the gating logic
+  // (flag + playbook lookup + stage cue lookup) is identical.
+  const v4Enrich = composeV4Enrichment(v4ctx, 'is on');
+  const v4Suffix = v4Enrich?.bodySuffix ?? '';
+  const v4PayloadFields = v4Enrich?.payloadFields ?? {};
 
   let body: string;
   let payload: Record<string, unknown>;
@@ -298,7 +440,7 @@ export async function firePostDismissFamilyAlert(
       privacy_level: level,
     };
   } else if (level === 'default') {
-    body = `Score ${input.risk_score}/100, pattern: ${scamLabel}. Tap to call.`;
+    body = `Score ${input.risk_score}/100, pattern: ${scamLabel}.${v4Suffix} Tap to call.`;
     payload = {
       kind: 'live_shield_post_dismiss',
       session_id: input.session_id,
@@ -307,9 +449,10 @@ export async function firePostDismissFamilyAlert(
       scam_type: input.scam_type,
       matched_red_flags: input.matched_red_flags.slice(0, 3),
       privacy_level: level,
+      ...v4PayloadFields,
     };
   } else {
-    body = `Score ${input.risk_score}/100. They dismissed our warning. Tap to join the call or open transcript.`;
+    body = `Score ${input.risk_score}/100. They dismissed our warning.${v4Suffix} Tap to join the call or open transcript.`;
     payload = {
       kind: 'live_shield_post_dismiss',
       session_id: input.session_id,
@@ -319,6 +462,7 @@ export async function firePostDismissFamilyAlert(
       matched_red_flags: input.matched_red_flags.slice(0, 5),
       transcript_view_available: true,
       privacy_level: level,
+      ...v4PayloadFields,
     };
   }
 

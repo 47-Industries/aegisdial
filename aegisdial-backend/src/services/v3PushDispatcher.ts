@@ -36,16 +36,22 @@ export interface CriticalTakeoverPushInput {
   session_id: string;
   /** Recipient — the user whose phone should fire the takeover. */
   user_id: string;
-  /** Distinguishes B3 vs B4 paths for the iOS UI router. */
-  trigger_path: 'live_shield_critical' | 'sentinel_keyword' | 'b4_finding';
+  /** Distinguishes B3 vs B4 vs v4 paths for the iOS UI router. */
+  trigger_path:
+    | 'live_shield_critical'
+    | 'sentinel_keyword'
+    | 'b4_finding'
+    | 'v4_stage_classifier';
   /** Risk score at time of fire — surfaced in the takeover body. */
   risk_score: number;
   /**
    * Optional context for the polymorphic CriticalInterruptView:
-   *   B3 sentinel  → { pattern_name, matched_text }
-   *   B4 finding   → { claim_type, raw_quote, reasoning, finding_id,
-   *                    source_url?, source_snippet? }
-   *   B3 critical  → {}
+   *   B3 sentinel        → { pattern_name, matched_text }
+   *   B4 finding         → { claim_type, raw_quote, reasoning, finding_id,
+   *                          source_url?, source_snippet? }
+   *   B3 critical        → {}
+   *   v4 stage classifier → { playbook_id, playbook_display_name, stage,
+   *                           confidence }
    */
   context?: Record<string, unknown>;
 }
@@ -239,6 +245,37 @@ function buildTakeoverCopy(input: CriticalTakeoverPushInput): { title: string; b
     return {
       title: 'STOP — do not share that information',
       body: 'AegisDial detected you may be about to share sensitive info. Tap to confirm safety.',
+    };
+  }
+
+  // v4 Phase 4 — stage-classifier takeover. Stage-specific copy keyed
+  // on the context.stage; falls back to a neutral takeover line if
+  // the stage isn't one of the two trigger stages (defense-in-depth —
+  // the caller's stage gate should never let anything else through).
+  if (input.trigger_path === 'v4_stage_classifier' && input.context) {
+    const stage = input.context.stage as string | undefined;
+    const playbookName = input.context.playbook_display_name as string | undefined;
+    // Sanitize the playbook display_name same way we sanitize raw_quote
+    // for B4 — defense-in-depth against any future code path that might
+    // synthesize an unsafe display string.
+    // eslint-disable-next-line no-control-regex
+    const safeName = playbookName?.replace(/[\x00-\x1f\x7f]/g, ' ').replace(/\s+/g, ' ').trim();
+    const nameClause = safeName && safeName.length > 0 ? ` — ${safeName}` : '';
+    if (stage === 'ask') {
+      return {
+        title: 'STOP — they\'re asking for money',
+        body: `This call matches a known scam pattern${nameClause}. Hang up now.`,
+      };
+    }
+    if (stage === 'close') {
+      return {
+        title: 'STOP — confirm you didn\'t send money',
+        body: `This call matches a known scam pattern${nameClause}. Tap to review.`,
+      };
+    }
+    return {
+      title: 'STOP — scam pattern detected',
+      body: `AegisDial recognized this script${nameClause}. Tap to view.`,
     };
   }
 

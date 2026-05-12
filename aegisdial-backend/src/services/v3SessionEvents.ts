@@ -77,12 +77,20 @@ export function subscribeRiskTransition(fn: RiskSubscriber): () => void {
  * counted but do not propagate — one buggy subscriber cannot break
  * v2's transcript path.
  *
- * Gated on V3_A1_ENABLED || V3_B3_ENABLED || V3_B4_ENABLED — when
- * all v3 transcript-consuming features are off, this is a no-op
- * (saves the dispatch loop cost on the hot path).
+ * Gated on V3_A1_ENABLED || V3_B3_ENABLED || V3_B4_ENABLED ||
+ * V4_PLAYBOOK_AWARE_ENABLED — when all transcript-consuming features
+ * are off, this is a no-op (saves the dispatch loop cost on the
+ * hot path). v4 added to the gate so the playbook subscriber can
+ * receive caller-side chunks even when v3 features are all
+ * disabled in a v4-only cohort rollout.
  */
 export async function notifyTranscriptChunk(event: TranscriptChunkEvent): Promise<void> {
-  if (!config.V3_A1_ENABLED && !config.V3_B3_ENABLED && !config.V3_B4_ENABLED) {
+  if (
+    !config.V3_A1_ENABLED &&
+    !config.V3_B3_ENABLED &&
+    !config.V3_B4_ENABLED &&
+    !config.V4_PLAYBOOK_AWARE_ENABLED
+  ) {
     return;
   }
   if (transcriptSubscribers.size === 0) return;

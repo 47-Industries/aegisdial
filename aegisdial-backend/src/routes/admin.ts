@@ -7,7 +7,18 @@ import { verifyAllSpoofTargets } from '../workers/spoofTargetVerifier.js';
 import { rescoreStale, rescoreNumber } from '../crawlers/rescore.js';
 import { normalizeE164 } from '../lib/phone.js';
 import { query } from '../lib/db.js';
-import { readMetrics } from '../lib/observability.js';
+import { readMetrics, emitMetric } from '../lib/observability.js';
+import { getStageTimingSummary } from '../services/v4StageTimingSummary.js';
+import { getClaimCoverageSummary } from '../services/v4ClaimCoverageSummary.js';
+import { getStageConfidenceSummary } from '../services/v4StageConfidenceSummary.js';
+import {
+  getCalibrationScorecard,
+  DEFAULT_SCORECARD_THRESHOLDS,
+} from '../services/v4CalibrationScorecard.js';
+import { getSessionClassificationHistory } from '../services/v4SessionHistory.js';
+import { runCalibrationCheck } from '../workers/v4CalibrationAlerter.js';
+import { getSentinelCoverageSummary } from '../services/v4SentinelCoverageSummary.js';
+import { withAdminAudit } from './adminAudit.js';
 import { currentTier, ensureTierPersisted } from '../lib/subscription.js';
 
 // Kyle manually grants 30-day Recovery Pro windows to users he meets via
@@ -30,6 +41,27 @@ const RECOVERY_GRANT_SCHEMA = z
 
 const RECOVERY_GRANT_PRODUCT_ID = 'com.aegiadial.ios.recovery.session';
 
+/**
+ * Parse the `hours` query param for v4 admin dashboards. Strict regex
+ * validation prevents parseInt's silent acceptance of "1.5", "12abc",
+ * "1e10", etc. Clamps at [1, 168] (one week — beyond metric_counters
+ * retention sweep horizon).
+ *
+ * Returns either the clamped integer OR an Error with the message the
+ * route should put in the 400 body. Two call sites
+ * (stage-timing / claim-coverage) so the shared parser keeps them
+ * lockstep — drift between dashboards would confuse the operator.
+ */
+function parseHoursParam(raw: unknown): number | Error {
+  if (raw === undefined) return 24;
+  if (typeof raw !== 'string' || !/^\d+$/.test(raw)) {
+    return new Error('invalid_hours');
+  }
+  const n = parseInt(raw, 10);
+  if (n < 1) return new Error('invalid_hours');
+  return Math.min(168, n);
+}
+
 export async function adminRoutes(app: FastifyInstance): Promise<void> {
   // Metric counters dashboard — supports ?hours=1 and ?name=foo.
   // Rolled up in-memory to give a quick "how's the system right now" view.
@@ -46,6 +78,164 @@ export async function adminRoutes(app: FastifyInstance): Promise<void> {
     }
     return reply.send({ hours, rows, totals });
   });
+
+  // Live Shield v4 — Phase 11 — per-(playbook, stage) timing-verdict
+  // distribution over the last N hours. The actionable dashboard
+  // surface for Phase 10's `v4.stage_timing.evaluated` telemetry.
+  //
+  // Decision tool: a playbook+stage with health='drift' means the
+  // seed's typical_duration_seconds bounds are wrong for current
+  // traffic OR a new scam variant has emerged. The operator uses
+  // this BEFORE flipping any V4_PLAYBOOK_*_ENABLED flag ON in prod.
+  //
+  // hours param: clamped [1, 168] (one week). Beyond that the
+  // metric_counters retention sweep prunes rows, so a longer window
+  // returns truncated data anyway — clamping makes it explicit.
+  // Live Shield v4 — Phase 12 — B4 × playbook claim-coverage view.
+  // Aggregates v4.b4.claim_extracted_vs_playbook into per-playbook
+  // gap/surprise/aligned verdicts. Same shape as /admin/v4/stage-timing
+  // (Phase 11): paired with the timing view, gives the operator the
+  // full calibration picture before flipping V4_PLAYBOOK_*_ENABLED.
+  app.get(
+    '/admin/v4/claim-coverage',
+    { preHandler: requireBearer },
+    withAdminAudit('claim-coverage', async (req, reply) => {
+      const q = req.query as { hours?: unknown };
+      const hours = parseHoursParam(q.hours);
+      if (hours instanceof Error) {
+        return reply.code(400).send({ error: hours.message });
+      }
+      const summary = await getClaimCoverageSummary(hours);
+      return reply.send(summary);
+    }),
+  );
+
+  // Live Shield v4 — Phase 17 — sentinel × playbook coverage view.
+  // Cross-references B3 sentinel pattern fires against the v4
+  // playbook lock at fire time. Finds playbooks whose sentinels
+  // never trigger — a coverage gap that means B3 won't catch
+  // anything for that script.
+  app.get(
+    '/admin/v4/sentinel-coverage',
+    { preHandler: requireBearer },
+    withAdminAudit('sentinel-coverage', async (req, reply) => {
+      const q = req.query as { hours?: unknown };
+      const hours = parseHoursParam(q.hours);
+      if (hours instanceof Error) {
+        return reply.code(400).send({ error: hours.message });
+      }
+      const summary = await getSentinelCoverageSummary(hours);
+      return reply.send(summary);
+    }),
+  );
+
+  // Live Shield v4 — Phase 16 — manual trigger for the calibration
+  // alerter. Same code path the hourly cron runs. Used for: (a)
+  // dry-running a regression check after a known-bad deploy, (b)
+  // resetting the snapshot baseline after intentional changes
+  // (e.g., flipping a flag — operator wants the NEW state to be
+  // the new baseline, not flagged as a regression).
+  app.post(
+    '/admin/v4/calibration-check',
+    { preHandler: requireBearer },
+    withAdminAudit('calibration-check', async (_req, reply) => {
+      const result = await runCalibrationCheck();
+      return reply.send(result);
+    }),
+  );
+
+  // Live Shield v4 — Phase 15 — per-session classification history.
+  // Closes the triage loop: scorecard surfaces a flagged pair, this
+  // endpoint surfaces the actual timeline of classifier commits for
+  // a representative session so the operator sees what the model
+  // decided and when.
+  app.get(
+    '/admin/v4/sessions/:id/classifications',
+    { preHandler: requireBearer },
+    withAdminAudit('session-history', async (req, reply) => {
+      const { id } = req.params as { id: string };
+      // Defense-in-depth UUID guard. Postgres would reject a non-UUID
+      // cast in the WHERE clause anyway, but rejecting at the route
+      // layer keeps the 400 response shape consistent with other admin
+      // routes and avoids a DB error round-trip on garbage input.
+      if (!/^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/.test(id)) {
+        return reply.code(400).send({ error: 'invalid_session_id' });
+      }
+      const history = await getSessionClassificationHistory(id);
+      if (!history.session_exists) {
+        return reply.code(404).send({ error: 'session_not_found', session_id: id });
+      }
+      // session-specific audit metric — supplements the generic
+      // v4.admin.access from the wrapper with the session_id-scoped
+      // event_count for forensic-grade triage.
+      void emitMetric('v4.admin.session_history.read', {
+        events: String(history.events.length),
+      });
+      return reply.send(history);
+    }),
+  );
+
+  // Live Shield v4 — Phase 14 — calibration scorecard.
+  // The single yes/no entry-point that answers "is v4 safe to flip
+  // to ON in prod?" by rolling up Phases 11/12/13. Verdict is one
+  // of 'ship_ready' / 'needs_calibration' / 'insufficient_data'.
+  // ?min_events=N overrides the per-axis volume threshold (default 50).
+  app.get(
+    '/admin/v4/calibration-scorecard',
+    { preHandler: requireBearer },
+    withAdminAudit('calibration-scorecard', async (req, reply) => {
+      const q = req.query as { hours?: unknown; min_events?: unknown };
+      const hours = parseHoursParam(q.hours);
+      if (hours instanceof Error) {
+        return reply.code(400).send({ error: hours.message });
+      }
+      let thresholds = DEFAULT_SCORECARD_THRESHOLDS;
+      if (q.min_events !== undefined) {
+        if (typeof q.min_events !== 'string' || !/^\d+$/.test(q.min_events)) {
+          return reply.code(400).send({ error: 'invalid_min_events' });
+        }
+        const n = parseInt(q.min_events, 10);
+        if (n > 100000) {
+          return reply.code(400).send({ error: 'invalid_min_events' });
+        }
+        thresholds = { min_events: n };
+      }
+      const scorecard = await getCalibrationScorecard(hours, thresholds);
+      return reply.send(scorecard);
+    }),
+  );
+
+  // Live Shield v4 — Phase 13 — stage-confidence calibration view.
+  // Reads existing v4.classifier.classified emissions; no new emit
+  // site. Completes the calibration triangle alongside Phase 11
+  // (stage-timing) and Phase 12 (claim-coverage).
+  app.get(
+    '/admin/v4/stage-confidence',
+    { preHandler: requireBearer },
+    withAdminAudit('stage-confidence', async (req, reply) => {
+      const q = req.query as { hours?: unknown };
+      const hours = parseHoursParam(q.hours);
+      if (hours instanceof Error) {
+        return reply.code(400).send({ error: hours.message });
+      }
+      const summary = await getStageConfidenceSummary(hours);
+      return reply.send(summary);
+    }),
+  );
+
+  app.get(
+    '/admin/v4/stage-timing',
+    { preHandler: requireBearer },
+    withAdminAudit('stage-timing', async (req, reply) => {
+      const q = req.query as { hours?: unknown };
+      const hours = parseHoursParam(q.hours);
+      if (hours instanceof Error) {
+        return reply.code(400).send({ error: hours.message });
+      }
+      const summary = await getStageTimingSummary(hours);
+      return reply.send(summary);
+    }),
+  );
 
   app.get('/admin/crawlers', { preHandler: requireBearer }, async (_req, reply) => {
     const crawlers = buildCrawlers().map((c) => ({

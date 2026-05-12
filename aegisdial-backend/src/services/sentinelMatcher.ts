@@ -3,6 +3,8 @@ import { query } from '../lib/db.js';
 import { emitMetric } from '../lib/observability.js';
 import { subscribe, type MomSideTranscriptChunk } from './momSideStt.js';
 import { subscribeTranscript, type TranscriptChunkEvent } from './v3SessionEvents.js';
+import { PLAYBOOKS_BY_ID, type PlaybookId } from '../data/playbooks.js';
+import { isSentinelGateBypassed } from '../data/sentinelPlaybookBypass.js';
 
 // Live Shield v3 — B3 sentinel matcher (real implementation).
 //
@@ -356,6 +358,29 @@ async function evaluateChunk(
   // losing legit matches.
   if (chunk.confidence < 0.6) return;
 
+  // v4 Phase 8 — HIGH-1 fix: hoist the v4 lookup out of the per-pattern
+  // loop. Pre-Phase-8 the gate-failure path was synchronous, so the
+  // dedup gate (firedPatterns.has → add) ran atomically per chunk.
+  // Adding `await getV4PlaybookContext(...)` between has-check and add
+  // would have created a race where two concurrent chunks both pass
+  // the has-check, both await, and both fire — emitting duplicate
+  // takeover system events (the wasFirst guard in criticalTakeover
+  // suppresses the push enqueue but NOT the system event broadcast).
+  //
+  // Pre-loop, single fetch closes the race AND caches across all 7
+  // patterns in the chunk.
+  //
+  // v4 Phase 17 — HIGH-1 fix from the sentinel-coverage review:
+  // previously this fetch was gated on V4_PLAYBOOK_B3_GATE_BYPASS_ENABLED
+  // (default OFF in prod). That made the Phase 17 coverage dashboard
+  // tag every sentinel fire as 'none' regardless of the actual v4
+  // lock, lying about coverage. Gate on the master V4_PLAYBOOK_AWARE_ENABLED
+  // flag instead — when the master is on, we want the playbook
+  // context for telemetry tagging EVEN IF the bypass behavior is off.
+  const v4Ctx = config.V4_PLAYBOOK_AWARE_ENABLED
+    ? await getV4PlaybookContext(session_id)
+    : null;
+
   for (const pattern of state.patterns) {
     if (state.firedPatterns.has(pattern.name)) continue;
 
@@ -372,18 +397,77 @@ async function evaluateChunk(
         .join(' ');
       const ctxMatch = pattern.required_scammer_context_regex.exec(recent);
       if (!ctxMatch) {
-        // Gate failed — record the near-miss so we can tune later.
-        emitMetric('v3.sentinel_matcher.gate_blocked_match', {
-          pattern: pattern.name,
-        });
-        continue;
+        // v4 Phase 8 — playbook gate bypass. When the bypass flag is on
+        // AND the pre-loop v4Ctx snapshot shows a playbook in the
+        // pattern's bypass list AND the classifier's confidence is at
+        // or above V4_PLAYBOOK_B3_GATE_BYPASS_MIN_CONFIDENCE, the
+        // playbook lock IS the context (e.g. classified as
+        // irs_impersonation → "SSN/tax discussion" is established by
+        // definition). Fire without the in-window scammer phrase.
+        //
+        // HIGH-2: bypass uses a HIGHER confidence floor than the commit
+        // threshold (V4_PLAYBOOK_MIN_CONFIDENCE=0.55). The commit
+        // threshold says "this label is worth recording"; the bypass
+        // threshold says "this label is strong enough to drive a
+        // takeover interrupt." Calibrated at 0.75 by default — higher
+        // than score-boost (0.7) because bypass fires the full takeover
+        // surface, not just a score nudge.
+        // v4 Phase 17 — explicit bypass-flag gate. Pre-Phase-17 this
+        // was implicit: v4Ctx was only fetched when the bypass flag
+        // was on, so `v4Ctx !== null` was equivalent to "bypass
+        // enabled." Phase 17 decoupled the fetch (for telemetry
+        // tagging — see Phase 17 HIGH-1 in v4SentinelCoverageSummary)
+        // so we now check the flag explicitly here. Without this
+        // line, every fetched v4Ctx in a session classified into a
+        // bypass-list playbook would fire the bypass even with the
+        // bypass flag intentionally off — violating the safety
+        // invariant the bypass flag protects.
+        const bypass =
+          config.V4_PLAYBOOK_B3_GATE_BYPASS_ENABLED &&
+          v4Ctx !== null &&
+          isSentinelGateBypassed(pattern.name, v4Ctx.playbook_id) &&
+          v4Ctx.stage_confidence_float >= config.V4_PLAYBOOK_B3_GATE_BYPASS_MIN_CONFIDENCE;
+        if (bypass) {
+          emitMetric('v3.sentinel_matcher.gate_bypassed_by_playbook', {
+            pattern: pattern.name,
+            playbook_id: v4Ctx!.playbook_id,
+          });
+          // Fall through to fire — scammer_context_match stays null
+          // (no in-window match by definition). criticalTakeover's fire
+          // handler doesn't reference scammer_context_match, so null
+          // flows safely downstream.
+        } else {
+          // Gate failed — record the near-miss so we can tune later.
+          // Tag whether v4 was in play so dashboards can split
+          // "no v4 lock" vs "v4 locked but didn't qualify" vs "v4
+          // qualified but below confidence floor."
+          emitMetric('v3.sentinel_matcher.gate_blocked_match', {
+            pattern: pattern.name,
+            v4_state: v4Ctx === null
+              ? 'no_lock'
+              : !isSentinelGateBypassed(pattern.name, v4Ctx.playbook_id)
+                ? 'playbook_not_listed'
+                : 'below_confidence_floor',
+          });
+          continue;
+        }
+      } else {
+        scammerContextMatch = ctxMatch[0];
       }
-      scammerContextMatch = ctxMatch[0];
     }
 
     // Pass — fire.
     state.firedPatterns.add(pattern.name);
-    emitMetric('v3.sentinel_matcher.fired', { pattern: pattern.name });
+    // v4 Phase 17 — tag with the playbook lock at fire time (or
+    // 'none' when there's no v4 classification yet). Feeds the
+    // /admin/v4/sentinel-coverage dashboard so the operator can
+    // answer "which playbooks have sentinels firing for them at
+    // all?" — the calibration gap that exists alongside the timing,
+    // claim, and confidence triangle.
+    emitMetric('v3.sentinel_matcher.fired', {
+      pattern: pattern.name,
+      v4_playbook_id: v4Ctx?.playbook_id ?? 'none',
+    });
 
     if (!fireHandler) {
       // Misconfiguration — log loudly, do not silently drop.
@@ -433,4 +517,59 @@ export function _resetForTests(): void {
   }
   sessionStates.clear();
   fireHandler = null;
+}
+
+/**
+ * v4 Phase 8 — fetch the session's current v4 playbook lock + confidence.
+ * Called ONCE per chunk (not per pattern) when the bypass flag is on.
+ * One round-trip per chunk × ~10 chunks/min/session is acceptable; the
+ * fetch is also bounded by classifier debounce (8s — the column updates
+ * at most once per 8s so caching could go further if needed, but
+ * per-chunk is cheap enough).
+ *
+ * Returns NULL when:
+ *   - call_sessions row is missing (race with /end)
+ *   - v4_playbook_id is NULL (classifier hasn't locked yet or v4 off)
+ *   - v4_playbook_id is unknown / off-taxonomy (stale data, rollback)
+ *   - v4_stage_confidence is NULL (shouldn't happen if playbook_id is
+ *     set — they're written in the same UPDATE — but defensive)
+ *   - DB error (swallowed → null, sentinel falls through to legacy
+ *     gate behavior which is the safe default)
+ *
+ * Returns the confidence as both the column scale (0..100 int) AND
+ * the float (0..1) since the bypass floor lives in float-space (per
+ * V4_PLAYBOOK_B3_GATE_BYPASS_MIN_CONFIDENCE).
+ */
+async function getV4PlaybookContext(session_id: string): Promise<
+  | {
+      playbook_id: PlaybookId;
+      stage_confidence_pct: number;
+      stage_confidence_float: number;
+    }
+  | null
+> {
+  try {
+    const res = await query<{
+      v4_playbook_id: string | null;
+      v4_stage_confidence: number | null;
+    }>(
+      `SELECT v4_playbook_id, v4_stage_confidence FROM call_sessions WHERE id = $1`,
+      [session_id],
+    );
+    const row = res.rows[0];
+    if (!row) return null;
+    const pbId = row.v4_playbook_id;
+    if (!pbId) return null;
+    if (!PLAYBOOKS_BY_ID.has(pbId as PlaybookId)) return null;
+    const pct = row.v4_stage_confidence;
+    if (pct == null) return null;
+    return {
+      playbook_id: pbId as PlaybookId,
+      stage_confidence_pct: pct,
+      stage_confidence_float: pct / 100,
+    };
+  } catch {
+    emitMetric('v3.sentinel_matcher.v4_lookup_failed', {});
+    return null;
+  }
 }

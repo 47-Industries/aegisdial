@@ -239,6 +239,261 @@ const schema = z.object({
 
   // B5 — Family one-tap join via direct dial
   V3_B5_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+
+  // ===================================================================
+  // Live Shield v4 — Playbook-Aware Live Shield (Phase 0)
+  // ===================================================================
+  //
+  // v4 makes (playbook_id, stage, stage_confidence) a first-class tuple
+  // alongside v2's risk score. Rollout posture: AUGMENTATION, not
+  // replacement. v2's months of calibration are preserved.
+
+  // Master kill switch for the playbook-aware classifier. OFF in
+  // production until Dean reviews + cohort rollout.
+  V4_PLAYBOOK_AWARE_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  // Claude model for stage classification. Default Haiku 4.5 — the
+  // same model B4 already uses for claim extraction. Smaller models
+  // would be faster + cheaper but Haiku's reasoning is needed to
+  // distinguish, e.g., bank_impersonation vs. utility_shutoff in the
+  // first 30 seconds when authority cues haven't fully landed yet.
+  V4_PLAYBOOK_CLASSIFIER_MODEL: z.string().default('claude-haiku-4-5-20251001'),
+  // Minimum classifier confidence to commit a (playbook, stage)
+  // transition to call_sessions. Below this, we update audit but
+  // keep the prior tuple stable to avoid flapping. 0.55 calibrated
+  // from early-call ambiguity: chunks that mention "your bank" alone
+  // don't yet clear; chunks that add "wire transfer to a safe
+  // account" do.
+  V4_PLAYBOOK_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.55),
+  // Cooldown between classifier calls per session. The classifier is
+  // expensive (Claude API call). Even on critical-cadence sessions
+  // we don't need to re-classify every 2 seconds — playbook + stage
+  // change at multi-second scales, not per-chunk. 8s matches the
+  // low-risk transcript-flush cadence floor.
+  V4_PLAYBOOK_CLASSIFY_DEBOUNCE_MS: z.coerce.number().int().positive().default(8000),
+  // Latency budget for the classifier call. Beyond this, abort and
+  // emit `v4.classifier.timeout`. Higher than B4's 3s because stage
+  // classification reasons over more context (recent chunks +
+  // current state).
+  V4_PLAYBOOK_CLASSIFIER_TIMEOUT_MS: z.coerce.number().int().positive().default(5000),
+  // Per-session cap on classifier calls. Prevents an adversarial
+  // session from burning the entire daily Anthropic budget. At 8s
+  // debounce, this allows ~13 minutes of continuous classification.
+  V4_PLAYBOOK_CLASSIFIER_PER_SESSION_CAP: z.coerce.number().int().positive().default(100),
+
+  // -------------------------------------------------------------------
+  // Live Shield v4 — Phase 2 — downstream consumption flags
+  // -------------------------------------------------------------------
+
+  // Per-playbook-stage score boost. When the classifier locks onto a
+  // high-danger stage (ask/close) with confidence above the floor, the
+  // session's v4_score_boost is incremented and the next risk-merge
+  // pass adds it to the merged regex+LLM score. Default OFF — when v4
+  // first ships in prod we want the tuple visible to dashboards before
+  // we let it move the risk score. Flip when calibration data shows
+  // the (stage='ask', confidence>=0.7) boost is reliable.
+  V4_PLAYBOOK_SCORE_BOOST_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  // Confidence floor for v4 score boost. Above MIN_CONFIDENCE (which
+  // gates the COMMIT itself) but below 1.0. Calibrated higher than the
+  // commit floor (0.55) because moving the risk score is more
+  // consequential than just labeling the session — we want to boost
+  // only when the classifier is confident, not merely confident-enough-
+  // to-record.
+  V4_SCORE_BOOST_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.7),
+  // Boost when stage transitions into 'ask'. Above the floor but well
+  // below the 25-point gap between high-risk levels — the boost is a
+  // nudge, not an override. 15 puts a calibrated mid-50s session into
+  // the high-70s without our regex/LLM signals having to agree.
+  V4_SCORE_BOOST_ASK: z.coerce.number().int().min(0).max(100).default(15),
+  // Boost when stage transitions into 'close'. Smaller than 'ask'
+  // because by close-stage the v3 detectors have usually already fired;
+  // this is a defense-in-depth boost for the rare path where the
+  // classifier locks on late.
+  V4_SCORE_BOOST_CLOSE: z.coerce.number().int().min(0).max(100).default(10),
+  // Enrich family-alert message bodies with playbook context. Reads
+  // v4_playbook_id off call_sessions at alert-fire time and adds a
+  // playbook-specific blurb to the default/open privacy-level message
+  // bodies (minimal-privacy bodies stay minimal regardless). Default
+  // OFF — copy needs review before family members start receiving it.
+  V4_PLAYBOOK_FAMILY_ALERT_COPY_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  // Preload Recovery Concierge with the playbook + stage detected at
+  // call end. Lets the recovery flow start with playbook-specific
+  // steps instead of generic triage. Default OFF — Recovery Concierge
+  // catalog needs the per-playbook checkpoint mapping locked in
+  // before this flips. Persistence via v4_playbook_id /
+  // v4_stage columns is unconditional; only the read-side is gated.
+  V4_PLAYBOOK_RECOVERY_PRELOAD_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+
+  // -------------------------------------------------------------------
+  // Live Shield v4 — Phase 3 — actionable coaching + recap surfaces
+  // -------------------------------------------------------------------
+
+  // Surface playbook counter-scripts (proven hang-up phrases) on the
+  // per-chunk transcript response. iOS displays these inline as
+  // "Say this to make them hang up" coaching cards once the
+  // classifier has locked onto a playbook with sufficient confidence.
+  // Gated separately from V4_PLAYBOOK_AWARE_ENABLED so we can run the
+  // classifier in shadow mode and turn user-visible coaching on only
+  // when the playbook lock is stable for early-detection sessions.
+  V4_PLAYBOOK_COACHING_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  // Minimum classifier confidence required to surface counter-scripts.
+  // Higher than the commit floor (0.55) but matches the score-boost
+  // floor (0.7) — same calibration logic: we want to coach Mom only
+  // when we're confident, not just confident-enough-to-label.
+  V4_PLAYBOOK_COACHING_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.7),
+  // Maximum number of counter-scripts to surface per response. Caps
+  // iOS payload size + UX clutter — Mom can read 3 short lines on a
+  // call, not 6. Playbook seeds order strongest-first, so top-N is
+  // the strongest-N. Tunable for A/B tests.
+  V4_PLAYBOOK_COACHING_MAX_LINES: z.coerce.number().int().min(1).max(10).default(3),
+
+  // -------------------------------------------------------------------
+  // Live Shield v4 — Phase 4 — stage-transition takeover trigger
+  // -------------------------------------------------------------------
+
+  // Fire a critical-takeover push the INSTANT the classifier locks
+  // onto a high-danger stage (ask/close) with high confidence — don't
+  // wait for the risk-score merge to catch up. The classifier already
+  // knows the scammer is asking for money; v3's risk-merge takes ~1
+  // chunk of latency to reflect that signal in finalScore. This trigger
+  // closes that gap.
+  //
+  // Composes with V3_B3_ENABLED — when B3 is off there is no iOS
+  // takeover surface, so this trigger no-ops at the enqueue layer.
+  // Default OFF — we want stable calibration of the score-boost path
+  // (Phase 2C) before letting the classifier directly drive push.
+  V4_STAGE_TAKEOVER_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  // Higher than score-boost floor (0.7) and coaching floor (0.7) —
+  // takeover interrupts Mom's call, so a false-positive trigger is
+  // way more user-disruptive than a wrong score-boost or coaching
+  // card. 0.8 calibrated to be one notch above "we'd boost the score"
+  // — every fired takeover should pass the boost gate too.
+  V4_STAGE_TAKEOVER_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.8),
+
+  // -------------------------------------------------------------------
+  // Live Shield v4 — Phase 5 — B4 claim grounding by playbook
+  // -------------------------------------------------------------------
+
+  // Inject the locked-on playbook into B4's claim-extractor prompt
+  // as a NON-DESTRUCTIVE bias signal — "for this playbook, pay extra
+  // attention to these claim types, but extract any of the six if
+  // you see them." Tightens B4's signal on playbook-stereotyped
+  // claims (case_number on irs_impersonation; bank_affiliation on
+  // bank_impersonation) without dropping any of B4's existing
+  // coverage. Default OFF; flip after the calibration period
+  // confirms claim-rate metrics don't shift unexpectedly.
+  V4_B4_PLAYBOOK_GROUNDING_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+
+  // Phase 6 sibling — inject the playbook into B4's Layer 2 Claude
+  // verifier user prompt. Adds prior context ("this call has been
+  // classified as a bank-impersonation script") so the verifier
+  // weighs search-result evidence with that prior in mind.
+  // CRITICAL: the verifier's verdict rules are NOT relaxed — a
+  // "contradicted" verdict still requires direct evidence in the
+  // search results. The playbook context just helps the verifier
+  // focus its attention. Default OFF.
+  V4_B4_VERIFIER_GROUNDING_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+
+  // -------------------------------------------------------------------
+  // Live Shield v4 — Phase 7 — demographic priors plumbing
+  // -------------------------------------------------------------------
+
+  // Plumb the caller's age band (derived from users.dob_year) into the
+  // classifier prompt as a tie-breaker. Each playbook seed carries a
+  // demographic_priors tuple {elderly, working_adult, young} summing
+  // to 1.0; this flag controls whether those numbers + the caller's
+  // age band are actually surfaced to the classifier. Default OFF —
+  // when on, the classifier uses age band ONLY as a tie-break for
+  // ambiguous chunks; it does not let demographic alone decide the
+  // playbook (rule pinned in the system prompt itself).
+  V4_PLAYBOOK_DEMOGRAPHIC_PRIORS_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+
+  // -------------------------------------------------------------------
+  // Live Shield v4 — Phase 8 — B3 sentinel playbook gate-bypass
+  // -------------------------------------------------------------------
+
+  // When the v4 classifier has locked on to a playbook that ALREADY
+  // implies the scammer-context expected by a B3 sentinel pattern
+  // (e.g. irs_impersonation implies "SSN/tax-ID was discussed"),
+  // bypass the pattern's required_scammer_context_regex gate and
+  // fire on raw pattern match alone. The classifier's playbook lock
+  // is the context. Closes a real false-negative gap — without this,
+  // the rolling-window context phrase can prune off before Mom
+  // discloses, and the takeover never fires.
+  // Default OFF — when on, calibration kicks in via the curated
+  // SENTINEL_PLAYBOOK_BYPASS map in src/data/sentinelPlaybookBypass.ts.
+  V4_PLAYBOOK_B3_GATE_BYPASS_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  // Confidence floor for the bypass path. Calibrated HIGHER than the
+  // commit threshold (V4_PLAYBOOK_MIN_CONFIDENCE=0.55) AND higher
+  // than the score-boost floor (0.7). Bypassing a B3 gate fires the
+  // full takeover surface (full-screen iOS interrupt + critical APNs +
+  // family alert + audit event) — a false-positive playbook lock at
+  // 0.6 should NOT unlock that, even if the pattern matched.
+  // 0.75 covers the realistic operational range without exposing the
+  // takeover surface to weakly-classified sessions.
+  V4_PLAYBOOK_B3_GATE_BYPASS_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.75),
+
+  // -------------------------------------------------------------------
+  // Live Shield v4 — Phase 9 — playbook-derived recovery scam_type
+  // -------------------------------------------------------------------
+
+  // When the /end-route auto-handoff creates a recovery_session in
+  // triage mode AND v4 has classified the call at sufficient
+  // confidence, prefer the v4-mapped scam_type over llmScamType
+  // (or 'unknown_triage'). This pre-populates the scam_type field
+  // so the triage→recovery conversion seeds playbook-appropriate
+  // recovery steps automatically (e.g. IRS-specific step list when
+  // v4 detected irs_impersonation), instead of forcing the user to
+  // pick during triage resolve.
+  // Default OFF — when on, the mapping in src/lib/playbookToScamType.ts
+  // drives the substitution.
+  V4_PLAYBOOK_RECOVERY_SCAM_TYPE_ENABLED: z.string().default('false').transform((v) => v === 'true'),
+  // Confidence floor for the v4 scam_type substitution. Calibrated
+  // at 0.7 — same as the score-boost floor. A 0.55-confidence v4
+  // commit isn't strong enough to override the LLM's scam_type
+  // classification, which was calibrated against months of v2 data.
+  V4_PLAYBOOK_RECOVERY_SCAM_TYPE_MIN_CONFIDENCE: z.coerce.number().min(0).max(1).default(0.7),
+
+  // -------------------------------------------------------------------
+  // Live Shield v4 — Phase 10 — stage-timing telemetry
+  // -------------------------------------------------------------------
+
+  // Compare each stage transition's actual elapsed time against the
+  // playbook seed's typical_duration_seconds and emit a metric tagged
+  // by playbook+stage+verdict (in_range / too_fast / too_slow). Pure
+  // observability — no behavior change. Default ON because metrics
+  // are safe and the data is needed to calibrate the rest of the v4
+  // flags before any of them can flip in prod. The flag exists for
+  // emergency kill-switch if metric volume becomes a cost concern;
+  // upper bound is ~1 metric per classifier commit, bounded by the
+  // 8s debounce and the 100/24h per-session cap.
+  //
+  // CONVENTION NOTE: this is the only V4_PLAYBOOK_*_ENABLED flag that
+  // defaults TRUE. The "all v4 features dormant by default" invariant
+  // is preserved at the system level — the classifier itself is
+  // gated on V4_PLAYBOOK_AWARE_ENABLED (default false), and the
+  // subscriber early-returns on it at playbookSubscriber.ts. No
+  // timing metrics emit until ops flips the master flag. The
+  // default-TRUE here means "when master flag is on, emit by default"
+  // — operator doesn't have to flip two switches to start collecting
+  // calibration data.
+  V4_PLAYBOOK_STAGE_TIMING_TELEMETRY_ENABLED: z.string().default('true').transform((v) => v === 'true'),
+
+  // Live Shield v4 — Phase 12 — B4 × playbook claim-expectation diff
+  // telemetry. Emits v4.b4.claim_extracted_vs_playbook{playbook_id,
+  // claim_type, expected} on every successful B4 extraction that
+  // happens while a v4 playbook lock is active. The aggregated view
+  // (GET /admin/v4/claim-coverage) surfaces calibration gaps:
+  //   - gap:      playbook expects claim type X, never sees X
+  //   - surprise: LLM extracts type Y that playbook doesn't expect
+  // Volume bound: ≤6 emits per extraction (one per extracted claim),
+  // gated upstream by the 5s B4 cost-gate, the M-12 shouldExtract
+  // heuristic, and V4_PLAYBOOK_AWARE_ENABLED master flag.
+  //
+  // Same default-TRUE convention as V4_PLAYBOOK_STAGE_TIMING_TELEMETRY_ENABLED
+  // — see that flag's CONVENTION NOTE. Master gate
+  // V4_PLAYBOOK_AWARE_ENABLED (default false) keeps everything
+  // dormant in prod until ops flips it.
+  V4_B4_CLAIM_COVERAGE_TELEMETRY_ENABLED: z.string().default('true').transform((v) => v === 'true'),
 });
 
 const parsed = schema.safeParse(process.env);

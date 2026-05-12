@@ -3,7 +3,14 @@ import { config } from '../config.js';
 import { query } from '../lib/db.js';
 import { emitMetric } from '../lib/observability.js';
 import { subscribeTranscript, type TranscriptChunkEvent } from './v3SessionEvents.js';
-import { extract, persistClaims, type ExtractedClaim } from './claimExtractor.js';
+import {
+  extract,
+  persistClaims,
+  shouldExtract,
+  type ExtractedClaim,
+} from './claimExtractor.js';
+import { PLAYBOOKS_BY_ID, type PlaybookId } from '../data/playbooks.js';
+import { isClaimTypeExpected } from '../lib/playbookClaimCoverage.js';
 import { verify, persistFinding, type Finding } from './b4Verifier.js';
 import {
   emitSystemEvent,
@@ -117,15 +124,53 @@ async function handleScammerChunk(event: TranscriptChunkEvent): Promise<void> {
     .join(' ')
     .slice(-2000); // hard cap for prompt size
 
+  // Cost-gate check INLINED here (extract() also runs it internally).
+  // Inlining externally lets us short-circuit BEFORE the getSessionContext
+  // DB SELECT — without this, every filler chunk ("uh huh", "yeah")
+  // would pay one round-trip just to discover it doesn't need
+  // playbook grounding. shouldExtract is pure text math, so the
+  // duplicate call is cheap.
+  //
+  // We DO emit the cost-gate metric here to keep totals comparable
+  // with prior versions (where extract()'s inner gate was the only
+  // emitter). Same tag shape so dashboards don't fragment.
+  if (!shouldExtract(event.text)) {
+    emitMetric('v3.b4.claim_extractor_cost_gate_skip', {
+      chunk_length: String(event.text.length),
+    });
+    return;
+  }
+
+  // v4 Phase 5 — fetch playbook context BEFORE extract so the LLM
+  // call can include the playbook-grounding bias. Combined with
+  // peer_e164 in a single SELECT to avoid an extra round-trip later
+  // for the affiliation verifiers.
+  const sessCtx = await getSessionContext(event.session_id);
+
   const result = await extract({
     session_id: event.session_id,
     chunk_id,
     text: event.text,
     recent_context,
     spoken_at: event.spoken_at.toISOString(),
+    v4_playbook_id: sessCtx.v4_playbook_id,
   });
 
   if (result.skipped || result.claims.length === 0) return;
+
+  // v4 Phase 12 — claim-expectation diff telemetry. The admin coverage
+  // view (GET /admin/v4/claim-coverage) aggregates these emissions
+  // into a per-playbook gap/surprise table — the calibration gate
+  // before any V4_PLAYBOOK_*_ENABLED flag flips ON in prod.
+  //
+  // Intentional skew: emit BEFORE persistClaims, so the metric
+  // reflects "what the LLM extracted" not "what the DB stored". If
+  // a per-row INSERT fails (CHECK constraint, conflict, etc.) the
+  // operator should still see what the LLM thought it found —
+  // that's a calibration signal regardless of storage outcome.
+  // Audit cross-reference is v3.b4.claim_persist_failed if anyone
+  // wants to reconcile.
+  emitClaimCoverageMetricsForChunk(sessCtx.v4_playbook_id, result.claims);
 
   const persisted = await persistClaims(
     event.session_id,
@@ -138,7 +183,7 @@ async function handleScammerChunk(event: TranscriptChunkEvent): Promise<void> {
   // cache. account_tail verification needs this; other claim types
   // ignore it.
   const userLast4 = await getUserAccountLast4(event.user_id);
-  const callingNumber = await getCallingNumber(event.session_id);
+  const callingNumber = sessCtx.peer_e164;
 
   for (const { id: claim_id, claim } of persisted) {
     const finding = await verify({
@@ -146,6 +191,11 @@ async function handleScammerChunk(event: TranscriptChunkEvent): Promise<void> {
       user_account_last_4: userLast4,
       calling_number_e164: callingNumber,
       session_id: event.session_id,
+      // v4 Phase 6 — thread the locked-on playbook into the verifier
+      // so Layer 2's Claude prompt can include playbook context as
+      // background. NULL when v4 is off or hasn't classified yet —
+      // verifier falls through to its legacy prompt shape.
+      v4_playbook_id: sessCtx.v4_playbook_id,
     });
 
     let finding_id: string | null = null;
@@ -161,6 +211,45 @@ async function handleScammerChunk(event: TranscriptChunkEvent): Promise<void> {
     }
 
     await dispatchFinding(event, claim, finding, finding_id);
+  }
+}
+
+/**
+ * v4 Phase 12 — emit claim-coverage telemetry for the chunk's
+ * extracted claims. Pure gate composition; extracted from the inline
+ * handler so the gate logic is testable without mocking Anthropic
+ * (same MEDIUM-2 lesson Phase 10 caught).
+ *
+ * Skips when:
+ *   - V4_B4_CLAIM_COVERAGE_TELEMETRY_ENABLED is off
+ *   - master V4_PLAYBOOK_AWARE_ENABLED is off (no lock to attribute)
+ *   - playbook_id is null (classifier hasn't locked yet)
+ *
+ * Per-claim: skips emission when isClaimTypeExpected returns null
+ * (un-classifiable inputs — would only pollute dropped_off_taxonomy
+ * downstream).
+ */
+function emitClaimCoverageMetricsForChunk(
+  playbook_id: PlaybookId | null,
+  claims: readonly ExtractedClaim[],
+): void {
+  if (!config.V4_B4_CLAIM_COVERAGE_TELEMETRY_ENABLED) return;
+  if (!config.V4_PLAYBOOK_AWARE_ENABLED) return;
+  if (!playbook_id) return;
+  for (const claim of claims) {
+    const expected = isClaimTypeExpected(playbook_id, claim.type);
+    // MUST stay `=== null`. The predicate returns boolean | null;
+    // `false` means "valid type, not in this playbook's expectation
+    // list" — that's the SURPRISE branch and we WANT to emit it.
+    // A naive `!expected` simplification would drop every surprise
+    // emission and silently empty the actionable half of the
+    // coverage dashboard.
+    if (expected === null) continue;
+    emitMetric('v4.b4.claim_extracted_vs_playbook', {
+      playbook_id,
+      claim_type: claim.type,
+      expected: expected ? 'true' : 'false',
+    });
   }
 }
 
@@ -192,7 +281,7 @@ async function dispatchFinding(
 ): Promise<void> {
   emitMetric('v3.b4.finding_dispatched', {
     result: finding.result,
-    confidence_bucket: bucketConfidence(finding.confidence),
+    confidence_bucket: bucketB4Confidence(finding.confidence),
   });
 
   // Locked security rule: NEVER surface consistent findings to UI or
@@ -286,7 +375,7 @@ async function dispatchFinding(
 
   emitMetric('v3.b4.takeover_fired', {
     claim_type: claim.type,
-    confidence_bucket: bucketConfidence(finding.confidence),
+    confidence_bucket: bucketB4Confidence(finding.confidence),
     was_first: wasFirstTakeover,
   });
 
@@ -361,19 +450,45 @@ async function getUserAccountLast4(user_id: string): Promise<string | null> {
   return null;
 }
 
-async function getCallingNumber(session_id: string): Promise<string | null> {
+/**
+ * Fetch the per-session context B4 needs in one round-trip:
+ *   - peer_e164: used by Layer 1 affiliation verifiers
+ *   - v4_playbook_id: used by claim extractor's playbook-grounding bias
+ *     (Phase 5). NULL until v4 classifier locks on (or when v4 is off).
+ *
+ * Returns a clean shape on any error path — the caller treats both
+ * fields as best-effort. A missing playbook just means no extra bias
+ * in the extractor prompt.
+ */
+async function getSessionContext(
+  session_id: string,
+): Promise<{ peer_e164: string | null; v4_playbook_id: PlaybookId | null }> {
   try {
-    const res = await query<{ peer_e164: string | null }>(
-      `SELECT peer_e164 FROM call_sessions WHERE id = $1`,
+    const res = await query<{ peer_e164: string | null; v4_playbook_id: string | null }>(
+      `SELECT peer_e164, v4_playbook_id FROM call_sessions WHERE id = $1`,
       [session_id],
     );
-    return res.rows[0]?.peer_e164 ?? null;
+    const row = res.rows[0];
+    if (!row) return { peer_e164: null, v4_playbook_id: null };
+    // Defense-in-depth: if a column ever holds an off-taxonomy
+    // playbook_id (manual ops UPDATE, code rollback with stale rows),
+    // treat as null rather than passing junk into the extractor prompt.
+    const pbId = row.v4_playbook_id;
+    const valid = pbId && PLAYBOOKS_BY_ID.has(pbId as PlaybookId) ? (pbId as PlaybookId) : null;
+    return { peer_e164: row.peer_e164 ?? null, v4_playbook_id: valid };
   } catch {
-    return null;
+    return { peer_e164: null, v4_playbook_id: null };
   }
 }
 
-function bucketConfidence(c: number): string {
+// B4-specific bucketing — DELIBERATELY different from
+// src/lib/confidenceBuckets.ts (which the v4 stage classifier and
+// Phase 13 dashboard share). B4 findings use 'very_high' through
+// 'very_low' with different boundaries because takeover-gate
+// dashboards historically used these labels. Renamed from
+// `bucketConfidence` (Phase 13 H1 adversarial fix) to make the
+// collision impossible to hit by copy-paste.
+function bucketB4Confidence(c: number): string {
   if (c >= 0.95) return 'very_high';
   if (c >= 0.85) return 'high';
   if (c >= 0.7) return 'medium';
@@ -451,4 +566,17 @@ export async function _dispatchFindingForTests(
 /** Test-only — drive the pipeline directly without going through the subscriber. */
 export async function _handleScammerChunkForTests(event: TranscriptChunkEvent): Promise<void> {
   await handleScammerChunk(event);
+}
+
+/**
+ * Test-only — exercise the Phase 12 claim-coverage emit-gate
+ * directly. Without this, the gate logic was only reachable through
+ * a successful extract() — which is gated on ANTHROPIC_API_KEY being
+ * set, so tests would have to mock the API to drive even one branch.
+ */
+export function _emitClaimCoverageMetricsForChunkForTests(
+  playbook_id: PlaybookId | null,
+  claims: readonly ExtractedClaim[],
+): void {
+  emitClaimCoverageMetricsForChunk(playbook_id, claims);
 }

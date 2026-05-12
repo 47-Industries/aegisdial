@@ -5,6 +5,7 @@ import { config } from '../config.js';
 import { query } from '../lib/db.js';
 import { emitMetric } from '../lib/observability.js';
 import type { ExtractedClaim } from './claimExtractor.js';
+import type { PlaybookId } from '../data/playbooks.js';
 import { verifyClaimViaLayer2 } from './b4Layer2.js';
 
 // Live Shield v3 — B4 verifier service (real implementation).
@@ -57,6 +58,16 @@ export interface VerifyInput {
    * verification-budget cap so a single call can't burn the daily
    * Serper budget on bursty extraction. */
   session_id: string;
+  /**
+   * Live Shield v4 — Phase 6. The playbook the v4 classifier has
+   * locked onto for THIS call, if any. When present AND
+   * V4_B4_VERIFIER_GROUNDING_ENABLED is on, Layer 2's Claude verifier
+   * receives a playbook-context bias paragraph in its user prompt.
+   * The verifier's verdict rules are unchanged — bias is prior
+   * context only, not a relaxation of "contradicted requires evidence
+   * in search results."
+   */
+  v4_playbook_id?: PlaybookId | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -454,7 +465,15 @@ async function verifyViaWebSearch(
   // keys are absent; we surface that as cannot_verify with a
   // tagged reasoning string so the score-boost path still fires
   // through the cannot_verify weight.
-  const l2 = await verifyClaimViaLayer2(input.claim, input.session_id);
+  // v4 Phase 6 — thread the locked-on playbook id through to L2 so
+  // its Claude verifier can include playbook-context as prior. Verdict
+  // rules are unchanged: contradicted/consistent still require search-
+  // result evidence; the playbook is BACKGROUND CONTEXT only.
+  const l2 = await verifyClaimViaLayer2(
+    input.claim,
+    input.session_id,
+    input.v4_playbook_id ?? null,
+  );
   if (!l2) {
     return {
       claim: input.claim,

@@ -158,6 +158,70 @@ describe('enqueueCriticalTakeoverPush — B3 sentinel', () => {
   });
 });
 
+describe('enqueueCriticalTakeoverPush — v4 stage classifier', () => {
+  // Phase 4: classifier-driven takeover. New trigger_path with
+  // stage-specific copy keyed on context.stage. Carries the playbook
+  // display_name for human-readable body text.
+
+  it('uses ask-stage copy when stage=ask', async () => {
+    await dispatcher.enqueueCriticalTakeoverPush({
+      session_id: SESSION_ID,
+      user_id: USER_ID,
+      trigger_path: 'v4_stage_classifier',
+      risk_score: 90,
+      context: {
+        playbook_id: 'irs_impersonation',
+        playbook_display_name: 'IRS impersonation',
+        stage: 'ask',
+        confidence: 90,
+      },
+    });
+    const row = dbState.inserts[0]!;
+    assert.match(row.title, /asking for money/i);
+    assert.match(row.body, /IRS impersonation/);
+    assert.match(row.body, /Hang up/i);
+    assert.equal(row.payload.trigger_path, 'v4_stage_classifier');
+  });
+
+  it('uses close-stage copy when stage=close', async () => {
+    await dispatcher.enqueueCriticalTakeoverPush({
+      session_id: SESSION_ID,
+      user_id: USER_ID,
+      trigger_path: 'v4_stage_classifier',
+      risk_score: 88,
+      context: {
+        playbook_id: 'bank_impersonation',
+        playbook_display_name: 'Bank fraud-department impersonation',
+        stage: 'close',
+        confidence: 88,
+      },
+    });
+    const row = dbState.inserts[0]!;
+    assert.match(row.title, /didn't send money/i);
+    assert.match(row.body, /Bank fraud-department impersonation/);
+  });
+
+  it('sanitizes control chars in playbook_display_name (defense-in-depth)', async () => {
+    await dispatcher.enqueueCriticalTakeoverPush({
+      session_id: SESSION_ID,
+      user_id: USER_ID,
+      trigger_path: 'v4_stage_classifier',
+      risk_score: 90,
+      context: {
+        playbook_id: 'irs_impersonation',
+        // Caller passed an unsafe value (forged route call or future bug)
+        playbook_display_name: 'IRS\x00impersonation\nwith\x01control chars',
+        stage: 'ask',
+        confidence: 90,
+      },
+    });
+    const row = dbState.inserts[0]!;
+    // No control chars should make it into the body string.
+    // eslint-disable-next-line no-control-regex
+    assert.equal(/[\x00-\x1f\x7f]/.test(row.body), false, 'control chars must be stripped');
+  });
+});
+
 describe('enqueueBlockRetryPush', () => {
   it('writes a block_retry row with severity=info', async () => {
     const result = await dispatcher.enqueueBlockRetryPush({

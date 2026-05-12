@@ -1,6 +1,11 @@
 import { config } from '../config.js';
 import { query } from '../lib/db.js';
 import { emitMetric } from '../lib/observability.js';
+import {
+  PLAYBOOKS_BY_ID,
+  PLAYBOOK_CLAIM_EXPECTATIONS,
+  type PlaybookId,
+} from '../data/playbooks.js';
 
 // Live Shield v3 — B4 dedicated claim-extraction Claude pass.
 //
@@ -60,6 +65,15 @@ export interface ExtractInput {
   recent_context: string;
   /** ISO8601 — the moment the chunk was uttered. */
   spoken_at: string;
+  /**
+   * Live Shield v4 — Phase 5 grounding hint. The playbook the v4
+   * classifier has locked onto for THIS call, if any. When present
+   * AND V4_B4_PLAYBOOK_GROUNDING_ENABLED is on, the extractor injects
+   * a per-playbook claim-type bias paragraph into its user prompt.
+   * NULL when v4 hasn't classified yet OR when the flag is off.
+   * The prompt still allows all 6 claim types — bias, not gate.
+   */
+  v4_playbook_id?: PlaybookId | null;
 }
 
 export interface ExtractResult {
@@ -164,7 +178,13 @@ export async function extract(input: ExtractInput): Promise<ExtractResult> {
 
   const started = Date.now();
 
-  const userPrompt = `Recent context (last 60s of scammer audio):
+  // v4 Phase 5 — playbook grounding. NON-DESTRUCTIVE bias paragraph
+  // added when the flag is on AND the v4 classifier has locked on.
+  // System prompt stays cacheable (unchanged across calls); the bias
+  // lives in the user message because it changes per session.
+  const playbookBias = buildPlaybookBias(input.v4_playbook_id ?? null);
+
+  const userPrompt = `${playbookBias}Recent context (last 60s of scammer audio):
 ${input.recent_context.slice(0, 1500) || '(no prior context)'}
 
 This snippet (extract claims from THIS only):
@@ -236,15 +256,40 @@ ${input.text.slice(0, 1500)}`;
 }
 
 // ---------------------------------------------------------------------------
-// Validation
+// Prompt helpers + cost gate
 // ---------------------------------------------------------------------------
 
 /**
- * Parse the model's output and drop entries that don't conform to
- * the strict ExtractedClaim shape. The audit rule "raw_quote must
- * be verbatim from text" is enforced HERE — the model has been
- * known to paraphrase in the wild despite explicit instructions.
+ * Build the v4 playbook bias paragraph that prepends the user prompt.
+ * Returns "" when:
+ *   - V4_B4_PLAYBOOK_GROUNDING_ENABLED flag is off
+ *   - playbook_id is null (classifier hasn't locked on yet)
+ *   - playbook_id doesn't resolve in PLAYBOOKS_BY_ID (stale data)
+ *
+ * NON-DESTRUCTIVE BY DESIGN: the prompt body still allows all 6 claim
+ * types. The bias only NAMES which types tend to appear in this
+ * playbook so the LLM weighs them higher. Explicit instruction tells
+ * the model "this is bias, not a gate."
+ *
+ * Exported for tests — pins the prompt-grounding contract.
  */
+export function buildPlaybookBias(playbook_id: PlaybookId | null): string {
+  if (!config.V4_B4_PLAYBOOK_GROUNDING_ENABLED) return '';
+  if (!playbook_id) return '';
+  const playbook = PLAYBOOKS_BY_ID.get(playbook_id);
+  if (!playbook) return '';
+  const expected = PLAYBOOK_CLAIM_EXPECTATIONS[playbook_id] ?? [];
+  if (expected.length === 0) return '';
+  return `PLAYBOOK CONTEXT (bias, NOT a gate):
+This call has been classified as matching the "${playbook.display_name}" \
+script. For this playbook, the most common verifiable claims are: \
+${expected.join(', ')}. Pay extra attention to claims of these types — \
+they may be subtle. Claims of OTHER types are still valid; extract any \
+of the six types if you see them.
+
+`;
+}
+
 /**
  * M-12 cost gate. Returns false when a chunk has NO chance of
  * yielding any of the six claim types, true otherwise. Cheap
@@ -288,6 +333,16 @@ export function shouldExtract(text: string): boolean {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Validation
+// ---------------------------------------------------------------------------
+
+/**
+ * Parse the model's output and drop entries that don't conform to
+ * the strict ExtractedClaim shape. The audit rule "raw_quote must
+ * be verbatim from text" is enforced HERE — the model has been
+ * known to paraphrase in the wild despite explicit instructions.
+ */
 function parseAndValidateClaims(modelOutput: string, originalText: string): ExtractedClaim[] {
   const jsonMatch = modelOutput.match(/\{[\s\S]*\}/);
   if (!jsonMatch) return [];

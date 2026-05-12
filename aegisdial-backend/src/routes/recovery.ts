@@ -4,6 +4,7 @@ import { query, withTx } from '../lib/db.js';
 import { requireAppUser, requireProTier, optionalAppUser } from '../lib/auth.js';
 import { normalizeE164 } from '../lib/phone.js';
 import { stepsForScamType, type ScamType } from '../lib/recoverySteps.js';
+import { resolveRecoveryPreload } from '../services/v4RecoveryPreload.js';
 import { emitGuardianAlert } from '../services/guardianAlerts.js';
 import { track } from '../lib/analytics.js';
 import { trackRecoveryCompleted } from '../lib/internalEvents.js';
@@ -1738,12 +1739,19 @@ async function loadSession(sessionId: string, userId: string) {
     started_at: Date;
     completed_at: Date | null;
     updated_at: Date;
+    v4_playbook_id: string | null;
+    v4_stage: string | null;
   }>(
+    // v4 Phase 3C — also pull v4_playbook_id + v4_stage so the recovery
+    // payload can surface playbook-specific preload to iOS. These
+    // columns land on recovery_sessions during the /end-route auto-
+    // handoff (Phase 2). Null on legacy rows / cold sessions.
     `SELECT id, user_id, family_plan_id, scam_e164, scam_e164_ct, scam_type,
             amount_lost_cents, amount_lost_cents_ct,
             description, description_ct,
             status, mode, resolved_as, resolved_at,
-            started_at, completed_at, updated_at
+            started_at, completed_at, updated_at,
+            v4_playbook_id, v4_stage
        FROM recovery_sessions
       WHERE id = $1 AND user_id = $2`,
     [sessionId, userId],
@@ -1773,6 +1781,17 @@ async function loadSession(sessionId: string, userId: string) {
   const description = readMaybeEncrypted(sess.description_ct) || sess.description || null;
   const amountCents =
     decryptInt(sess.amount_lost_cents_ct ?? null) ?? sess.amount_lost_cents ?? null;
+  // v4 Phase 3C — Recovery Concierge playbook preload. NULL when the
+  // V4_PLAYBOOK_RECOVERY_PRELOAD_ENABLED flag is off, when v4_playbook_id
+  // is not set (legacy session / cold call), or when the playbook
+  // resolved to an unknown id. iOS treats NULL as "show generic
+  // recovery surface" and a non-NULL object as "show playbook-aware
+  // header card + counter-scripts + checkpoint suggestion."
+  const v4Preload = resolveRecoveryPreload({
+    v4_playbook_id: sess.v4_playbook_id,
+    v4_stage: sess.v4_stage,
+  });
+
   return {
     session: {
       id: sess.id,
@@ -1791,6 +1810,7 @@ async function loadSession(sessionId: string, userId: string) {
         completed: steps.rows.filter((r) => r.status === 'completed').length,
         skipped: steps.rows.filter((r) => r.status === 'skipped').length,
       },
+      v4_preload: v4Preload,
     },
     steps: steps.rows.map((s) => ({
       step_key: s.step_key,
