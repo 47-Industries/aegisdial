@@ -38,12 +38,29 @@ class _HomeShellState extends State<HomeShell> {
       // to associate the APNs token with) and no-ops on Android.
       deviceService.ensureRegistered();
     });
+    deviceService.addTapListener(_handleNotificationTap);
   }
 
   @override
   void dispose() {
+    deviceService.removeTapListener(_handleNotificationTap);
     _coach.dispose();
     super.dispose();
+  }
+
+  /// Route deep-link from notification payload. The backend's push
+  /// composer puts a `kind` field on every alert so iOS knows where to
+  /// land the user. Unknown kinds fall through to Shield (index 0).
+  void _handleNotificationTap(Map<String, dynamic> payload) {
+    if (!mounted) return;
+    final kind = payload['kind']?.toString() ?? '';
+    final next = switch (kind) {
+      'v3_takeover' || 'live_shield' || 'critical_alert' => 0, // Shield
+      'recovery_followup' || 'recovery_alert' => 1, // Recovery
+      'family_alert' || 'family_join' || 'family_invite' => 2, // Family
+      _ => 0,
+    };
+    setState(() => _index = next);
   }
 
   Future<void> _maybeStartTour() async {

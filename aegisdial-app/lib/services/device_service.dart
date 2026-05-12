@@ -35,6 +35,24 @@ class DeviceService {
   bool _wired = false;
   String? _lastToken;
 
+  /// Notification-tap stream. UI screens subscribe to route based on
+  /// the `kind` field in the payload (e.g. `v3_takeover`,
+  /// `family_alert`, `recovery_followup`). Payloads are the raw
+  /// `aps` userInfo dict from APNs — the backend's push composer is
+  /// the source of truth for the schema.
+  final List<void Function(Map<String, dynamic>)> _tapListeners = [];
+
+  void addTapListener(void Function(Map<String, dynamic>) cb) {
+    _tapListeners.add(cb);
+    // Drain any tap that the OS handed us before this listener
+    // subscribed (cold-start launch from a notification tap).
+    _drainPendingTap();
+  }
+
+  void removeTapListener(void Function(Map<String, dynamic>) cb) {
+    _tapListeners.remove(cb);
+  }
+
   /// Call once at app boot so the channel handler is attached before
   /// the OS can deliver a late-arriving token (e.g. token rotation
   /// during a cold start).
@@ -51,11 +69,40 @@ class DeviceService {
             debugPrint('APNs registration failed: ${call.arguments}');
           }
           return null;
+        case 'onNotificationTap':
+          _dispatchTap(call.arguments);
+          return null;
         default:
           return null;
       }
     });
     _wired = true;
+  }
+
+  Future<void> _drainPendingTap() async {
+    if (!_supportsApns) return;
+    try {
+      final payload = await _channel.invokeMethod('drainPendingTap');
+      _dispatchTap(payload);
+    } catch (_) {
+      // No-op — native side returns null when nothing pending.
+    }
+  }
+
+  void _dispatchTap(Object? raw) {
+    if (raw == null) return;
+    Map<String, dynamic>? payload;
+    if (raw is Map) {
+      payload = raw.map((k, v) => MapEntry(k.toString(), v));
+    }
+    if (payload == null || payload.isEmpty) return;
+    for (final cb in List.of(_tapListeners)) {
+      try {
+        cb(payload);
+      } catch (e) {
+        if (kDebugMode) debugPrint('Tap listener error: $e');
+      }
+    }
   }
 
   /// Ask iOS for notification permission (if not granted yet) and
