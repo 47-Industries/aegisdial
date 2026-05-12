@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/coach_mark.dart';
 import '../services/auth_service.dart';
+import '../services/device_service.dart';
 import 'home_dashboard.dart';
 import 'recovery_chatbot_screen.dart';
 import 'family_screen.dart';
@@ -30,7 +31,13 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _maybeStartTour());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _maybeStartTour();
+      // Once the home dashboard is mounted the user has context for
+      // the notifications prompt. Skips for guests (no backend account
+      // to associate the APNs token with) and no-ops on Android.
+      deviceService.ensureRegistered();
+    });
   }
 
   @override

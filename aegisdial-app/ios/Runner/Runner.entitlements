@@ -6,5 +6,18 @@
 	<array>
 		<string>Default</string>
 	</array>
+	<!--
+	  aps-environment lets the app register for APNs. `development`
+	  routes through Apple's sandbox push gateway — used for TestFlight
+	  + debug builds. Apple flips this to `production` automatically
+	  for App Store submissions, so we don't maintain a Release-only
+	  override.
+
+	  Pair with NSUserNotificationsUsageDescription in Info.plist and
+	  call UIApplication.shared.registerForRemoteNotifications() once
+	  the user has accepted the iOS permission prompt.
+	-->
+	<key>aps-environment</key>
+	<string>development</string>
 </dict>
 </plist>
