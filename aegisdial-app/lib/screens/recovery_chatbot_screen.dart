@@ -54,13 +54,7 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
 
   final _input = TextEditingController();
   final _scroll = ScrollController();
-  final List<_ChatMessage> _messages = [
-    const _ChatMessage(
-      fromUser: false,
-      text:
-          "I'm here. Take a breath — you're not alone, and what happened isn't your fault.\n\nWhen you're ready, tell me what just happened. The more detail you share, the better I can help you stop the bleeding and figure out the next move.",
-    ),
-  ];
+  final List<_ChatMessage> _messages = [];
   bool _sending = false;
 
   bool _trialActive = true;
@@ -74,15 +68,27 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   @override
   void initState() {
     super.initState();
+
+    // Seed the greeting — generic if the user opened recovery cold, or
+    // a Live-Shield-aware acknowledgment if they were routed here with
+    // v4 playbook context from a just-ended call.
+    final preload = widget.initialContext;
+    final hasPreload = preload != null && preload.trim().isNotEmpty;
+    _messages.add(_ChatMessage(
+      fromUser: false,
+      text: hasPreload
+          ? "I saw Live Shield just caught something. Let's work through it together — I'll handle the steps, you focus on staying calm. Sending what we know now…"
+          : "I'm here. Take a breath — you're not alone, and what happened isn't your fault.\n\nWhen you're ready, tell me what just happened. The more detail you share, the better I can help you stop the bleeding and figure out the next move.",
+    ));
+
     _loadTrial();
     _loadChat();
     PurchaseService.addListener(_onEntitlementUpdate);
 
-    // v4 hand-off — if Live Shield routed us here with a detected scam
-    // type and transcript context, auto-send that as the first message
-    // so the companion's first reply is topical instead of generic.
-    final preload = widget.initialContext;
-    if (preload != null && preload.trim().isNotEmpty) {
+    // v4 hand-off — fire the preload as the first user message so the
+    // companion's first real reply is grounded on the detected scam type
+    // instead of asking the user to re-explain what happened.
+    if (hasPreload) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!mounted) return;
         _send(preload);
