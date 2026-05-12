@@ -10,7 +10,7 @@ import {
 } from '../lib/appleVerify.js';
 import { verifyStripeSignature, handleStripeEvent, createCheckoutSession } from '../lib/stripeVerify.js';
 import { syncFamilyPlanSeatsToSubscription } from '../lib/familySeats.js';
-import { planForProductId } from '../lib/plans.js';
+import { planForProductId, grantDaysForOneTime } from '../lib/plans.js';
 import { config } from '../config.js';
 
 // Subscription routes. This file exposes:
@@ -113,13 +113,16 @@ export async function subscriptionRoutes(app: FastifyInstance): Promise<void> {
 
       // Period derivation: auto-renewable subs trust Apple's expiresDate
       // (or 30d default if Apple omits it, which is rare). One-time SKUs
-      // (Recovery Session $99) get a hard 30-day window from purchase
+      // (Recovery Session $149) get a hard 14-day window from purchase
       // date AND auto_renew=FALSE — Apple doesn't send expiresDate on
-      // non-renewing IAPs so we set it ourselves.
+      // non-renewing IAPs so we set it ourselves. `grantDaysForOneTime`
+      // reads the policy off the Plan so future 30d/60d variants can be
+      // added without touching this code site.
       const plan = planForProductId(decoded.productId)!; // already allowlisted at line ~66
-      const isOneTime = plan.period === 'one_time_30d';
+      const isOneTime = plan.period.startsWith('one_time_');
+      const oneTimeGrantMs = isOneTime ? grantDaysForOneTime(plan) * 24 * 60 * 60 * 1000 : 0;
       const expiresMs = isOneTime
-        ? decoded.purchaseDateMs + 30 * 24 * 60 * 60 * 1000
+        ? decoded.purchaseDateMs + oneTimeGrantMs
         : (decoded.expiresDateMs ?? decoded.purchaseDateMs + 30 * 24 * 60 * 60 * 1000);
       const expires = new Date(expiresMs);
       const periodStart = new Date(decoded.purchaseDateMs);

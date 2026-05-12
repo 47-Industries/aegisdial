@@ -295,6 +295,8 @@ function priceToProductId(priceId: string): string | null {
     [config.STRIPE_MONTHLY_PRICE_ID, 'com.aegiadial.ios.pro.monthly'],
     [config.STRIPE_YEARLY_PRICE_ID, 'com.aegiadial.ios.pro.yearly'],
     [config.STRIPE_FAMILY_PLUS_MONTHLY_PRICE_ID, 'com.aegiadial.ios.pro.family_plus.monthly'],
+    [config.STRIPE_RECOVERY_MONTHLY_PRICE_ID, 'com.aegiadial.ios.recovery.monthly'],
+    [config.STRIPE_RECOVERY_YEARLY_PRICE_ID, 'com.aegiadial.ios.recovery.yearly'],
   ];
   for (const [envPrice, productId] of mapping) {
     if (envPrice && envPrice === priceId) {

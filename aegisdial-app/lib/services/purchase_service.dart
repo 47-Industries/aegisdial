@@ -4,11 +4,18 @@ import 'package:flutter/foundation.dart';
 // Replace with your RevenueCat iOS public SDK key from dashboard.revenuecat.com
 const _kRevenueCatApiKey = 'REVENUECAT_IOS_API_KEY_PLACEHOLDER';
 
-// Product IDs — must match App Store Connect in-app purchase IDs exactly
-const kProductProAnnual = 'aegisdial_pro_annual';
-const kProductProMonthly = 'aegisdial_pro_monthly';
+// Product IDs — must match App Store Connect in-app purchase IDs exactly.
+// Pricing tier locked 2026-05-12 per founder's spec.
+const kProductProAnnual = 'aegisdial_pro_annual';            // $399/yr
+const kProductProMonthly = 'aegisdial_pro_monthly';          // $49.99/mo
+const kProductRecoverySession = 'aegisdial_recovery_session';// $149 one-time + 14d Pro
+const kProductRecoveryAnnual = 'aegisdial_recovery_annual';  // $899/yr (Concierge)
+const kProductRecoveryMonthly = 'aegisdial_recovery_monthly';// $99/mo (Concierge)
+
+// DEPRECATED — existing subscribers honored, not offered on the active
+// paywall. Kept so the purchase service can still resolve the product
+// if a returning user fires a restore.
 const kProductFamilyPlusMonthly = 'aegisdial_family_plus_monthly';
-const kProductRecoverySession = 'aegisdial_recovery_session';
 
 // Entitlement IDs — must match RevenueCat dashboard entitlements
 const _kEntitlementPro = 'pro';

@@ -100,6 +100,12 @@ const schema = z.object({
   STRIPE_MONTHLY_PRICE_ID: z.string().optional(),
   STRIPE_YEARLY_PRICE_ID: z.string().optional(),
   STRIPE_FAMILY_PLUS_MONTHLY_PRICE_ID: z.string().optional(),
+  // Recovery Concierge subscription tier ($99/mo, $899/yr).
+  // Same Pro entitlement as the basic tier; marketed as "Dedicated
+  // agent + priority." Backend doesn't gate any code paths on this
+  // tier yet — feature differentiation is UI/SLA only for now.
+  STRIPE_RECOVERY_MONTHLY_PRICE_ID: z.string().optional(),
+  STRIPE_RECOVERY_YEARLY_PRICE_ID: z.string().optional(),
 
   ENABLE_TWILIO_LOOKUP: z
     .string()
