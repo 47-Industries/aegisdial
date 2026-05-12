@@ -59,10 +59,15 @@ workflows:
       - name: Build iOS
         script: |
           cd aegisdial-app
+          # REVENUECAT_IOS_API_KEY comes from the 'codemagic' env group.
+          # Falls back to empty string so the build still completes —
+          # purchase_service.dart detects the placeholder and no-ops
+          # every IAP path instead of crashing.
           flutter build ipa --release \
             --build-name=1.0.0 \
             --build-number=$BUILD_NUMBER \
             --dart-define=API_URL=$API_URL \
+            --dart-define=REVENUECAT_IOS_API_KEY=${REVENUECAT_IOS_API_KEY:-REVENUECAT_IOS_API_KEY_PLACEHOLDER} \
             --no-tree-shake-icons \
             --export-options-plist=/Users/builder/export_options.plist
     artifacts:

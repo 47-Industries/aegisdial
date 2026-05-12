@@ -1,8 +1,17 @@
 import 'package:purchases_flutter/purchases_flutter.dart';
 import 'package:flutter/foundation.dart';
 
-// Replace with your RevenueCat iOS public SDK key from dashboard.revenuecat.com
-const _kRevenueCatApiKey = 'REVENUECAT_IOS_API_KEY_PLACEHOLDER';
+// RevenueCat iOS public SDK key from dashboard.revenuecat.com →
+// Project Settings → API Keys. Injected at build time via Codemagic
+// `--dart-define=REVENUECAT_IOS_API_KEY=appl_xxx`. The default is a
+// recognizable placeholder so initialize() can short-circuit instead
+// of calling Purchases.configure() with garbage (which silently breaks
+// every IAP downstream — paywall, restore, entitlement listener).
+const _kRevenueCatApiKey = String.fromEnvironment(
+  'REVENUECAT_IOS_API_KEY',
+  defaultValue: 'REVENUECAT_IOS_API_KEY_PLACEHOLDER',
+);
+const _kRevenueCatPlaceholder = 'REVENUECAT_IOS_API_KEY_PLACEHOLDER';
 
 // Product IDs — must match App Store Connect in-app purchase IDs exactly.
 // Pricing tier locked 2026-05-12 per founder's spec.
@@ -31,8 +40,29 @@ class PurchaseService {
   static void addListener(EntitlementCallback cb) => _listeners.add(cb);
   static void removeListener(EntitlementCallback cb) => _listeners.remove(cb);
 
+  /// True only when RevenueCat actually initialized with a real key.
+  /// Every IAP path gates on this so a missing build-time secret can't
+  /// blow up the app — the paywall buttons fall through gracefully and
+  /// log instead of calling into an unconfigured SDK.
+  static bool get isConfigured =>
+      _initialized && _kRevenueCatApiKey != _kRevenueCatPlaceholder;
+
   static Future<void> initialize() async {
     if (_initialized) return;
+    if (_kRevenueCatApiKey == _kRevenueCatPlaceholder) {
+      // Loud warning, not a crash — we want TestFlight builds to keep
+      // booting and the rest of the app to work. The paywall surfaces
+      // an in-app banner via isConfigured below.
+      if (kDebugMode) {
+        debugPrint(
+          'PurchaseService: REVENUECAT_IOS_API_KEY not provided at build '
+          'time (Codemagic env var). All IAP paths will no-op until a '
+          'real key is injected via --dart-define=REVENUECAT_IOS_API_KEY=...',
+        );
+      }
+      _initialized = true; // mark so we don't retry on every cold start
+      return;
+    }
     await Purchases.setLogLevel(kDebugMode ? LogLevel.debug : LogLevel.error);
     final config = PurchasesConfiguration(_kRevenueCatApiKey);
     await Purchases.configure(config);
@@ -48,6 +78,7 @@ class PurchaseService {
   }
 
   static Future<Offerings?> getOfferings() async {
+    if (!isConfigured) return null;
     try {
       return await Purchases.getOfferings();
     } catch (e) {
@@ -57,6 +88,15 @@ class PurchaseService {
   }
 
   static Future<bool> purchaseProduct(String productId) async {
+    if (!isConfigured) {
+      if (kDebugMode) {
+        debugPrint(
+          'PurchaseService.purchaseProduct($productId) no-op: RevenueCat '
+          'is not configured. Set REVENUECAT_IOS_API_KEY at build time.',
+        );
+      }
+      return false;
+    }
     try {
       final offerings = await Purchases.getOfferings();
       final allPackages = offerings.current?.availablePackages ?? [];
@@ -96,6 +136,7 @@ class PurchaseService {
   }
 
   static Future<bool> restorePurchases() async {
+    if (!isConfigured) return false;
     try {
       final info = await Purchases.restorePurchases();
       return _hasAnyEntitlement(info);
@@ -106,6 +147,7 @@ class PurchaseService {
   }
 
   static Future<bool> isPro() async {
+    if (!isConfigured) return false;
     try {
       final info = await Purchases.getCustomerInfo();
       return _hasAnyEntitlement(info);
