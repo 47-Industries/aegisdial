@@ -47,19 +47,25 @@ re-run.
 
 ---
 
-## 3. App Store Connect price update
+## 3. App Store Connect price update (2026-05-12 cutover)
 
-Code ships $69.99 for Family+ but App Store Connect is still at $69.98.
-StoreKit returns Apple's price, not the code's. If you don't update this,
-users see a 1¢ discrepancy between paywall text and the purchase sheet.
+The active tier (per Jesiah's locked pricing):
 
-1. App Store Connect → My Apps → AegisDial → Subscriptions
-2. `com.aegisdial.app.pro.family_plus.monthly` → Price Schedule
-3. Change to $69.99 USD tier (Apple rounds to tier 70 if needed)
-4. Save + wait ~1 hr for propagation
+| Product ID | Price | Notes |
+|---|---|---|
+| `com.aegiadial.ios.pro.monthly` | **$49.99/mo** | 3 lines |
+| `com.aegiadial.ios.pro.yearly` | **$399/yr** | 3 lines, "Save $200 vs monthly" |
+| `com.aegiadial.ios.recovery.session` | **$149 one-time** | Non-consumable IAP, grants 14-day Pro on verify |
+| `com.aegiadial.ios.recovery.monthly` | **$99/mo** | Recovery Concierge tier |
+| `com.aegiadial.ios.recovery.yearly` | **$899/yr** | Recovery Concierge tier |
 
-Same check: confirm `com.aegisdial.app.pro.monthly` is $49.99 and
-`com.aegisdial.app.pro.yearly` is $299.
+**Deprecated (existing subs honored, NOT offered to new buyers):**
+- `com.aegiadial.ios.pro.family_plus.monthly` ($69.99/mo, 3 + 2 add-on lines). Set in ASC Connect to "available for existing subscribers, not for new purchases."
+
+App Store Connect → My Apps → AegisDial → Subscriptions → Price Schedule
+for each entry. Save + wait ~1 hr for propagation. StoreKit returns Apple's
+price, not the code's — keep these in sync or the paywall and purchase
+sheet diverge.
 
 ---
 

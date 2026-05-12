@@ -184,16 +184,23 @@ Optional but recommended: `TWILIO_ACCOUNT_SID/TOKEN`, `ENZOIC_API_KEY/SECRET`, `
 - **Webhook signature verification:** Stripe (`src/lib/stripeVerify.ts` pinned to `2026-03-25.dahlia`), Apple (`src/lib/appleVerify.ts`)
 - **Webhook routes bypass rate-limit** — Stripe 3-day + Apple 60-day retry storms must not be silently dropped
 
-## 10. Pricing (LOCKED — do not introduce $9.99/$14.99/$19.99)
+## 10. Pricing (LOCKED 2026-05-12 — supersedes the 2026-04-19 tier)
 
 | SKU | Price | Lines | Product ID |
 |---|---|---|---|
-| Pro Monthly | **$49.99/mo** | 3 | `com.aegisdial.app.pro.monthly` |
-| Pro Annual | **$299/yr** | 3 | `com.aegisdial.app.pro.yearly` |
-| Pro Family+ | **$69.99/mo** | 5 | `com.aegisdial.app.pro.family_plus.monthly` |
-| Recovery Session (one-time) | **$99** | 1 | `com.aegisdial.app.recovery.session` (NON-CONSUMABLE) |
+| Pro Monthly | **$49.99/mo** | 3 | `com.aegiadial.ios.pro.monthly` |
+| Pro Annual | **$399/yr** | 3 | `com.aegiadial.ios.pro.yearly` (save $200 vs monthly) |
+| Recovery Session (one-time) | **$149** | 1 | `com.aegiadial.ios.recovery.session` (NON-CONSUMABLE, grants **14-day Pro** on verify) |
+| Recovery Concierge Monthly | **$99/mo** | 1 | `com.aegiadial.ios.recovery.monthly` (dedicated agent + priority) |
+| Recovery Concierge Yearly | **$899/yr** | 1 | `com.aegiadial.ios.recovery.yearly` |
 
-The $99 Recovery Session is the **wedge SKU** — backend grants 30-day Pro on verify, paywall offers it next to "$49.99/mo" as a "just need help once" option for new users.
+**Deprecated (existing subs honored, NOT offered in active paywall):**
+
+| SKU | Price | Lines | Product ID |
+|---|---|---|---|
+| Pro Family+ | $69.99/mo | 5 | `com.aegiadial.ios.pro.family_plus.monthly` — mark "not available for new purchases" in ASC. No replacement 5-line tier yet. |
+
+The $149 Recovery Session is the **wedge SKU** — backend grants 14-day Pro on verify, paywall offers it next to "$49.99/mo" as a "just need help once" option for new users. (Was $99 / 30-day pre-2026-05-12.)
 
 ## 11. Positioning (front-door vs side-door)
 
@@ -247,7 +254,7 @@ Do **not** demote Live Shield in front-door surfaces. Do **not** lead with Recov
 ## 14. Known intentional tech debt (NOT launch blockers)
 
 - App Attest server-side verification (currently accepts silently)
-- Family+ → Pro downgrade: shrink capacity + evict 4th/5th members
+- Family+ → Pro downgrade: shrink capacity + evict 4th/5th members (deprecated tier 2026-05-12, but legacy subs still need a path)
 - `phone_e164` encryption (needs hash column for liveShield lookups)
 - Per-user LLM budget (current guard is per-instance only)
 - Worker drain on SIGTERM via AbortController
@@ -260,7 +267,7 @@ See "Tech-debt / nice to have" in `TODO.md` for the full list.
 
 - **No insurance rider.** Reasoning: avoids moral hazard, state surplus-lines filings, $48/user/yr COGS. Recovery Concierge is the substitute.
 - **No human hotline.** AI-first for cost + 24/7 coverage. No BPO partner.
-- **No 5-line default.** Family plan is 3 lines base; 5-line households pay $20/mo delta via Family+ ($69.99).
+- **No 5-line default.** Pro plan is 3 lines, full stop. Family+ ($69.99, 5 lines) was the 5-line option but is deprecated 2026-05-12 — no replacement tier yet. New 5-line households are not currently supported on the active paywall.
 - **No free tier.** Scams are a psychological event, not a utility.
 
 ## 16. Where to find more

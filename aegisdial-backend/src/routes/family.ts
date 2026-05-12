@@ -162,7 +162,7 @@ export async function familyRoutes(app: FastifyInstance): Promise<void> {
             seats_used: err.used,
             capacity: err.capacity,
             message:
-              'Your family plan has no free seats. Remove a member, or upgrade to Family+ ($69.99/mo, 5 lines).',
+              'Your family plan has no free seats. Remove a member to add a new one.',
           });
         }
         if (err instanceof RateLimitError) {

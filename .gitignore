@@ -98,3 +98,8 @@ tmp/
 *.bak
 .git.bak/
 **/.git.bak/
+
+# --- Sibling repos (separately versioned, not part of the monorepo) ---
+# aegisdial-web is its own Railway-deployed Express app with its own .git.
+# Keeping it as a sibling on disk for convenience, but git should ignore it.
+aegisdial-web/

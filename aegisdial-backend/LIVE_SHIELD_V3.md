@@ -167,7 +167,7 @@ But once Mom blocks a number, do we contribute that signal to other AegisDial us
 - (a) Fully opt-in
 - (b) Default-on with toggle
 - (c) Anonymized only (number + outcome, no user)
-- (d) Tier-based — Pro users opt-in, Family+ users contribute by default in exchange for network access
+- (d) Tier-based — Pro users opt-in by default in exchange for network access (note: Family+ deprecated 2026-05-12, so any tier-based contribution split now collapses to just Pro)
 
 **Dim 5: WHAT happens when she taps the notification**
 - (a) Decline the call

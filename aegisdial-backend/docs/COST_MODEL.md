@@ -1,6 +1,15 @@
 # AegisDial Cost Model
 
 _Last updated: 2026-04-18_
+_Pricing inputs need re-modeling: 2026-05-12 cutover (see callout below)._
+
+> ⚠️ **2026-05-12 pricing cutover not reflected in this doc.** Jesiah's
+> updated tier moved Pro Annual $299 → $399, Recovery Session $99 → $149
+> (now grants 14-day Pro, was 30-day), and introduced Recovery Concierge
+> $99/mo + $899/yr. Family+ is deprecated. ARPU, blended-margin, and IAP
+> take-rate numbers throughout this doc assume the old tier. Re-build the
+> ARPU section before quoting these figures in fundraise materials. Source
+> of truth: `src/lib/plans.ts` + `feedback_brand_locked.md` (memory).
 
 This doc projects the per-user-per-month (PUPM) cost of running AegisDial at
 three scale tiers — **1k MAU**, **10k MAU**, **100k MAU** — and estimates gross
@@ -10,10 +19,10 @@ All vendor prices are 2026 list prices (no negotiated discounts). Numbers
 marked _estimated_ are modeled assumptions, not measured telemetry. Numbers
 marked _observed_ come from code in `src/` or migrations in `db/migrations/`.
 
-> **Pricing** (matches `src/lib/plans.ts` and the fundraise deck):
+> **Pricing** (HISTORIC — pre 2026-05-12; see callout above for current tier):
 > - Pro **$49.99/mo** or **$299/yr** (3 lines)
 > - Pro Family+ **$69.99/mo** (5 lines, +$20/mo delta over Pro for 2 add-on
->   lines)
+>   lines) — now deprecated, existing subs honored.
 > - Paid-only product — no free tier, no trial. A "free" column below refers
 >   only to signed-up users pre-conversion or in their Apple-IAP billing grace
 >   period, not to a free subscription product.

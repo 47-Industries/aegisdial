@@ -27,7 +27,7 @@ AegisDial is the only product that does both — because no prevention is perfec
 
 **Live Shield** *(Pro)* — On-device AI listens to suspicious calls in real time. The moment scam patterns appear — pressure tactics, gift-card requests, fake bank verifications — we warn you mid-call, before any money moves. Transcripts never leave your phone. Truecaller, Hiya, and Apple's own caller ID don't do this.
 
-**Recovery Concierge** *(Pro or $99 once)* — Built for the moment after a scam. A trauma-informed AI guide walks you through the first 15 minutes — freezing accounts, calling your bank, locking your credit, filing FTC and IC3 reports, telling your family. 52 scam types covered, with playbooks written by fraud experts.
+**Recovery Concierge** *(Pro or $149 once)* — Built for the moment after a scam. A trauma-informed AI guide walks you through the first 15 minutes — freezing accounts, calling your bank, locking your credit, filing FTC and IC3 reports, telling your family. 52 scam types covered, with playbooks written by fraud experts.
 
 **Family Safe Words + Guardian Alerts** *(Pro)* — When the "grandchild emergency" call comes, your real grandchild knows the word. The scammer doesn't. Family members get an instant ping the moment a scam attempt is detected on a loved one's phone.
 
@@ -35,7 +35,9 @@ AegisDial is the only product that does both — because no prevention is perfec
 
 **Free scam-text checker** — Got a sus text from "Chase" or "USPS"? Paste it in. We'll tell you if it's a scam and what the scammer was after. No signup, no payment.
 
-**Pro: $49.99/mo or $299/yr — covers up to 3 family members. Family+ adds 2 more for $69.99/mo. Or $99 once for a single Recovery Session if you just need help with one event.**
+**Pro: $49.99/mo or $399/yr — covers up to 3 lines. Recovery Session: $149 once, includes a 14-day Pro window. Recovery Concierge (dedicated agent + priority response): $99/mo or $899/yr.**
+
+> Pricing updated 2026-05-12. Family+ ($69.99/mo, 5 lines) is no longer offered to new buyers — existing subscribers honored.
 
 Privacy: every word of your recovery session is end-to-end encrypted. Live Shield transcripts stay on your phone. We never sell data. Delete your account in two taps.
 
