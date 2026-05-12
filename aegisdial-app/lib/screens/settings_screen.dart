@@ -79,7 +79,7 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '\$299.00',
+                    '\$399.00',
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: AegisColors.textSecondary,
                         ),
@@ -168,7 +168,7 @@ class SettingsScreen extends StatelessWidget {
               ('What does the SMS Filter scan?',
                   'It scans every incoming SMS and iMessage for phishing links, package-redelivery scams, fake bank alerts, and more. Paste any message in manually to scan it.'),
               ('How do I add family members?',
-                  'Go to the Family tab and tap "Add a family member." You can add up to 3 on Pro, or 5 on Family+ for \$69.99/month.'),
+                  'Go to the Family tab and tap "Add a family member." Pro covers up to 3 lines.'),
               ('How do I contact support?',
                   'Email us at support@aegisdial.com. We respond within 24 hours.'),
             ].map(
@@ -399,11 +399,11 @@ class SettingsScreen extends StatelessWidget {
           _SettingsTile(
             icon: Icons.info_outline,
             title: 'About AegisDial',
-            trailing: 'v1.0.0 (4)',
+            trailing: 'v1.0.0 (5)',
             onTap: () => _showInfo(
               context,
               'About AegisDial',
-              'AegisDial v1.0.0 (4)\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: support@aegisdial.com',
+              'AegisDial v1.0.0 (5)\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: support@aegisdial.com',
             ),
           ),
           const SizedBox(height: 24),

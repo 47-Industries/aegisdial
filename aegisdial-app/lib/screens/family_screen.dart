@@ -4,7 +4,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
-import '../services/purchase_service.dart';
 
 class _FamilyMember {
   final String name;
@@ -46,19 +45,18 @@ class FamilyScreen extends StatefulWidget {
 }
 
 class _FamilyScreenState extends State<FamilyScreen> {
+  // Pro covers up to 3 lines. Family+ was deprecated 2026-05-12 — existing
+  // subscribers are still resolved server-side, but the iOS UI no longer
+  // offers the upsell (no replacement 5-line tier yet).
   static const int _baseLines = 3;
-  static const int _maxLines = 5;
   static const String _baseTier = 'Pro · 3 lines';
-  static const String _plusTier = 'Family+ · up to 5 lines';
-  static const String _plusPrice = '\$69.99 / mo';
   static const String _kMembersKey = 'family_members_v1';
   static const String _kSafeWordKey = 'family_safe_word_v1';
 
   final List<_FamilyMember> _members = [];
   String _safeWord = '';
 
-  bool get _isFamilyPlus => _members.length > _baseLines;
-  int get _capacity => _isFamilyPlus ? _maxLines : _baseLines;
+  int get _capacity => _baseLines;
 
   @override
   void initState() {
@@ -94,17 +92,12 @@ class _FamilyScreenState extends State<FamilyScreen> {
   }
 
   Future<void> _showAddMemberSheet() async {
-    if (_members.length >= _maxLines) return;
-
-    if (_members.length >= _baseLines && !_isFamilyPlus) {
-      final upgrade = await _confirmUpgrade();
-      if (upgrade != true) return;
-      if (!mounted) return;
-      final purchased = await PurchaseService.purchaseProduct(kProductFamilyPlusMonthly);
-      if (!purchased) return;
+    if (_members.length >= _baseLines) {
+      // Pro tier is capped at 3 lines. No upgrade path until a >3 tier ships.
+      _showLineCapToast();
+      return;
     }
 
-    if (!mounted) return;
     final added = await showModalBottomSheet<_FamilyMember>(
       context: context,
       isScrollControlled: true,
@@ -133,32 +126,14 @@ class _FamilyScreenState extends State<FamilyScreen> {
     }
   }
 
-  Future<bool?> _confirmUpgrade() {
-    return showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AegisColors.surface,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
-        title: const Text('Upgrade to Family+'),
-        content: const Text(
-          "You're at 3 lines on Pro. Adding a 4th line upgrades you to Family+ (up to 5 lines) at \$69.99 / month.",
-          style: TextStyle(color: AegisColors.textSecondary, height: 1.45),
+  void _showLineCapToast() {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text(
+          "Pro covers 3 lines. Remove a line first to add a new one.",
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Not now'),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            style: ElevatedButton.styleFrom(
-              minimumSize: const Size(0, 44),
-              backgroundColor: AegisColors.turquoise,
-              foregroundColor: Colors.black,
-            ),
-            child: const Text('Upgrade'),
-          ),
-        ],
+        duration: Duration(seconds: 3),
       ),
     );
   }
@@ -167,7 +142,8 @@ class _FamilyScreenState extends State<FamilyScreen> {
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
     final usedLines = _members.length;
-    final tierLabel = _isFamilyPlus ? _plusTier : _baseTier;
+    final tierLabel = _baseTier;
+    final isAtCap = _members.length >= _baseLines;
 
     return Scaffold(
       backgroundColor: AegisColors.background,
@@ -215,38 +191,6 @@ class _FamilyScreenState extends State<FamilyScreen> {
                     color: AegisColors.textTertiary,
                   ),
                 ),
-                if (!_isFamilyPlus) ...[
-                  const SizedBox(height: 10),
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      vertical: 10,
-                      horizontal: 12,
-                    ),
-                    decoration: BoxDecoration(
-                      color: AegisColors.surfaceElevated,
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Row(
-                      children: [
-                        const Icon(
-                          Icons.info_outline_rounded,
-                          size: 16,
-                          color: AegisColors.textTertiary,
-                        ),
-                        const SizedBox(width: 8),
-                        Expanded(
-                          child: Text(
-                            'Add 2 more lines to upgrade to Family+ ($_plusPrice).',
-                            style: tt.bodySmall?.copyWith(
-                              color: AegisColors.textSecondary,
-                              height: 1.4,
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -278,12 +222,10 @@ class _FamilyScreenState extends State<FamilyScreen> {
                     _saveState();
                   },
                 )),
-          if (_members.length < _maxLines) ...[
+          if (!isAtCap) ...[
             const SizedBox(height: 8),
             _AddSlot(
-              label: _members.length >= _baseLines
-                  ? 'Add a line — upgrades to Family+ ($_plusPrice)'
-                  : 'Add a family member',
+              label: 'Add a family member',
               onTap: _showAddMemberSheet,
             ),
           ],
@@ -434,7 +376,7 @@ class _EmptyMembers extends StatelessWidget {
           const SizedBox(width: 12),
           Expanded(
             child: Text(
-              'No family lines yet — add up to 3 on Pro, or 5 on Family+.',
+              'No family lines yet — Pro covers up to 3 lines.',
               style: tt.bodySmall?.copyWith(
                 color: AegisColors.textSecondary,
                 height: 1.45,

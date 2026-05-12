@@ -256,12 +256,12 @@ class RecoveryScreen extends StatelessWidget {
           const _CoverageRow(
             icon: Icons.family_restroom_outlined,
             title: 'Family + Guardian',
-            subtitle: 'Up to 3 lines on Pro, 5 on Family+.',
+            subtitle: 'Up to 3 lines on Pro.',
           ),
           const _CoverageRow(
             icon: Icons.healing,
             title: 'Recovery companion',
-            subtitle: 'AI-first chat — \$99 Recovery Session unlocks 30-day Pro.',
+            subtitle: 'AI-first chat — \$149 Recovery Session unlocks 14-day Pro.',
           ),
           const SizedBox(height: 24),
           Text(
