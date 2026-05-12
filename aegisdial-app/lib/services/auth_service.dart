@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'api_service.dart';
+import 'trial_service.dart';
 
 class AuthSession {
   final String token;
@@ -32,6 +33,13 @@ class AuthSession {
         displayName: j['display_name'] as String?,
         email: j['email'] as String?,
       );
+}
+
+/// Apple credential cached between the dob-required 400 and the retry.
+class AppleSignInPayload {
+  final String idToken;
+  final String? displayName;
+  const AppleSignInPayload({required this.idToken, this.displayName});
 }
 
 class AuthService extends ChangeNotifier {
@@ -82,33 +90,68 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Bundled Apple credential payload — cached between the first
+  /// `signInWithApple()` attempt (which may 400 with `dob_year_required`)
+  /// and the retry after the user fills in the age-gate sheet. Reusing
+  /// the same identity token avoids prompting Face ID twice in the
+  /// new-user flow.
+  AppleSignInPayload? _pendingApplePayload;
+
+  /// Pop the Apple modal, parse the credential, and POST to the
+  /// backend. On a brand-new user the backend returns 400
+  /// dob_year_required — the caller should catch that, show the
+  /// age-gate sheet, and call signInWithApple again with `dobYear` set.
+  /// The cached Apple credential is reused so Face ID doesn't fire
+  /// twice.
   Future<AuthSession> signInWithApple({int? dobYear}) async {
-    final cred = await SignInWithApple.getAppleIDCredential(
-      scopes: const [
-        AppleIDAuthorizationScopes.email,
-        AppleIDAuthorizationScopes.fullName,
-      ],
-    );
-    final idToken = cred.identityToken;
-    if (idToken == null) {
-      throw ApiException(0, 'Apple did not return an identity token.');
+    var payload = _pendingApplePayload;
+    if (payload == null) {
+      final cred = await SignInWithApple.getAppleIDCredential(
+        scopes: const [
+          AppleIDAuthorizationScopes.email,
+          AppleIDAuthorizationScopes.fullName,
+        ],
+      );
+      final idToken = cred.identityToken;
+      if (idToken == null) {
+        throw ApiException(0, 'Apple did not return an identity token.');
+      }
+      final fullName = [
+        cred.givenName,
+        cred.familyName,
+      ].where((s) => s != null && s.isNotEmpty).join(' ').trim();
+      payload = AppleSignInPayload(
+        idToken: idToken,
+        displayName: fullName.isEmpty ? null : fullName,
+      );
+      _pendingApplePayload = payload;
     }
-    final fullName = [
-      cred.givenName,
-      cred.familyName,
-    ].where((s) => s != null && s.isNotEmpty).join(' ').trim();
 
     final body = <String, dynamic>{
-      'id_token': idToken,
-      if (fullName.isNotEmpty) 'display_name': fullName,
+      'id_token': payload.idToken,
+      if (payload.displayName != null) 'display_name': payload.displayName,
       'dob_year': ?dobYear,
     };
 
-    final res = await api.post('/auth/apple', body);
-    final session = AuthSession.fromJson(res);
-    await _persist(session);
-    _refreshMe();
-    return session;
+    try {
+      final res = await api.post('/auth/apple', body);
+      final session = AuthSession.fromJson(res);
+      await _persist(session);
+      _refreshMe();
+      // Clear the cached credential on a successful sign-in. We only
+      // keep it between a missing-DOB attempt and the retry; any other
+      // failure should force a fresh Apple modal next time.
+      _pendingApplePayload = null;
+      return session;
+    } on ApiException catch (e) {
+      // Keep the cached payload only for the specific "missing DOB"
+      // case the caller can recover from. All other errors mean the
+      // ID token is likely stale and the next attempt should re-prompt.
+      if (e.code != 'dob_year_required') {
+        _pendingApplePayload = null;
+      }
+      rethrow;
+    }
   }
 
   Future<AuthSession> signInWithEmail({
@@ -168,6 +211,9 @@ class AuthService extends ChangeNotifier {
     await p.remove(_kEmail);
     _session = null;
     api.setToken(null);
+    // Drop the server-anchored trial start so the next user on this
+    // device falls back to local (or their own server anchor on sign-in).
+    TrialService.setServerStart(null);
     notifyListeners();
   }
 
@@ -253,6 +299,15 @@ class AuthService extends ChangeNotifier {
         email: (res['email'] as String?) ?? _session!.email,
       );
       await _persist(updated);
+      // Anchor the trial start to `users.created_at` — reinstall-immune.
+      // ISO 8601 string when JSON-encoded by the server.
+      final createdAt = res['created_at'] as String?;
+      if (createdAt != null) {
+        final parsed = DateTime.tryParse(createdAt);
+        if (parsed != null) {
+          TrialService.setServerStart(parsed.millisecondsSinceEpoch);
+        }
+      }
     } catch (_) {
       // Non-fatal — stale data is fine
     }

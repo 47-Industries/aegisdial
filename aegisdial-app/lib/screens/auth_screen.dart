@@ -6,6 +6,7 @@ import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../widgets/aegis_logo.dart';
+import '../widgets/age_gate_sheet.dart';
 import 'home_shell.dart';
 import 'onboarding_screen.dart';
 import 'email_auth_screen.dart';
@@ -47,11 +48,35 @@ class _AuthScreenState extends State<AuthScreen> {
     if (_busy) return;
     setState(() => _busy = true);
     try {
-      // Backend requires dob_year for first sign-in. For TestFlight v1 we hard-set
-      // a passing year; real onboarding DOB collection lands when we add the
-      // age-gate sheet pre-Apple.
-      await auth.signInWithApple(dobYear: 1990);
-      _enter();
+      // Returning users have an apple_sub on file — backend skips the DOB
+      // check entirely. New users get a 400 dob_year_required which we
+      // catch below, prompt for birth year, and retry. This keeps the
+      // age-gate sheet out of the path for existing accounts.
+      try {
+        await auth.signInWithApple();
+        if (mounted) _enter();
+        return;
+      } on ApiException catch (e) {
+        if (e.code != 'dob_year_required') rethrow;
+      }
+
+      if (!mounted) return;
+      final dobYear = await showAgeGateSheet(context);
+      if (dobYear == null) {
+        // User cancelled the age gate — bail without an error toast.
+        return;
+      }
+
+      try {
+        await auth.signInWithApple(dobYear: dobYear);
+        if (mounted) _enter();
+      } on ApiException catch (e) {
+        if (e.code == 'age_restriction') {
+          _toast('AegisDial is for users aged $kAegisDialMinAge and over.');
+        } else {
+          _toast(e.message);
+        }
+      }
     } on ApiException catch (e) {
       _toast(e.message);
     } catch (e) {

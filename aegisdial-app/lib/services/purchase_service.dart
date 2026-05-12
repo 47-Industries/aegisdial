@@ -21,10 +21,14 @@ const kProductRecoverySession = 'aegisdial_recovery_session';// $149 one-time + 
 const kProductRecoveryAnnual = 'aegisdial_recovery_annual';  // $899/yr (Concierge)
 const kProductRecoveryMonthly = 'aegisdial_recovery_monthly';// $99/mo (Concierge)
 
-// DEPRECATED — existing subscribers honored, not offered on the active
-// paywall. Kept so the purchase service can still resolve the product
-// if a returning user fires a restore.
-const kProductFamilyPlusMonthly = 'aegisdial_family_plus_monthly';
+// DEPRECATED 2026-05-12: `aegisdial_family_plus_monthly` ($69.99/mo,
+// 3 + 2 add-on lines). The constant lived here so iOS code could
+// reference it directly, but every call path (paywall, purchase,
+// restore) is now driven through the RevenueCat customer-info object
+// keyed by entitlement, not by product_id — so the iOS app needs no
+// knowledge of the SKU string. The backend (src/lib/plans.ts,
+// src/lib/stripeVerify.ts) is the single resolver for legacy Family+
+// subscriptions on both the App Store and Stripe sides.
 
 // Entitlement IDs — must match RevenueCat dashboard entitlements
 const _kEntitlementPro = 'pro';

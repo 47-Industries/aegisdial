@@ -67,8 +67,8 @@ class _OnboardingScreenState extends State<OnboardingScreen>
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
         transitionDuration: const Duration(milliseconds: 500),
-        pageBuilder: (_, __, ___) => const HomeShell(),
-        transitionsBuilder: (_, anim, __, child) =>
+        pageBuilder: (_, _, _) => const HomeShell(),
+        transitionsBuilder: (_, anim, _, child) =>
             FadeTransition(opacity: anim, child: child),
       ),
     );
@@ -95,7 +95,7 @@ class _OnboardingScreenState extends State<OnboardingScreen>
           // Ambient glow behind preview
           AnimatedBuilder(
             animation: _glow,
-            builder: (_, __) => Positioned(
+            builder: (_, _) => Positioned(
               top: MediaQuery.of(context).size.height * 0.18,
               left: 0,
               right: 0,
@@ -391,7 +391,7 @@ class _LiveShieldSlideState extends State<_LiveShieldSlide> {
                   ),
                   AnimatedBuilder(
                     animation: widget.glow,
-                    builder: (_, __) => Container(
+                    builder: (_, _) => Container(
                       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                       decoration: BoxDecoration(
                         color: _riskColor.withValues(alpha: 0.15),
