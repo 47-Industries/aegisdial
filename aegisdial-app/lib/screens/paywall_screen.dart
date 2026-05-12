@@ -17,6 +17,22 @@ class _PaywallScreenState extends State<PaywallScreen> {
   bool _restoring = false;
 
   Future<void> _buy(String productId) async {
+    // RevenueCat is the source of truth for IAP. If the build was
+    // shipped without REVENUECAT_IOS_API_KEY (set in Codemagic env
+    // group), every purchase silently no-ops. Surface that to the user
+    // so the paywall button isn't a confusing dead-end.
+    if (!PurchaseService.isConfigured) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Payments aren\'t ready yet. Please try again later or '
+            'email support@aegisdial.com.',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
     setState(() => _purchasing = productId);
     final ok = await PurchaseService.purchaseProduct(productId);
     if (!mounted) return;
@@ -25,6 +41,18 @@ class _PaywallScreenState extends State<PaywallScreen> {
   }
 
   Future<void> _restore() async {
+    if (!PurchaseService.isConfigured) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Restore unavailable. Please try again later or email '
+            'support@aegisdial.com.',
+          ),
+          duration: Duration(seconds: 5),
+        ),
+      );
+      return;
+    }
     setState(() => _restoring = true);
     final ok = await PurchaseService.restorePurchases();
     if (!mounted) return;

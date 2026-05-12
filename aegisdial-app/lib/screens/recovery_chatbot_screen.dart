@@ -181,7 +181,15 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
     final active = await TrialService.isTrialActive();
     final days = await TrialService.daysRemaining();
     final msgs = await TrialService.messagesRemainingToday();
-    final pro = await PurchaseService.isPro();
+    // Pro can come from either side: RevenueCat (Apple IAP) or the
+    // backend session tier (Stripe sub, admin grant, or a Pro entitlement
+    // synced from server). RevenueCat is the authoritative iOS source
+    // when it's configured, but until Jesiah sets the API key it returns
+    // false for everyone — so we OR in the backend tier as a safety net.
+    final rcPro = await PurchaseService.isPro();
+    final tier = auth.session?.tier;
+    final serverPro = tier == 'pro' || tier == 'in_grace';
+    final pro = rcPro || serverPro;
     if (!mounted) return;
     setState(() {
       _isPro = pro;
