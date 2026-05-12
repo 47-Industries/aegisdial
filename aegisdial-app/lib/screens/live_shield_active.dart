@@ -6,6 +6,7 @@ import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../services/live_shield_service.dart';
 import '../widgets/live_shield_consent_v2_sheet.dart';
+import 'recovery_chatbot_screen.dart';
 
 class LiveShieldActiveScreen extends StatefulWidget {
   const LiveShieldActiveScreen({super.key});
@@ -211,6 +212,44 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
     HapticFeedback.heavyImpact();
   }
 
+  /// Hand off to the Recovery companion with v4 playbook context preloaded
+  /// as the user's first message. The companion's `/v1/recovery/companion/
+  /// quick` endpoint will then ground its first reply on the actual scam
+  /// type instead of asking the user to re-explain everything. Falls back
+  /// to a generic "I just got a scam call" prompt if v4 didn't lock onto
+  /// a playbook (regex-only path, or score below the v4 threshold).
+  void _openRecovery() {
+    // Stop the active backend session before navigating — the recovery
+    // screen runs in a separate scope and we don't want a stale Live
+    // Shield session hanging open while the user is in recovery chat.
+    final sid = _sessionId;
+    if (sid != null) {
+      liveShield.end(sessionId: sid, outcome: 'handed_off_to_recovery');
+    }
+
+    final playbookLabel = _v4PlaybookId != null
+        ? _formatPlaybookLabel(_v4PlaybookId!)
+        : null;
+    final lastLines = _transcript
+        .where((l) => l.trim().isNotEmpty)
+        .toList()
+        .reversed
+        .take(3)
+        .toList()
+        .reversed
+        .join(' · ');
+
+    final preload = playbookLabel != null
+        ? "I just got a $playbookLabel scam call. The scammer said: \"$lastLines\". What should I do first?"
+        : "I just got a scam call. The caller said: \"$lastLines\". What should I do first?";
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RecoveryChatbotScreen(initialContext: preload),
+      ),
+    );
+  }
+
   void _dismissDemo() {
     if (_demoPhase == _DemoPhase.verdict) {
       // Close the backend session if one was opened. Use `user_hung_up`
@@ -358,6 +397,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                               v4PlaybookId: _v4PlaybookId,
                               onBlock: _dismissDemo,
                               onAnswer: _dismissDemo,
+                              onRecovery: _openRecovery,
                             )
                           : _IdleCard(
                               key: const ValueKey('idle'),
@@ -822,6 +862,7 @@ class _LiveCallCard extends StatelessWidget {
   final String? v4PlaybookId; // for the small "playbook detected" tag
   final VoidCallback onBlock;
   final VoidCallback onAnswer;
+  final VoidCallback onRecovery; // v4 — opens Recovery Chatbot preloaded with scam context
 
   const _LiveCallCard({
     super.key,
@@ -835,6 +876,7 @@ class _LiveCallCard extends StatelessWidget {
     this.v4PlaybookId,
     required this.onBlock,
     required this.onAnswer,
+    required this.onRecovery,
   });
 
   Color get _scoreColor => score >= 70
@@ -1147,41 +1189,83 @@ class _LiveCallCard extends StatelessWidget {
             const SizedBox(height: 12),
             Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
-              child: Row(
+              child: Column(
                 children: [
-                  Expanded(
-                    child: ElevatedButton.icon(
-                      onPressed: onBlock,
-                      icon: const Icon(Icons.block_rounded, size: 16),
-                      label: const Text('Block call'),
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: AegisColors.danger,
-                        foregroundColor: Colors.white,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: onBlock,
+                          icon: const Icon(Icons.block_rounded, size: 16),
+                          label: const Text('Block call'),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AegisColors.danger,
+                            foregroundColor: Colors.white,
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: onAnswer,
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: AegisColors.textSecondary,
+                            side: const BorderSide(
+                                color: AegisColors.border, width: 0.8),
+                            padding:
+                                const EdgeInsets.symmetric(vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                          ),
+                          child: const Text('Answer anyway'),
+                        ),
+                      ),
+                    ],
+                  ),
+                  // v4 — if score is high enough that the caller may have
+                  // already been pressured into sharing info or moving
+                  // money, surface a direct hand-off to the Recovery
+                  // companion preloaded with playbook context.
+                  if (score >= 70) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: onRecovery,
+                        icon: const Icon(
+                          Icons.healing_rounded,
+                          size: 16,
+                          color: AegisColors.blueAccent,
+                        ),
+                        label: const Text(
+                          'Get recovery help — talk to the AI companion',
+                          style: TextStyle(
+                            color: AegisColors.blueAccent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          backgroundColor:
+                              AegisColors.blueAccent.withValues(alpha: 0.08),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: AegisColors.blueAccent
+                                  .withValues(alpha: 0.35),
+                              width: 0.8,
+                            ),
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: onAnswer,
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: AegisColors.textSecondary,
-                        side: const BorderSide(
-                            color: AegisColors.border, width: 0.8),
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 12),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(10),
-                        ),
-                      ),
-                      child: const Text('Answer anyway'),
-                    ),
-                  ),
+                  ],
                 ],
               ),
             ),

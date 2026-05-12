@@ -10,7 +10,14 @@ import 'paywall_screen.dart';
 import 'recovery_screen.dart';
 
 class RecoveryChatbotScreen extends StatefulWidget {
-  const RecoveryChatbotScreen({super.key});
+  /// Optional context the caller wants the companion to ground its first
+  /// reply in — used by Live Shield to hand off a just-ended call without
+  /// making the user re-explain what happened. When set, the chat skips
+  /// the generic greeting and immediately fires a backend call with this
+  /// as the first user message.
+  final String? initialContext;
+
+  const RecoveryChatbotScreen({super.key, this.initialContext});
 
   @override
   State<RecoveryChatbotScreen> createState() => _RecoveryChatbotScreenState();
@@ -70,6 +77,17 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
     _loadTrial();
     _loadChat();
     PurchaseService.addListener(_onEntitlementUpdate);
+
+    // v4 hand-off — if Live Shield routed us here with a detected scam
+    // type and transcript context, auto-send that as the first message
+    // so the companion's first reply is topical instead of generic.
+    final preload = widget.initialContext;
+    if (preload != null && preload.trim().isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _send(preload);
+      });
+    }
   }
 
   void _onEntitlementUpdate(bool isPro) {
