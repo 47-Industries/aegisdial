@@ -171,6 +171,62 @@ class AuthService extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// PATCH the user's profile on the backend (display_name today, more
+  /// fields later). Optimistic local update is paired with the PATCH so
+  /// the UI feels instant; if the request fails the session is left
+  /// untouched and the caller surfaces the error.
+  ///
+  /// Guests get a local-only rename — no backend account to PATCH.
+  Future<void> updateProfile({String? displayName}) async {
+    final s = _session;
+    if (s == null) return;
+    if (displayName != null) {
+      final trimmed = displayName.trim();
+      if (s.userId == 'guest') {
+        _session = AuthSession(
+          token: s.token,
+          userId: s.userId,
+          tier: s.tier,
+          displayName: trimmed.isEmpty ? null : trimmed,
+          email: s.email,
+        );
+        notifyListeners();
+        return;
+      }
+      await api.patch('/v1/users/me', {'display_name': trimmed});
+      // Persist locally so cold-start sees the new name before /auth/me
+      // catches up.
+      final updated = AuthSession(
+        token: s.token,
+        userId: s.userId,
+        tier: s.tier,
+        displayName: trimmed.isEmpty ? null : trimmed,
+        email: s.email,
+      );
+      await _persist(updated);
+    }
+  }
+
+  /// Server-side cascade-delete of the user's account and all related rows
+  /// (subscriptions, family plans, recovery sessions, breach watches, chat
+  /// history, etc. — `users` table is ON DELETE CASCADE for every child).
+  /// The backend requires `{"confirm": "DELETE"}` as a guard against
+  /// accidental hits. Throws ApiException on failure so the caller can
+  /// keep the user signed in and surface the error instead of silently
+  /// signing them out with their account still alive.
+  ///
+  /// Guest sessions short-circuit to local-only signOut() — there's no
+  /// backend row to remove.
+  Future<void> deleteAccount() async {
+    final s = _session;
+    if (s == null || s.userId == 'guest') {
+      await signOut();
+      return;
+    }
+    await api.delete('/v1/users/me', {'confirm': 'DELETE'});
+    await signOut();
+  }
+
   Future<void> _persist(AuthSession s) async {
     _session = s;
     api.setToken(s.token);

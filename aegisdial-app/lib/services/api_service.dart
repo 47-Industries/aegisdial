@@ -63,6 +63,36 @@ class ApiService {
     return _handle(res);
   }
 
+  Future<Map<String, dynamic>> patch(String path, Map<String, dynamic> body) async {
+    final res = await http
+        .patch(
+          Uri.parse('$baseUrl$path'),
+          headers: _headers,
+          body: jsonEncode(body),
+        )
+        .timeout(const Duration(seconds: 20));
+    return _handle(res);
+  }
+
+  /// DELETE with a JSON body. The backend's account-delete + family-line
+  /// removal routes all use `{"confirm": "..."}` guards in the body, so
+  /// our DELETE has to send one. `http.delete` accepts a body the same
+  /// way as POST/PUT — the standard discourages it but Fastify/Express
+  /// both parse it fine and our backend already does.
+  Future<Map<String, dynamic>> delete(
+    String path, [
+    Map<String, dynamic>? body,
+  ]) async {
+    final res = await http
+        .delete(
+          Uri.parse('$baseUrl$path'),
+          headers: _headers,
+          body: body != null ? jsonEncode(body) : null,
+        )
+        .timeout(const Duration(seconds: 20));
+    return _handle(res);
+  }
+
   Map<String, dynamic> _handle(http.Response res) {
     Map<String, dynamic> body = {};
     try {

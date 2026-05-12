@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/auth_service.dart';
+import '../services/api_service.dart';
 import 'welcome_screen.dart';
 import 'family_alert_privacy_screen.dart';
 
@@ -37,7 +38,166 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
+  void _showProfileEdit(BuildContext context) {
+    final session = auth.session;
+    if (session == null) return;
+    final ctrl = TextEditingController(text: session.displayName ?? '');
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AegisColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (sheetCtx) {
+        bool saving = false;
+        return StatefulBuilder(builder: (innerCtx, setSheet) {
+          return Padding(
+            padding: EdgeInsets.fromLTRB(
+              20, 20, 20,
+              20 + MediaQuery.of(innerCtx).viewInsets.bottom,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Center(
+                  child: Container(
+                    width: 40,
+                    height: 4,
+                    decoration: BoxDecoration(
+                      color: AegisColors.border,
+                      borderRadius: BorderRadius.circular(2),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Your profile',
+                  style: Theme.of(innerCtx).textTheme.titleLarge?.copyWith(
+                        fontWeight: FontWeight.w700,
+                      ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  session.email ?? (session.userId == 'guest'
+                      ? 'Guest session — sign in to keep this name across devices'
+                      : 'Apple sign-in'),
+                  style: Theme.of(innerCtx).textTheme.bodySmall?.copyWith(
+                        color: AegisColors.textTertiary,
+                      ),
+                ),
+                const SizedBox(height: 20),
+                TextField(
+                  controller: ctrl,
+                  textCapitalization: TextCapitalization.words,
+                  maxLength: 120,
+                  enabled: !saving,
+                  decoration: const InputDecoration(
+                    labelText: 'Display name',
+                    border: OutlineInputBorder(),
+                    helperText:
+                        'Shown in recovery chat + family alerts. Leave blank to clear.',
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton(
+                    onPressed: saving
+                        ? null
+                        : () async {
+                            setSheet(() => saving = true);
+                            try {
+                              await auth.updateProfile(
+                                displayName: ctrl.text,
+                              );
+                              if (!innerCtx.mounted) return;
+                              Navigator.of(innerCtx).pop();
+                            } catch (e) {
+                              setSheet(() => saving = false);
+                              if (!innerCtx.mounted) return;
+                              ScaffoldMessenger.of(innerCtx).showSnackBar(
+                                SnackBar(
+                                  content: Text(
+                                    e is ApiException
+                                        ? 'Save failed: ${e.message}'
+                                        : 'Save failed. Check your connection.',
+                                  ),
+                                ),
+                              );
+                            }
+                          },
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AegisColors.turquoise,
+                      foregroundColor: Colors.black,
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                    child: saving
+                        ? const SizedBox(
+                            width: 18,
+                            height: 18,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.black,
+                            ),
+                          )
+                        : const Text(
+                            'Save',
+                            style: TextStyle(
+                              fontWeight: FontWeight.w700,
+                              fontSize: 15,
+                            ),
+                          ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        });
+      },
+    );
+  }
+
   void _showBilling(BuildContext context) {
+    // Backend `UserTier` vocab is currently coarse: 'pending' | 'pro' |
+    // 'expired' | 'cancelled' (per src/lib/subscription.ts). We don't
+    // yet receive the specific product_id back through /auth/me, so we
+    // can only show whether they're on a paid tier vs free — Apple owns
+    // the actual line-item charge history and is the source of truth
+    // for "which SKU did I buy" anyway.
+    final tier = auth.session?.tier ?? 'free';
+    final (productName, displayPrice, cadence) = switch (tier) {
+      'pro' || 'in_grace' => (
+          'AegisDial Pro',
+          'Active',
+          'See App Store for the price you signed up at',
+        ),
+      'expired' => (
+          'AegisDial Pro',
+          'Expired',
+          'Your subscription is no longer active',
+        ),
+      'cancelled' => (
+          'AegisDial Pro',
+          'Cancelled',
+          'Active until period end · See App Store',
+        ),
+      'guest' => (
+          'Guest session',
+          'Free',
+          'Sign in to start your 7-day trial',
+        ),
+      _ => (
+          'AegisDial — Free trial',
+          'Free',
+          '7-day trial — upgrade to keep protection active',
+        ),
+    };
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AegisColors.surface,
@@ -51,7 +211,7 @@ class SettingsScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Billing History',
+              'Billing',
               style: Theme.of(context)
                   .textTheme
                   .titleLarge
@@ -71,7 +231,7 @@ class SettingsScreen extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      'AegisDial Pro · Annual',
+                      productName,
                       style: Theme.of(context)
                           .textTheme
                           .bodyMedium
@@ -79,7 +239,7 @@ class SettingsScreen extends StatelessWidget {
                     ),
                   ),
                   Text(
-                    '\$399.00',
+                    displayPrice,
                     style: Theme.of(context).textTheme.bodyMedium?.copyWith(
                           color: AegisColors.textSecondary,
                         ),
@@ -89,9 +249,17 @@ class SettingsScreen extends StatelessWidget {
             ),
             const SizedBox(height: 8),
             Text(
-              'Billed via App Store · Renews annually',
+              cadence,
               style: Theme.of(context).textTheme.labelSmall?.copyWith(
                     color: AegisColors.textTertiary,
+                  ),
+            ),
+            const SizedBox(height: 20),
+            Text(
+              'Charge history and cancellation are managed by Apple. Open Settings → [Your Name] → Subscriptions → AegisDial.',
+              style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                    color: AegisColors.textTertiary,
+                    height: 1.5,
                   ),
             ),
           ],
@@ -101,15 +269,21 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showDeleteConfirm(BuildContext context) {
+    final isGuest = auth.session?.userId == 'guest';
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AegisColors.surface,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
         title: const Text('Delete account?'),
-        content: const Text(
-          'This permanently deletes your account, all breach monitors, family lines, and chat history. This cannot be undone.',
-          style: TextStyle(color: AegisColors.textSecondary, height: 1.5),
+        content: Text(
+          isGuest
+              ? 'This clears your guest session and local data on this device.'
+              : 'This permanently deletes your account on our servers, including all breach monitors, family lines, recovery chat history, and subscription records. This cannot be undone.',
+          style: const TextStyle(
+            color: AegisColors.textSecondary,
+            height: 1.5,
+          ),
         ),
         actions: [
           TextButton(
@@ -117,13 +291,44 @@ class SettingsScreen extends StatelessWidget {
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.of(ctx).pop();
-              auth.signOut();
-              Navigator.of(context).pushAndRemoveUntil(
-                MaterialPageRoute(builder: (_) => const WelcomeScreen()),
-                (_) => false,
+              // Optimistic UX: show a blocking spinner while the cascade
+              // delete runs server-side. On the dashboard build it takes
+              // ~200ms; if the user is offline or the backend is down,
+              // we surface the error instead of silently signing them
+              // out with the row still alive.
+              showDialog(
+                context: context,
+                barrierDismissible: false,
+                builder: (_) => const Center(
+                  child: CircularProgressIndicator(
+                    color: AegisColors.danger,
+                  ),
+                ),
               );
+              try {
+                await auth.deleteAccount();
+                if (!context.mounted) return;
+                Navigator.of(context).pop(); // spinner
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const WelcomeScreen()),
+                  (_) => false,
+                );
+              } catch (e) {
+                if (!context.mounted) return;
+                Navigator.of(context).pop(); // spinner
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      e is ApiException
+                          ? 'Delete failed: ${e.message} (try again in a moment)'
+                          : 'Delete failed. Check your connection and try again.',
+                    ),
+                    duration: const Duration(seconds: 5),
+                  ),
+                );
+              }
             },
             style: ElevatedButton.styleFrom(
               minimumSize: const Size(0, 44),
@@ -225,11 +430,7 @@ class SettingsScreen extends StatelessWidget {
               final isGuest = session?.userId == 'guest';
               final email = session?.email;
               return GlassCard(
-                onTap: () => _showInfo(
-                  context,
-                  'Your profile',
-                  'Profile editing — name, photo, and notification preferences — is coming in the next update.',
-                ),
+                onTap: () => _showProfileEdit(context),
                 child: Row(
                   children: [
                     Container(
@@ -289,12 +490,26 @@ class SettingsScreen extends StatelessWidget {
           const SizedBox(height: 20),
           _SectionLabel('SUBSCRIPTION'),
           Builder(builder: (context) {
+            // Backend tier vocab: 'pending' | 'pro' | 'expired' |
+            // 'cancelled' | 'guest' | 'free'. We don't yet receive
+            // monthly-vs-annual or Recovery Concierge specifically, so
+            // the trailing text says "Active" instead of a stale price.
             final tier = auth.session?.tier ?? 'free';
             final (label, trailing, body) = switch (tier) {
-              'pro' => (
+              'pro' || 'in_grace' => (
                   'AegisDial Pro',
-                  '\$49.99/mo',
+                  'Active',
                   'You\'re on Pro. Manage or cancel via App Store → Account → Subscriptions.',
+                ),
+              'expired' => (
+                  'AegisDial Pro',
+                  'Expired',
+                  'Your Pro subscription has expired. Renew on the paywall to restore protection.',
+                ),
+              'cancelled' => (
+                  'AegisDial Pro',
+                  'Cancelled',
+                  'You\'ve cancelled — coverage continues until the current period ends.',
                 ),
               'guest' => (
                   'Free trial',
