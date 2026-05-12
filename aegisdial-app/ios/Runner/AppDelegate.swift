@@ -42,9 +42,13 @@ import UserNotifications
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
 
+    // `FlutterImplicitEngineBridge` doesn't expose `binaryMessenger`
+    // directly. The recommended path is `applicationRegistrar.messenger()`
+    // — same FlutterBinaryMessenger object the engine uses for its own
+    // platform channels.
     let channel = FlutterMethodChannel(
       name: pushChannelName,
-      binaryMessenger: engineBridge.binaryMessenger
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
     )
     pushChannel = channel
     channel.setMethodCallHandler { [weak self] call, result in
@@ -127,7 +131,15 @@ extension AppDelegate {
     withCompletionHandler completionHandler:
       @escaping (UNNotificationPresentationOptions) -> Void
   ) {
-    completionHandler([.banner, .sound, .badge])
+    // .banner is iOS 14+. .alert is the iOS 13 spelling — iOS 14+ still
+    // accepts it (deprecated but functional, maps to .banner + .list).
+    // Branch with #available so the iOS 13 floor compiles + the iOS 14+
+    // banner-only behavior is preserved on newer OS versions.
+    if #available(iOS 14.0, *) {
+      completionHandler([.banner, .list, .sound, .badge])
+    } else {
+      completionHandler([.alert, .sound, .badge])
+    }
   }
 
   override func userNotificationCenter(
