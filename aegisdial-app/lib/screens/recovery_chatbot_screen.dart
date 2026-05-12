@@ -82,7 +82,11 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
     ));
 
     _loadTrial();
-    _loadChat();
+    // Skip restoring stale chat history when we were handed a preload —
+    // the hand-off greeting + just-detected scam is a fresh session and
+    // we don't want old conversations bleeding in behind it. The user
+    // can still see prior history if they come back to recovery cold.
+    if (!hasPreload) _loadChat();
     PurchaseService.addListener(_onEntitlementUpdate);
 
     // v4 hand-off — fire the preload as the first user message so the
