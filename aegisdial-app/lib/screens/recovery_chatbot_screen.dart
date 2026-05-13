@@ -681,6 +681,23 @@ class _QuickPromptStrip extends StatelessWidget {
   }
 }
 
+/// Heuristic: does this bot reply talk about calling a bank's fraud
+/// line? When it does we render a "Find fraud line" tap-action below
+/// the bubble so the user doesn't have to scroll to the app-bar icon
+/// mid-crisis. Kept deliberately loose — false positives just show a
+/// chip the user can ignore, false negatives are the real failure
+/// mode (the action stays buried in the app bar).
+bool _shouldShowBankChip(String botText) {
+  final l = botText.toLowerCase();
+  if (l.contains("fraud line") || l.contains("fraud number")) return true;
+  if (l.contains("call your bank")) return true;
+  if (l.contains("back of your card")) return true;
+  if (l.contains("your bank") && (l.contains("call") || l.contains("phone"))) {
+    return true;
+  }
+  return false;
+}
+
 class _Bubble extends StatelessWidget {
   final _ChatMessage message;
   const _Bubble({required this.message});
@@ -772,12 +789,51 @@ class _Bubble extends StatelessWidget {
                   width: 0.6,
                 ),
               ),
-              child: Text(
-                message.text,
-                style: tt.bodyMedium?.copyWith(
-                  color: AegisColors.textPrimary,
-                  height: 1.45,
-                ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    message.text,
+                    style: tt.bodyMedium?.copyWith(
+                      color: AegisColors.textPrimary,
+                      height: 1.45,
+                    ),
+                  ),
+                  if (!isUser && _shouldShowBankChip(message.text)) ...[
+                    const SizedBox(height: 10),
+                    InkWell(
+                      borderRadius: BorderRadius.circular(999),
+                      onTap: () => showBankLookupSheet(context),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 10, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: AegisColors.turquoise.withValues(alpha: 0.14),
+                          borderRadius: BorderRadius.circular(999),
+                          border: Border.all(
+                            color: AegisColors.turquoise.withValues(alpha: 0.4),
+                            width: 0.8,
+                          ),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            const Icon(Icons.phone_in_talk_rounded,
+                                color: AegisColors.turquoise, size: 14),
+                            const SizedBox(width: 6),
+                            Text(
+                              "Find your bank's fraud line",
+                              style: tt.labelMedium?.copyWith(
+                                color: AegisColors.turquoise,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
               ),
             ),
           ),
