@@ -129,6 +129,41 @@ class IdentityShieldTile {
       activeThreatsNearUser30d > 0;
 }
 
+/// Aggregate breakdown of active scammer activity from
+/// `/v1/identity-shield/threats/near`. Total + 7d delta plus severity
+/// and identifier-kind histograms.
+class IdentityThreatsBreakdown {
+  final int total;
+  final int delta7d;
+  final Map<String, int> bySeverity; // informational/caution/warning/confirmed_scammer
+  final Map<String, int> byKind; // phone_e164/email_address/crypto_wallet/url_host/ip_address
+
+  const IdentityThreatsBreakdown({
+    required this.total,
+    required this.delta7d,
+    required this.bySeverity,
+    required this.byKind,
+  });
+
+  factory IdentityThreatsBreakdown.fromBackend(Map<String, dynamic> j) {
+    Map<String, int> intMap(dynamic raw) {
+      if (raw is Map) {
+        return raw.map(
+          (k, v) => MapEntry(k.toString(), v is num ? v.toInt() : 0),
+        );
+      }
+      return const {};
+    }
+
+    return IdentityThreatsBreakdown(
+      total: ((j['total'] as num?) ?? 0).toInt(),
+      delta7d: ((j['delta_7d'] as num?) ?? 0).toInt(),
+      bySeverity: intMap(j['by_severity']),
+      byKind: intMap(j['by_kind']),
+    );
+  }
+}
+
 class IdentityShieldService {
   IdentityShieldService._();
   static final IdentityShieldService instance = IdentityShieldService._();
@@ -215,6 +250,21 @@ class IdentityShieldService {
       return rows
           .map((r) => IdentityFinding.fromBackend(r as Map<String, dynamic>))
           .toList();
+    } on ApiException {
+      return null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// GET /v1/identity-shield/threats/near. Returns aggregate counts of
+  /// active scammer activity bucketed by severity + identifier kind.
+  /// Backend caches for 5 min so repeated polls are cheap.
+  Future<IdentityThreatsBreakdown?> threatsNear() async {
+    if (!_canSync) return null;
+    try {
+      final res = await api.get('/v1/identity-shield/threats/near');
+      return IdentityThreatsBreakdown.fromBackend(res);
     } on ApiException {
       return null;
     } catch (_) {

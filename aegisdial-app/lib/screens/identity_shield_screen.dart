@@ -25,6 +25,7 @@ class _IdentityShieldScreenState extends State<IdentityShieldScreen> {
   final List<IdentityMonitor> _monitors = [];
   final List<IdentityFinding> _findings = [];
   IdentityShieldTile? _tile;
+  IdentityThreatsBreakdown? _threats;
   bool _loading = true;
   bool _refreshing = false;
 
@@ -45,9 +46,11 @@ class _IdentityShieldScreenState extends State<IdentityShieldScreen> {
       );
       final monitors = await identityShieldService.listMonitors();
       final findings = await identityShieldService.listFindings(limit: 30);
+      final threats = await identityShieldService.threatsNear();
       if (!mounted) return;
       setState(() {
         _tile = IdentityShieldTile.fromStats(stats);
+        _threats = threats;
         _monitors
           ..clear()
           ..addAll(monitors ?? const []);
@@ -153,6 +156,10 @@ class _IdentityShieldScreenState extends State<IdentityShieldScreen> {
                     padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
                     children: [
                       _ThreatsTile(tile: _tile),
+                      if (_threats != null && _threats!.total > 0) ...[
+                        const SizedBox(height: 14),
+                        _ThreatBreakdownCard(breakdown: _threats!),
+                      ],
                       const SizedBox(height: 20),
                       Text('MONITORED IDENTIFIERS',
                           style: _sectionLabel(tt)),
@@ -263,6 +270,157 @@ class _ThreatsTile extends StatelessWidget {
                     : AegisColors.success,
               ),
             ],
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Aggregate breakdown of `/v1/identity-shield/threats/near`. Renders
+/// a two-row chip set: severity buckets (informational / caution /
+/// warning / confirmed_scammer) and identifier-kind buckets (phone /
+/// email / crypto / url / ip). Empty buckets are hidden so the card
+/// stays compact when only a few categories are populated.
+class _ThreatBreakdownCard extends StatelessWidget {
+  final IdentityThreatsBreakdown breakdown;
+  const _ThreatBreakdownCard({required this.breakdown});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    // Severity → color. The "confirmed_scammer" bucket is the loudest;
+    // informational is intentionally muted so the user's eye lands on
+    // the warning/critical rows first.
+    const sevColor = {
+      'informational': AegisColors.textSecondary,
+      'caution': AegisColors.blueAccent,
+      'warning': AegisColors.warning,
+      'confirmed_scammer': AegisColors.danger,
+    };
+    const sevLabel = {
+      'informational': 'Info',
+      'caution': 'Caution',
+      'warning': 'Warning',
+      'confirmed_scammer': 'Confirmed',
+    };
+    const kindLabel = {
+      'phone_e164': 'Phone',
+      'email_address': 'Email',
+      'crypto_wallet': 'Crypto',
+      'url_host': 'URL',
+      'ip_address': 'IP',
+    };
+
+    final sevChips = sevLabel.entries
+        .where((e) => (breakdown.bySeverity[e.key] ?? 0) > 0)
+        .map((e) => _ThreatChip(
+              label: e.value,
+              count: breakdown.bySeverity[e.key] ?? 0,
+              color: sevColor[e.key] ?? AegisColors.textSecondary,
+            ))
+        .toList();
+    final kindChips = kindLabel.entries
+        .where((e) => (breakdown.byKind[e.key] ?? 0) > 0)
+        .map((e) => _ThreatChip(
+              label: e.value,
+              count: breakdown.byKind[e.key] ?? 0,
+              color: AegisColors.textSecondary,
+            ))
+        .toList();
+
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AegisColors.surface.withValues(alpha: 0.6),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AegisColors.border, width: 0.6),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Threat activity',
+            style: tt.titleSmall?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            '${breakdown.total} active threats globally · ${breakdown.delta7d >= 0 ? '+' : ''}${breakdown.delta7d} this week',
+            style: tt.bodySmall?.copyWith(color: AegisColors.textTertiary),
+          ),
+          if (sevChips.isNotEmpty) ...[
+            const SizedBox(height: 12),
+            Text(
+              'BY SEVERITY',
+              style: tt.labelSmall?.copyWith(
+                color: AegisColors.textTertiary,
+                letterSpacing: 1.4,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 6, children: sevChips),
+          ],
+          if (kindChips.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            Text(
+              'BY KIND',
+              style: tt.labelSmall?.copyWith(
+                color: AegisColors.textTertiary,
+                letterSpacing: 1.4,
+                fontWeight: FontWeight.w600,
+                fontSize: 10,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Wrap(spacing: 6, runSpacing: 6, children: kindChips),
+          ],
+        ],
+      ),
+    );
+  }
+}
+
+class _ThreatChip extends StatelessWidget {
+  final String label;
+  final int count;
+  final Color color;
+  const _ThreatChip({
+    required this.label,
+    required this.count,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.35), width: 0.6),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            label,
+            style: tt.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w600,
+              fontSize: 11.5,
+            ),
+          ),
+          const SizedBox(width: 6),
+          Text(
+            '$count',
+            style: tt.labelSmall?.copyWith(
+              color: color,
+              fontWeight: FontWeight.w800,
+              fontSize: 11.5,
+            ),
           ),
         ],
       ),
