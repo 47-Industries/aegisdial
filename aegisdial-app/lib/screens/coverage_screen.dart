@@ -169,10 +169,43 @@ class _CoverageScreenState extends State<CoverageScreen> {
 
     _ScanResult result;
     try {
-      final res = await api.post('/v1/sms-classify', {'text': text});
-      final score = ((res['risk_score'] as num?) ?? 0).round();
-      final level = (res['risk_level'] as String?) ?? 'LOW';
-      final reason = (res['reason'] as String?) ?? '';
+      // Prefer the v3 endpoint `/v1/sms/score` which persists the scan
+      // to `sms_scans` and returns the richer `explainable_reasons` /
+      // `url_findings` payload. Falls back to the legacy
+      // `/v1/sms-classify` route on 404 so users on rolling-deploy
+      // backends mid-cutover still get a verdict.
+      Map<String, dynamic> res;
+      bool isV3;
+      try {
+        res = await api.post('/v1/sms/score', {'message_body': text});
+        isV3 = true;
+      } on ApiException catch (e) {
+        if (e.statusCode == 404 || e.statusCode == 501) {
+          res = await api.post('/v1/sms-classify', {'text': text});
+          isV3 = false;
+        } else {
+          rethrow;
+        }
+      }
+
+      // v3 uses `fraud_score`/`verdict`/`explainable_reasons`. Legacy
+      // uses `risk_score`/`risk_level`/`reason`. Normalize into the
+      // single _ScanResult shape the UI already renders.
+      final score = isV3
+          ? ((res['fraud_score'] as num?) ?? 0).round()
+          : ((res['risk_score'] as num?) ?? 0).round();
+      final level = isV3
+          ? _verdictToLevel((res['verdict'] as String?) ?? 'safe')
+          : (res['risk_level'] as String?) ?? 'LOW';
+      // v3 returns `explainable_reasons: string[]` — concatenate the
+      // first few into the same `reason` slot the legacy UI uses.
+      final reason = isV3
+          ? ((res['explainable_reasons'] as List<dynamic>?)
+                  ?.take(2)
+                  .map((e) => e.toString())
+                  .join(' · ') ??
+              '')
+          : (res['reason'] as String?) ?? '';
       final cats = (res['triggered_categories'] as List<dynamic>?)
               ?.map((e) => e.toString())
               .toList() ??
@@ -497,6 +530,22 @@ class _CoverageScreenState extends State<CoverageScreen> {
         ],
       ),
     );
+  }
+
+  // Map the v3 SMS Shield verdict literal ('safe'|'suspicious'|'fraud')
+  // back into the legacy 'LOW'|'MEDIUM'|'HIGH' string the existing
+  // _ScanResultCard renders. Centralised so the verdict→level mapping
+  // can be rebuilt in one place when the UI is itself upgraded.
+  String _verdictToLevel(String verdict) {
+    switch (verdict) {
+      case 'fraud':
+        return 'HIGH';
+      case 'suspicious':
+        return 'MEDIUM';
+      case 'safe':
+      default:
+        return 'LOW';
+    }
   }
 }
 

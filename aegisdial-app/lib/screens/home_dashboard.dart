@@ -5,9 +5,11 @@ import '../widgets/glass_card.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
+import '../services/identity_shield_service.dart';
 import 'live_shield_active.dart';
 import 'coverage_screen.dart';
 import 'breach_screen.dart';
+import 'identity_shield_screen.dart';
 
 class HomeDashboard extends StatefulWidget {
   static final liveShieldKey = GlobalKey();
@@ -32,6 +34,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
   bool _shieldOn = true;
   String _statsLabel = 'COMMUNITY IMPACT';
   List<(String, String, Color)> _displayStats = _kPlatformStats;
+  IdentityShieldTile? _identityTile;
 
   @override
   void initState() {
@@ -61,16 +64,22 @@ class _HomeDashboardState extends State<HomeDashboard> {
       final calls = ((res['shields_this_week'] as num?) ?? 0).toInt();
       final scams = ((res['critical_calls_avoided_30d'] as num?) ?? 0).toInt();
       final breaches = ((res['breaches_found_30d'] as num?) ?? 0).toInt();
-      if (calls > 0 || scams > 0 || breaches > 0) {
-        setState(() {
+      // Identity Shield tile counts ride on the same stats response,
+      // so one round trip powers both the existing 3-up tile row AND
+      // the new Identity Shield card. The tile is always parsed (even
+      // when all zeros) so the card renders with neutral copy.
+      final identityTile = IdentityShieldTile.fromStats(res);
+      setState(() {
+        _identityTile = identityTile;
+        if (calls > 0 || scams > 0 || breaches > 0) {
           _statsLabel = 'MY STATS';
           _displayStats = [
             (_fmtNum(calls), 'Calls\nscreened', AegisColors.turquoise),
             (_fmtNum(scams), 'Scams\nblocked', AegisColors.success),
             (_fmtNum(breaches), 'Breaches\ncaught', AegisColors.blueAccent),
           ];
-        });
-      }
+        }
+      });
     } catch (_) {}
   }
 
@@ -318,6 +327,15 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     ),
                   ],
                 ),
+                const SizedBox(height: 12),
+                _IdentityShieldCard(
+                  tile: _identityTile,
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const IdentityShieldScreen(),
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 20),
                 Text(
                   _statsLabel,
@@ -408,6 +426,119 @@ class _StatTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+/// Home-screen card for Identity Shield. Renders even when `tile` is
+/// null (pre-load state) — shows neutral "Monitoring" copy so the row
+/// doesn't visually pop in after the stats round-trip completes.
+class _IdentityShieldCard extends StatelessWidget {
+  final IdentityShieldTile? tile;
+  final VoidCallback onTap;
+  const _IdentityShieldCard({required this.tile, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final t = tile;
+    final hasSignal = t?.hasAnySignal ?? false;
+    final findings7d = t?.newFindings7d ?? 0;
+    // Card body copy: prefer the findings signal (it's the actionable one),
+    // then monitor count, then a neutral baseline. Never lie about zero
+    // monitors looking like "you're covered" — guide to action instead.
+    final body = findings7d > 0
+        ? '$findings7d new ${findings7d == 1 ? "exposure" : "exposures"} this week — tap to review.'
+        : (t?.monitorsActive ?? 0) > 0
+            ? 'Watching ${t!.monitorsActive} identifier${t.monitorsActive == 1 ? "" : "s"} for fresh dark-web leaks.'
+            : 'Add an email or phone to monitor for dark-web exposures.';
+    final accent = findings7d > 0
+        ? AegisColors.danger
+        : (hasSignal ? AegisColors.blueAccent : AegisColors.textSecondary);
+    return GlassCard(
+      accent: accent,
+      onTap: onTap,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: accent.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Icon(Icons.radar_rounded, color: accent),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Identity Shield',
+                      style: tt.titleMedium
+                          ?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      t == null
+                          ? 'Loading…'
+                          : '${t.activeThreatsNearUser30d} active threats near you',
+                      style: tt.bodySmall
+                          ?.copyWith(color: AegisColors.textTertiary),
+                    ),
+                  ],
+                ),
+              ),
+              if (findings7d > 0)
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AegisColors.danger.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(
+                        color: AegisColors.danger.withValues(alpha: 0.4),
+                        width: 0.8),
+                  ),
+                  child: Text(
+                    '$findings7d new',
+                    style: tt.labelSmall?.copyWith(
+                      color: AegisColors.danger,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 11,
+                    ),
+                  ),
+                )
+              else
+                const Icon(Icons.chevron_right_rounded,
+                    color: AegisColors.textTertiary, size: 20),
+            ],
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+            decoration: BoxDecoration(
+              color: AegisColors.surfaceElevated,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    body,
+                    style: tt.bodySmall
+                        ?.copyWith(color: AegisColors.textSecondary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }
