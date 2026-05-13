@@ -1,7 +1,7 @@
 name: aegisdial_app
 description: "AegisDial — fraud prevention + recovery"
 publish_to: 'none'
-version: 1.0.0+13
+version: 1.0.0+14
 
 environment:
   sdk: ^3.11.5
@@ -17,6 +17,7 @@ dependencies:
   sign_in_with_apple: ^6.1.4
   purchases_flutter: ^8.0.0
   speech_to_text: ^7.0.0
+  url_launcher: ^6.3.0
 
 dev_dependencies:
   flutter_test:

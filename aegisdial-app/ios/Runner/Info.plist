@@ -80,5 +80,14 @@
 	<string>AegisDial uses your camera to capture evidence (e.g. fake check, scam letter) for your recovery report.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<!-- url_launcher schemes (iOS 9+ requires explicit declaration for
+	     canLaunchUrl). `tel` is for the bank fraud-line jumper in the
+	     Recovery chatbot; `sms` reserved for the future "report this
+	     scam to 7726" SHAFT flow. -->
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>tel</string>
+		<string>sms</string>
+	</array>
 </dict>
 </plist>

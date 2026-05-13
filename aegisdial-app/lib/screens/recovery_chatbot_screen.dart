@@ -6,6 +6,7 @@ import '../services/trial_service.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/purchase_service.dart';
+import '../widgets/bank_lookup_sheet.dart';
 import 'paywall_screen.dart';
 import 'recovery_screen.dart';
 
@@ -371,6 +372,16 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
           ],
         ),
         actions: [
+          // Bank fraud-line jumper — high-frequency action when the
+          // user is mid-crisis ("I just sent money via Chase"). Lives
+          // in the app bar so it's reachable without scrolling through
+          // the chat thread.
+          IconButton(
+            icon: const Icon(Icons.phone_in_talk_rounded, size: 20),
+            color: AegisColors.turquoise,
+            tooltip: "Find your bank's fraud line",
+            onPressed: () => showBankLookupSheet(context),
+          ),
           if (_messages.length > 1)
             IconButton(
               icon: const Icon(Icons.add_comment_outlined, size: 20),
