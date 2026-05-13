@@ -152,6 +152,63 @@ class _CoverageScreenState extends State<CoverageScreen> {
         });
       }
     } catch (_) {}
+
+    // After local hydrate, pull server-side history. The backend
+    // persists every /v1/sms/score result to sms_scans, so a user who
+    // pasted from another device sees their history here too. Best-
+    // effort: 401/403/5xx and ApiException all fall through to the
+    // local-only view above.
+    await _resyncFromBackend();
+  }
+
+  Future<void> _resyncFromBackend() async {
+    try {
+      final res = await api.get('/v1/sms/scans?limit=50');
+      final scans = (res['scans'] as List<dynamic>?) ?? [];
+      if (scans.isEmpty || !mounted) return;
+      final remote = <_HistoryEntry>[];
+      for (final s in scans) {
+        final m = s as Map<String, dynamic>;
+        final score = ((m['fraud_score'] as num?) ?? 0).round();
+        final verdict = (m['verdict'] as String?) ?? 'safe';
+        final excerpt = (m['body_excerpt'] as String?) ?? '';
+        final reasons = (m['reasons'] as List<dynamic>?)
+                ?.take(2)
+                .map((e) => e.toString())
+                .join(' · ') ??
+            '';
+        final cats = (m['triggered_categories'] as List<dynamic>?)
+                ?.map((e) => e.toString())
+                .toList() ??
+            const [];
+        final ts = DateTime.tryParse((m['scanned_at'] as String?) ?? '') ??
+            DateTime.now();
+        remote.add(_HistoryEntry(
+          textPreview: excerpt,
+          score: score,
+          level: _verdictToLevel(verdict),
+          finding: reasons.isNotEmpty
+              ? reasons
+              : verdict == 'safe'
+                  ? 'No obvious scam patterns detected.'
+                  : 'Suspicious content — do not click links or reply.',
+          categories: cats,
+          ts: ts,
+        ));
+      }
+      if (!mounted) return;
+      setState(() {
+        // Backend is the source of truth for Pro users — replace
+        // local history wholesale so the UI doesn't disagree with
+        // /v1/sms/scans.
+        _history = remote;
+      });
+      _saveHistory();
+    } on ApiException {
+      // 401 / 403 / 5xx — keep local-only view
+    } catch (_) {
+      // Network / parse failure — keep local-only view
+    }
   }
 
   Future<void> _saveHistory() async {

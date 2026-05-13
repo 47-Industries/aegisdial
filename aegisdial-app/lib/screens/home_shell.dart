@@ -85,6 +85,12 @@ class _HomeShellState extends State<HomeShell> {
           body: 'Check if your email or phone has appeared in dark-web data leaks.',
         ),
         CoachStep(
+          targetKey: HomeDashboard.identityShieldKey,
+          title: 'Identity Shield',
+          body:
+              'Watch for active scammer activity targeting your identity — fresh breaches, dark-web mentions, threat patterns near you.',
+        ),
+        CoachStep(
           targetKey: HomeShell.recoveryTabKey,
           title: 'Recovery Concierge',
           body: 'Just got scammed? Tap here and we\'ll walk you through every step to stop the damage.',

@@ -15,6 +15,7 @@ class HomeDashboard extends StatefulWidget {
   static final liveShieldKey = GlobalKey();
   static final smsFilterKey = GlobalKey();
   static final breachKey = GlobalKey();
+  static final identityShieldKey = GlobalKey();
 
   const HomeDashboard({super.key});
 
@@ -328,11 +329,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                _IdentityShieldCard(
-                  tile: _identityTile,
-                  onTap: () => Navigator.of(context).push(
-                    MaterialPageRoute(
-                      builder: (_) => const IdentityShieldScreen(),
+                KeyedSubtree(
+                  key: HomeDashboard.identityShieldKey,
+                  child: _IdentityShieldCard(
+                    tile: _identityTile,
+                    onTap: () => Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => const IdentityShieldScreen(),
+                      ),
                     ),
                   ),
                 ),
