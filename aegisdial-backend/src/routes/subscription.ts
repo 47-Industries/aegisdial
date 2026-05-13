@@ -12,6 +12,10 @@ import { verifyStripeSignature, handleStripeEvent, createCheckoutSession } from 
 import { syncFamilyPlanSeatsToSubscription } from '../lib/familySeats.js';
 import { planForProductId, grantDaysForOneTime } from '../lib/plans.js';
 import { config } from '../config.js';
+import {
+  revokeOnRefund as revokeRecoveryPlusOnRefund,
+  RECOVERY_PLUS_PRODUCT_ID,
+} from '../services/recovery/recoveryPlusEntitlement.js';
 
 // Subscription routes. This file exposes:
 //  - POST /subscription/apple/verify  — iOS sends the JWS-signed Transaction
@@ -471,7 +475,51 @@ export async function handleAppleNotification(
     case 'REVOKE': {
       // REFUND = Apple refunded the charge (customer-initiated or Apple-
       // initiated support case). REVOKE = family-sharing member lost
-      // access. Same DB shape: the row is no longer entitling.
+      // access. Same handling shape, but the target table depends on
+      // the product:
+      //
+      //   - Subscription productIds (com.aegisdial.app.pro.*) → the
+      //     `subscriptions` row gets status='refunded' + tier reconcile.
+      //   - Recovery Plus one-time (RECOVERY_PLUS_PRODUCT_ID) → the
+      //     `recovery_plus_purchases` row gets refunded_at stamped,
+      //     killing the entitlement. (R-H1 adversarial-review fix —
+      //     prior to this branch a refunded Plus purchase kept the
+      //     entitlement live forever.)
+      //
+      // Resolve the productId from whichever payload is present.
+      const productId =
+        decoded.transaction?.productId ?? decoded.renewalInfo?.productId ?? null;
+
+      if (productId === RECOVERY_PLUS_PRODUCT_ID) {
+        if (!originalTxId) {
+          log.warn(
+            { type, productId },
+            'apple REFUND/REVOKE for Recovery Plus with no originalTransactionId — skipping',
+          );
+          return;
+        }
+        try {
+          const result = await revokeRecoveryPlusOnRefund(originalTxId);
+          if (!result.revoked) {
+            // Apple sometimes sends refund notifications for txs we
+            // never saw (sandbox bleed, pre-bind webhook race). Same
+            // posture as the subscriptions-table no-row path: log,
+            // don't error, so Apple's retry queue doesn't pound us.
+            log.warn(
+              { originalTxId, productId, type },
+              'apple REFUND/REVOKE for Recovery Plus matched no row — skipping',
+            );
+          }
+        } catch (err) {
+          log.error(
+            { err: (err as Error).message, originalTxId, productId, type },
+            'recovery plus refund handler threw — preserving 200 to Apple',
+          );
+        }
+        return;
+      }
+
+      // Subscription path — unchanged.
       if (!existing || !originalTxId) {
         log.warn({ originalTxId, type }, 'apple REFUND/REVOKE for unknown transaction — skipping');
         return;

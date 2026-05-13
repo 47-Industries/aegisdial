@@ -338,7 +338,8 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
 
       const [
         profile, subscriptions, familyContacts, familyMembership,
-        callSessions, transcriptEvents, smsClassifications,
+        callSessions, transcriptEvents, smsClassifications, smsScans,
+        emailAccounts, emailScans, emailCompromiseReports, emailTamperAlerts,
         monitoredIdentifiers, breachAlerts,
         recoverySessions, recoveryEvidence,
         recoveryOutcomes, recoveryCompanionMessages,
@@ -383,6 +384,62 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
             LIMIT 10000`,
         ),
         pull(`SELECT * FROM sms_classifications WHERE user_id = $1 ORDER BY created_at DESC LIMIT 5000`),
+        // SMS Shield manual-paste scans. Stored as sha256(body) +
+        // digit-redacted 80-char excerpt — never plaintext. Exporting
+        // these closes the GDPR Art. 20 gap: a user asking "give me a
+        // copy of every row AegisDial stores about me" should see their
+        // SMS Shield activity, not just call history.
+        pull(
+          `SELECT id, body_sha256, body_excerpt, sender_e164, fraud_score,
+                  verdict, triggered_categories, reasons, url_findings,
+                  source, scanned_at
+             FROM sms_scans WHERE user_id = $1
+             ORDER BY scanned_at DESC LIMIT 5000`,
+        ),
+        // Email Shield — linked-account registry. OAuth/app-password
+        // ciphertext is EXCLUDED from the export by design: it lets
+        // the user see what's linked and when, but exporting
+        // tokens-on-paper is a phishing-surface gift (an attacker who
+        // got the export PDF would get persistent inbox read access).
+        // Tokens stay envelope-encrypted at rest only.
+        pull(
+          `SELECT id, provider, provider_account_id, display_email,
+                  status, last_poll_at, created_at, updated_at
+             FROM email_accounts WHERE user_id = $1
+             ORDER BY created_at DESC`,
+        ),
+        // Email Shield — per-message scan history. Same posture as
+        // sms_scans: no body at rest, only subject_excerpt +
+        // from_address_hash + sender_domain. Safe to export as-is.
+        pull(
+          `SELECT id, email_account_id, external_message_id,
+                  from_address_hash, sender_domain, subject_excerpt,
+                  fraud_score, verdict, triggered_categories, reasons,
+                  url_findings, attachment_findings, scanned_at
+             FROM email_scans WHERE user_id = $1
+             ORDER BY scanned_at DESC LIMIT 5000`,
+        ),
+        // Email Shield — compromise-check reports. Findings are
+        // descriptive (rule action types, app names, breach domain
+        // names) — never raw payloads — so safe to export as-is.
+        pull(
+          `SELECT id, email_account_id, overall_verdict, findings,
+                  generated_at
+             FROM email_compromise_reports WHERE user_id = $1
+             ORDER BY generated_at DESC LIMIT 500`,
+        ),
+        // Email Shield — inbox-tamper alerts ("did you delete this?"
+        // pushes the user responded to or let expire). subject_excerpt
+        // was already digit-redacted at scan-time; sender_domain is
+        // eTLD+1 plaintext. Safe to export as-is — no PII beyond what
+        // already lives on email_scans.
+        pull(
+          `SELECT id, email_account_id, scan_id, sender_domain,
+                  subject_excerpt, delete_after_seconds, status,
+                  responded_at, created_at
+             FROM email_tamper_alerts WHERE user_id = $1
+             ORDER BY created_at DESC LIMIT 500`,
+        ),
         pull<{
           id: string; kind: string; display_value: string; display_value_ct: string | null;
           last_scanned_at: Date | null; last_scan_exposure_count: number; created_at: Date;
@@ -560,6 +617,11 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         call_sessions: callSessions,
         transcript_events: transcriptsDecrypted,
         sms_classifications: smsClassifications,
+        sms_scans: smsScans,
+        email_accounts: emailAccounts,
+        email_scans: emailScans,
+        email_compromise_reports: emailCompromiseReports,
+        email_tamper_alerts: emailTamperAlerts,
         monitored_identifiers: monitoredDecrypted,
         breach_alerts: breachAlerts,
         recovery_sessions: sessionsDecrypted,

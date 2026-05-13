@@ -13,12 +13,15 @@ import { verdictRoutes } from './routes/verdict.js';
 import { reportRoutes } from './routes/report.js';
 import { healthRoutes } from './routes/health.js';
 import { adminRoutes } from './routes/admin.js';
+import { adminEmailShieldRoutes } from './routes/adminEmailShield.js';
 import { authRoutes } from './routes/auth.js';
 import { subscriptionRoutes } from './routes/subscription.js';
 import { familyRoutes } from './routes/family.js';
 import { recoveryRoutes } from './routes/recovery.js';
 import { liveShieldRoutes } from './routes/liveShield.js';
 import { smsClassifyRoutes } from './routes/smsClassify.js';
+import { smsShieldRoutes } from './routes/smsShield.js';
+import { emailShieldRoutes } from './routes/emailShield.js';
 import { familyContactsRoutes } from './routes/familyContacts.js';
 import { breachRoutes } from './routes/breach.js';
 import { guardianRoutes } from './routes/guardian.js';
@@ -73,6 +76,37 @@ import { startCrawlPrewarmer, stopCrawlPrewarmer } from './workers/crawlPrewarme
 // Live Shield v3 — A1 hot-numbers cache populator. Returns null when
 // V3_A1_ENABLED is OFF; cron task does not register at all in that case.
 import { startA1HotNumbersPopulator } from './workers/a1HotNumbersPopulator.js';
+// Recovery Shield (R-P5 user routes, R-P6 admin routes). Routes are
+// always registered; per-route auth + flag gates inside each handler
+// govern behavior, matching the v3 lookup/blocks idiom.
+import { recoveryShieldRoutes } from './routes/recoveryShield.js';
+import { adminRecoveryShieldRoutes } from './routes/adminRecoveryShield.js';
+// Identity Shield (I-P3 user routes, I-P7 admin routes + I-P3a/b/c +
+// I-P5 + I-P6 workers). Same registration idiom — workers idle
+// gracefully when their respective env vars (HIBP, Enzoic, Tor,
+// Telegram fleet) are absent.
+import { identityShieldRoutes } from './routes/identityShield.js';
+import { adminIdentityShieldRoutes } from './routes/adminIdentityShield.js';
+import {
+  startIdentityShieldIngest,
+  stopIdentityShieldIngest,
+} from './workers/identityShieldIngest.js';
+import {
+  startTelegramListener,
+  stopTelegramListener,
+} from './workers/telegramChatterListener.js';
+import {
+  startDarknetCrawler,
+  stopDarknetCrawler,
+} from './workers/darknetMarketCrawler.js';
+import {
+  startIdentityShieldDigest,
+  stopIdentityShieldDigest,
+} from './workers/identityShieldDigest.js';
+import {
+  startThreatLandscapeAnalyst,
+  stopThreatLandscapeAnalyst,
+} from './workers/threatLandscapeAnalystWorker.js';
 
 const app = Fastify({
   logger: {
@@ -118,6 +152,8 @@ await app.register(familyRoutes);
 await app.register(recoveryRoutes);
 await app.register(liveShieldRoutes);
 await app.register(smsClassifyRoutes);
+await app.register(smsShieldRoutes);
+await app.register(emailShieldRoutes);
 await app.register(familyContactsRoutes);
 await app.register(breachRoutes);
 await app.register(guardianRoutes);
@@ -129,6 +165,7 @@ await app.register(banksRoutes);
 await app.register(verdictRoutes);
 await app.register(reportRoutes);
 await app.register(adminRoutes);
+await app.register(adminEmailShieldRoutes);
 await app.register(analyticsRoutes);
 await app.register(internalRoutes);
 await app.register(familyAlertPreferencesRoutes);
@@ -166,6 +203,14 @@ if (config.V4_PLAYBOOK_AWARE_ENABLED) {
 }
 await app.register(familyJoinRoutes);
 await app.register(familyTranscriptStreamRoutes);
+// Recovery Shield R-P5 (user) + R-P6 (admin). Auth/flag gates live
+// inside each handler — registering unconditionally matches the
+// emailShield + lookup/blocks idiom.
+await app.register(recoveryShieldRoutes);
+await app.register(adminRecoveryShieldRoutes);
+// Identity Shield I-P3 (user) + I-P7 (admin). Same idiom.
+await app.register(identityShieldRoutes);
+await app.register(adminIdentityShieldRoutes);
 
 const scheduler = config.ENABLE_CRAWLERS ? startScheduler() : null;
 const breachRescanner = startBreachRescanner();
@@ -182,6 +227,26 @@ const recoveryFollowup = startRecoveryFollowup();
 // V3_A1_CACHE_RECOMPUTE_INTERVAL_MINUTES (default 6h). No-op when
 // V3_A1_ENABLED is OFF.
 const a1HotNumbersPopulator = startA1HotNumbersPopulator();
+// Identity Shield I-P3a — HIBP catalog sync + per-user HIBP scan +
+// Enzoic plaintext-password scan. Worker logs degraded mode and
+// idles when HIBP_API_KEY / Enzoic keys are unset (dev/CI default).
+const identityShieldIngest = startIdentityShieldIngest();
+// Identity Shield I-P3b — Telegram scammer-services listener. Idles
+// when TELEGRAM_BOT_ACCOUNT_N_* triples are unset or threat_intel
+// channels table is empty (logged once at startup).
+const telegramListener = startTelegramListener();
+// Identity Shield I-P3c — Tor-proxied darknet market crawler. Idles
+// when DARKNET_CRAWLER_TOR_SOCKS5_HOST/_PORT are unset (expected
+// dev/CI default). Self-test runs at boot.
+const darknetCrawler = startDarknetCrawler();
+// Identity Shield I-P5 — daily/weekly push digest scheduler. Crons
+// run unconditionally; sendDigestForUser short-circuits per-user
+// when push tokens or cadence are absent.
+const identityShieldDigest = startIdentityShieldDigest();
+// Identity Shield I-P6 — AI meta-analyst (daily + quarterly). Boots
+// idle and works off whatever the ingest/listener/crawler workers
+// have produced.
+const threatLandscapeAnalyst = startThreatLandscapeAnalyst();
 
 app.setErrorHandler((err, req, reply) => {
   const fastifyErr = err as { statusCode?: number; code?: string; message: string };
@@ -234,6 +299,11 @@ const shutdown = async (signal: string): Promise<void> => {
     if (a1HotNumbersPopulator) {
       a1HotNumbersPopulator.task.stop();
     }
+    stopIdentityShieldIngest(identityShieldIngest);
+    stopTelegramListener(telegramListener);
+    stopDarknetCrawler(darknetCrawler);
+    stopIdentityShieldDigest(identityShieldDigest);
+    stopThreatLandscapeAnalyst(threatLandscapeAnalyst);
     stopPostDismissWatcher();
     stopB4Orchestrator();
     stopV4PlaybookSubscriber();

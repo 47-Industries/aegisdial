@@ -38,6 +38,21 @@ import { redis } from '../lib/cache.js';
 
 const START_SCHEMA = z.object({
   scam_number: z.string().optional(),
+  // SMS Shield → Recovery handoff. If the user scanned a text that came
+  // back fraud/suspicious and taps "I got scammed by this", the iOS app
+  // passes the sms_scans.id here. We hydrate scam_number from the scan's
+  // sender_e164 and stitch the scan's body_excerpt into the description
+  // (still envelope-encrypted at rest). User-supplied scam_number /
+  // description win over hydrated values if both are present.
+  sms_scan_id: z.string().uuid().optional(),
+  // Email Shield → Recovery handoff. Mirrors the sms_scan_id pattern:
+  // when a user opens the compromise-check or scan-detail screen on a
+  // 'fraud' / 'suspicious' verdict and taps "I got scammed by this",
+  // iOS passes the email_scans.id. We hydrate description with the
+  // sender_domain + subject_excerpt (already digit-redacted at scan
+  // time — no plaintext PII surfaces). Ownership enforced via
+  // WHERE user_id = $2 — leaked UUIDs can't open cross-user sessions.
+  email_scan_id: z.string().uuid().optional(),
   scam_type: z
     .enum([
       // Impersonation
@@ -195,11 +210,89 @@ export async function recoveryRoutes(app: FastifyInstance): Promise<void> {
       const body = START_SCHEMA.safeParse(req.body ?? {});
       if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
 
-      const scamE164 = body.data.scam_number ? normalizeE164(body.data.scam_number) : null;
+      // SMS Shield handoff. If the iOS app passed sms_scan_id, look up
+      // the scan to backfill scam_number + description. The scan must
+      // belong to THIS user — never cross-user (a leaked scan UUID
+      // shouldn't open a recovery session against someone else's record).
+      // User-supplied values win; the scan is a hint, not an override.
+      let smsScanSender: string | null = null;
+      let smsScanExcerpt: string | null = null;
+      if (body.data.sms_scan_id) {
+        const scanRes = await query<{
+          sender_e164: string | null;
+          body_excerpt: string;
+        }>(
+          `SELECT sender_e164, body_excerpt
+             FROM sms_scans WHERE id = $1 AND user_id = $2`,
+          [body.data.sms_scan_id, user.id],
+        );
+        if (scanRes.rowCount === 0) {
+          return reply.code(404).send({ error: 'sms_scan_not_found' });
+        }
+        smsScanSender = scanRes.rows[0]!.sender_e164;
+        smsScanExcerpt = scanRes.rows[0]!.body_excerpt;
+        // verdict deliberately NOT gated — a user who self-identifies
+        // as a victim wins over a 'safe' verdict. Disagreement-with-
+        // model is fine; what matters is the user wants recovery
+        // guidance now. Track as analytics signal if desired later.
+      }
+
+      // Email Shield handoff. Mirrors the SMS path: lookup is scoped
+      // to (id, user_id) so a leaked UUID can't open a cross-user
+      // recovery session. sender_domain + subject_excerpt are already
+      // sanitized (eTLD+1 only, digit-redacted excerpt) per migration
+      // 058, so stitching them into a recovery description doesn't
+      // leak anything beyond what's already in email_scans.
+      let emailScanSender: string | null = null;
+      let emailScanSubject: string | null = null;
+      if (body.data.email_scan_id) {
+        const scanRes = await query<{
+          sender_domain: string;
+          subject_excerpt: string;
+        }>(
+          `SELECT sender_domain, subject_excerpt
+             FROM email_scans WHERE id = $1 AND user_id = $2`,
+          [body.data.email_scan_id, user.id],
+        );
+        if (scanRes.rowCount === 0) {
+          return reply.code(404).send({ error: 'email_scan_not_found' });
+        }
+        emailScanSender = scanRes.rows[0]!.sender_domain;
+        emailScanSubject = scanRes.rows[0]!.subject_excerpt;
+      }
+
+      const scamE164 = body.data.scam_number
+        ? normalizeE164(body.data.scam_number)
+        : smsScanSender
+          ? normalizeE164(smsScanSender)
+          : null;
       const scamType: ScamType = body.data.scam_type ?? 'generic';
       const amountCents = body.data.amount_lost_usd
         ? Math.round(body.data.amount_lost_usd * 100)
         : null;
+      // Description: user-supplied wins; otherwise stitch the redacted
+      // SMS or Email excerpt with a "from {Shield} scan" prefix so the
+      // recovery session reads like a coherent incident note.
+      // body_excerpt / subject_excerpt are capped at insert time — we
+      // append an ellipsis when at the cap so users see "...message
+      // ended here…" instead of a hard truncation. Precedence:
+      // explicit description → SMS scan excerpt → Email scan excerpt
+      // (SMS wins on the rare both-passed-at-once case since the
+      // SMS-Shield flow has been live longer and has richer context).
+      const EXCERPT_CAP = 80;
+      let description: string | undefined;
+      if (body.data.description) {
+        description = body.data.description;
+      } else if (smsScanExcerpt) {
+        description = `Reported via SMS Shield. Message excerpt: "${smsScanExcerpt}${smsScanExcerpt.length >= EXCERPT_CAP ? '…' : ''}"`;
+      } else if (emailScanSubject) {
+        // sender_domain is already eTLD+1; subject_excerpt is already
+        // digit-redacted. Safe to include verbatim.
+        const subjectTail = emailScanSubject.length >= EXCERPT_CAP ? '…' : '';
+        description = emailScanSender
+          ? `Reported via Email Shield. Sender: ${emailScanSender}. Subject: "${emailScanSubject}${subjectTail}"`
+          : `Reported via Email Shield. Subject: "${emailScanSubject}${subjectTail}"`;
+      }
 
       // Does the user have a family plan? Steps include a "notify family"
       // entry when they do.
@@ -273,7 +366,7 @@ export async function recoveryRoutes(app: FastifyInstance): Promise<void> {
             null,
             encryptInt(amountCents),
             '',
-            body.data.description ? encryptString(body.data.description) : null,
+            description ? encryptString(description) : null,
             namedGuardianId,
           ],
         );

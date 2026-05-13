@@ -30,4 +30,19 @@ describe('retentionSweeper module', () => {
       assert.equal(typeof r.skipped, 'boolean');
     }
   });
+
+  it('includes sms_scans and the Email Shield tables in the sweep', async () => {
+    // Defensive pin: the SMS Shield wire-up (commit 1b6e350) and
+    // Email Shield P1 each add to SPECS. If a future refactor drops
+    // any of these, retention silently regresses — this test catches
+    // it before launch.
+    const results = await sweeper.runRetentionSweepOnce();
+    const tables = new Set(results.map((r) => r.table));
+    assert.ok(tables.has('sms_scans'), 'sms_scans missing from retention sweep');
+    assert.ok(tables.has('email_scans'), 'email_scans missing from retention sweep');
+    assert.ok(
+      tables.has('email_compromise_reports'),
+      'email_compromise_reports missing from retention sweep',
+    );
+  });
 });

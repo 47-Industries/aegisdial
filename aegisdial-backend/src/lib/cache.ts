@@ -245,6 +245,46 @@ export async function cacheInvalidate(key: string): Promise<void> {
   await redis.del(key);
 }
 
+/**
+ * Atomic GET + DEL via the Redis `GETDEL` command (Redis ≥ 6.2;
+ * supported by Upstash). The caller gets the value AND removes
+ * the key in one round trip — replay-safe for single-use tokens.
+ *
+ * Used by Email Shield's OAuth callback to redeem a state token
+ * (commit 768e335 adversarial-review H2 fix): the prior pattern
+ * was `cacheGet(key)` then `cacheInvalidate(key)`, which lets two
+ * concurrent requests both pass the existence check before either
+ * deletes. With GETDEL the read + delete are atomic — exactly one
+ * concurrent caller sees the value, the rest get null.
+ *
+ * Falls back to GET+DEL when the Redis client doesn't expose
+ * `getdel` (older ioredis / in-memory test stubs). The fallback
+ * preserves the single-caller-wins-by-luck shape — tests stub
+ * accordingly.
+ */
+export async function cacheGetAndDelete<T>(key: string): Promise<T | null> {
+  const client = redis as unknown as {
+    getdel?: (k: string) => Promise<string | null>;
+    get: (k: string) => Promise<string | null>;
+    del: (k: string) => Promise<number>;
+  };
+  let raw: string | null;
+  if (typeof client.getdel === 'function') {
+    raw = await client.getdel(key);
+  } else {
+    // Non-atomic fallback. Tests stub this path via the in-memory
+    // Redis shim; production runs the atomic branch.
+    raw = await client.get(key);
+    if (raw !== null) await client.del(key);
+  }
+  if (!raw) return null;
+  try {
+    return JSON.parse(raw) as T;
+  } catch {
+    return null;
+  }
+}
+
 export function verdictCacheKey(e164: string): string {
   return `verdict:${e164}`;
 }

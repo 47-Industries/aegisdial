@@ -132,12 +132,39 @@ export async function runA1HotNumbersPopulatorOnce(): Promise<PopulatorStats> {
     );
     const liveShieldSet = new Set(liveShieldQualifiers.rows.map((r) => r.peer_e164));
 
+    // Cross-pool promotion gate: SMS Shield fraud/suspicious senders
+    // promote already-candidate numbers across the qualification
+    // threshold. A number must already appear in recent_mentions
+    // (FCC list, user-block, or diverse-sources) to enter `candidates`
+    // at all — pure-SMS-only scammers without mention-graph presence
+    // are NOT injected here. Same constraint applies to liveShieldSet.
+    // Pure-SMS injection is a separate work item (would need its own
+    // weight model so SMS volume doesn't crowd out the call-side
+    // signal). 30-day window matches the call-side qualifier and the
+    // sms_scans retention sweep.
+    // Defense-in-depth alongside the insert-time normalize in
+    // src/routes/smsShield.ts: even if a legacy row was written before
+    // the normalize landed (or some other writer skipped it), we filter
+    // to E.164-shaped senders here so the .has(c.e164) match against
+    // the recent_mentions candidates can actually hit. Alphanumeric
+    // short codes ("CHASE") and bare digit strings are excluded —
+    // they wouldn't match the call-side peer_e164 anyway.
+    const smsShieldQualifiers = await query<{ sender_e164: string }>(
+      `SELECT DISTINCT sender_e164
+         FROM sms_scans
+        WHERE verdict IN ('fraud', 'suspicious')
+          AND sender_e164 ~ '^\\+[1-9][0-9]{6,14}$'
+          AND scanned_at > NOW() - INTERVAL '30 days'`,
+    );
+    const smsShieldSet = new Set(smsShieldQualifiers.rows.map((r) => r.sender_e164));
+
     const qualified = candidates.rows.filter(
       (c) =>
         c.qualifies_diverse ||
         c.qualifies_fcc ||
         c.qualifies_user_blocks ||
-        liveShieldSet.has(c.e164),
+        liveShieldSet.has(c.e164) ||
+        smsShieldSet.has(c.e164),
     );
 
     const finalCacheSet = qualified.slice(0, config.V3_A1_HOT_NUMBERS_CACHE_SIZE);

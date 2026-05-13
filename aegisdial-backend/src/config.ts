@@ -29,6 +29,37 @@ const schema = z.object({
   YOUTUBE_API_KEY: z.string().optional(),
   GOOGLE_SAFE_BROWSING_API_KEY: z.string().optional(),
 
+  // Email Shield — Gmail OAuth. Required only when Email Shield is
+  // launched; until then the GmailProvider throws a clear "not
+  // configured" error if any route reaches it. Three values:
+  //   - GOOGLE_OAUTH_CLIENT_ID: from Google Cloud Console > APIs &
+  //     Services > Credentials > OAuth 2.0 Client IDs (Web app)
+  //   - GOOGLE_OAUTH_CLIENT_SECRET: same console
+  //   - GOOGLE_OAUTH_REDIRECT_URI: the route that handles the OAuth
+  //     callback (e.g., https://api.aegisdial.com/v1/email/oauth/google/callback)
+  // Scope is locked to gmail.readonly + email + openid — we classify,
+  // we never modify. Documented in iOS permission-prompt copy.
+  GOOGLE_OAUTH_CLIENT_ID: z.string().optional(),
+  GOOGLE_OAUTH_CLIENT_SECRET: z.string().optional(),
+  GOOGLE_OAUTH_REDIRECT_URI: z.string().optional(),
+
+  // Email Shield — Microsoft Graph OAuth (Outlook.com + Microsoft
+  // 365 + Live.com + Hotmail.com — Microsoft consolidated all four
+  // consumer mail endpoints under Graph). Three values:
+  //   - MICROSOFT_OAUTH_CLIENT_ID: Azure App registration > Auth >
+  //     Web platform, single-tenant 'common' (lets consumer +
+  //     Workspace accounts both link)
+  //   - MICROSOFT_OAUTH_CLIENT_SECRET: from the same App registration
+  //   - MICROSOFT_OAUTH_REDIRECT_URI: must match the registered
+  //     redirect URI exactly (e.g.,
+  //     https://api.aegisdial.com/v1/email/oauth/microsoft/callback)
+  // Scope locked to offline_access + Mail.Read + User.Read; we
+  // explicitly do NOT request Mail.ReadWrite, Mail.Send, or any
+  // write-bearing scope.
+  MICROSOFT_OAUTH_CLIENT_ID: z.string().optional(),
+  MICROSOFT_OAUTH_CLIENT_SECRET: z.string().optional(),
+  MICROSOFT_OAUTH_REDIRECT_URI: z.string().optional(),
+
   // Ekata Pro Insight Phone Intelligence v2 — full subscriber +
   // address enrichment for phone lookups. Optional; gated by presence
   // of the API key.
@@ -43,6 +74,120 @@ const schema = z.object({
     .string()
     .default('false')
     .transform((v) => v === 'true'),
+
+  // Have I Been Pwned — breach-exposure check for Email Shield
+  // Pillar 3 (/v1/email/compromise-check). Optional — Pro-tier
+  // feature degrades gracefully without it (the finding object
+  // returns `reason_skipped: 'no_api_key'` and the composite verdict
+  // falls back to the four configuration-level detectors). Key is
+  // purchased per-month from haveibeenpwned.com/API/Key and ships
+  // as a Fly secret. NEVER log this value.
+  HIBP_API_KEY: z.string().optional(),
+
+  // Identity Shield I-P3a — Enzoic credential-exposure API
+  // (separate channel from the legacy ENZOIC_API_KEY/SECRET that
+  // backs src/lib/enzoic.ts's per-call exposure surface). The
+  // Identity Shield ingest worker reads these on its daily batch
+  // path: /credentials/exposures with HTTP Basic auth using the
+  // (KEY:SECRET) pair. Both optional — when either is missing the
+  // worker logs "no enzoic creds, skipping" once at startup and
+  // continues running its HIBP and catalog-sync paths.
+  //
+  // Operator note: as of cutover plan we expect the same Enzoic
+  // account to back both — populate both pairs for now. Keeping the
+  // env-var names distinct lets us issue a separate API key for
+  // Identity Shield post-BD-contract without disturbing Email
+  // Shield's calibration. NEVER log either value.
+  EMAIL_SHIELD_ENZOIC_API_KEY: z.string().optional(),
+  EMAIL_SHIELD_ENZOIC_SECRET: z.string().optional(),
+
+  // Identity Shield I-M2 — Enzoic per-day user-scan cap.
+  //
+  // The daily Enzoic batch worker (scanAllUsersEnzoicOnce) scans
+  // every active email monitor by default. At ~100k users with ~1
+  // email each, an unbounded daily run can runaway in cost and
+  // rate-budget. When set, the worker shuffles the user list and
+  // scans only the first N users that day. Over a 7-day window
+  // every user gets sampled at least once at default sub-cap of
+  // ~5000/day for ~35k users. Default unset = no cap (legacy
+  // behavior for sub-launch + test).
+  ENZOIC_DAILY_USER_CAP: z.coerce.number().int().positive().optional(),
+
+  // Identity Shield I-P3b — Telegram chatter listener bot fleet.
+  //
+  // Up to 5 rotating Telegram bot accounts feed the chatter listener
+  // worker (src/workers/telegramChatterListener.ts). Each account is a
+  // tuple of (api_id, api_hash, phone_e164, session) — api_id +
+  // api_hash come from https://my.telegram.org > API Development Tools;
+  // phone is the burner SIM the account was registered against; session
+  // is a gramjs StringSession blob persisted between worker restarts so
+  // we don't trigger MTProto auth-flow on every reboot.
+  //
+  // SCAFFOLD SEMANTICS: every variable below is .optional(). When NO
+  // account triples are populated, the worker logs "Telegram bot fleet
+  // empty — listener will be a no-op" once at startup and idles.
+  // Partial fleets (e.g., accounts 1 + 2 populated, 3-5 empty) work fine
+  // — the worker round-robins across populated accounts.
+  //
+  // OPS RUNBOOK:
+  //   - SIMs are burner-grade, rotated quarterly to dodge account bans.
+  //   - api_id/api_hash are per-account (NOT shared across the fleet) so
+  //     a Telegram TOS strike against one account doesn't taint the rest.
+  //   - SESSION is regenerated by the operator runbook one-time after a
+  //     SIM rotation and stored as a Fly secret. NEVER commit a session
+  //     blob to git — it's the cryptographic credential.
+  //   - Worker marks an account "dead" after 2 consecutive session-
+  //     restore failures and fails over to remaining accounts. Operator
+  //     alert fires when fleet liveness drops below 2/5.
+  TELEGRAM_BOT_ACCOUNT_1_API_ID: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_1_API_HASH: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_1_PHONE: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_1_SESSION: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_2_API_ID: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_2_API_HASH: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_2_PHONE: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_2_SESSION: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_3_API_ID: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_3_API_HASH: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_3_PHONE: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_3_SESSION: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_4_API_ID: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_4_API_HASH: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_4_PHONE: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_4_SESSION: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_5_API_ID: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_5_API_HASH: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_5_PHONE: z.string().optional(),
+  TELEGRAM_BOT_ACCOUNT_5_SESSION: z.string().optional(),
+
+  // Identity Shield I-P3c — darknet market crawler Tor proxy.
+  //
+  // The crawler (src/workers/darknetMarketCrawler.ts) routes every HTTP
+  // GET through a SOCKS5 Tor proxy hosted out-of-band on a Hetzner VPS
+  // (NOT Fly — Fly's TOS doesn't love Tor exit-adjacent traffic). When
+  // either var is unset the worker logs "Darknet crawler disabled — no
+  // Tor proxy configured" once at startup and idles forever. That is
+  // the dev/CI default so nothing accidentally reaches .onion hosts
+  // from a developer laptop.
+  //
+  // OBSERVER-ONLY POSTURE — load-bearing for legal posture:
+  //   The crawler is a READ-ONLY consumer of public market listing
+  //   pages. It NEVER posts, NEVER bids, NEVER creates an account,
+  //   NEVER pays for vendor-buyer-bonds, NEVER initiates contact with
+  //   sellers. Architecturally enforced — the worker's HTTP wrapper
+  //   only allows GET, and there is no write path against any market.
+  //   See db/migrations/072_threat_intel_channels.sql header for the
+  //   broader OBSERVER-ONLY architectural invariant set.
+  //
+  // OPS RUNBOOK:
+  //   - Tor SOCKS5 proxy fleet (3 exit nodes) lives on a separate VPS
+  //     provider (Hetzner). Proxy rotation is handled inside the
+  //     fleet, not by the worker — the worker sees one stable
+  //     host:port endpoint and the fleet load-balances behind it.
+  //   - NEVER log either value. They identify our crawler infra; an
+  //     attacker who learns the endpoint could DDoS our Tor entry.
+  DARKNET_CRAWLER_TOR_SOCKS5_HOST: z.string().optional(),
+  DARKNET_CRAWLER_TOR_SOCKS5_PORT: z.coerce.number().int().min(1).max(65535).optional(),
 
   // IPQualityScore — phone fraud / spam-risk cross-check. Optional;
   // provides `fraud_score` we surface as `spam_risk_score`.
@@ -500,6 +645,34 @@ const schema = z.object({
   // V4_PLAYBOOK_AWARE_ENABLED (default false) keeps everything
   // dormant in prod until ops flips it.
   V4_B4_CLAIM_COVERAGE_TELEMETRY_ENABLED: z.string().default('true').transform((v) => v === 'true'),
+
+  // -------------------------------------------------------------------
+  // Recovery Shield — R-P3b chain-API keys
+  //
+  // Crypto-trace agent (src/services/recovery/cryptoTraceAgent.ts) pulls
+  // on-chain transaction history via Etherscan-compatible explorers
+  // (one API key per EVM chain), Blockchair (Bitcoin), TronScan (Tron),
+  // and a Solana RPC endpoint (Helius / Solscan / public RPC).
+  //
+  // ALL OPTIONAL: every key has the same graceful-degradation contract.
+  // A missing key → src/lib/chainFetch.ts returns [] for that chain and
+  // logs a one-shot warning at boot. Hops still get persisted to
+  // trace_report_jsonb (with hops_analyzed=0), so the case row exists
+  // and is visible in admin/operator surfaces. Operators flip the keys
+  // on per-chain as BD lands the API contracts.
+  //
+  // SECURITY: never log these values. The chain-fetch helper redacts
+  // them out of error messages on its own; everything upstream must
+  // not echo the raw config object.
+  ETHERSCAN_API_KEY: z.string().optional(),
+  ARBSCAN_API_KEY: z.string().optional(),
+  OPTIMISM_API_KEY: z.string().optional(),
+  BASESCAN_API_KEY: z.string().optional(),
+  POLYGONSCAN_API_KEY: z.string().optional(),
+  BSCSCAN_API_KEY: z.string().optional(),
+  BLOCKCHAIR_API_KEY: z.string().optional(),
+  TRONSCAN_API_KEY: z.string().optional(),
+  SOLANA_RPC_URL: z.string().optional(),
 });
 
 const parsed = schema.safeParse(process.env);

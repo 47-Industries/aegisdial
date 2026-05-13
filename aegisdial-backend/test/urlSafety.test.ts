@@ -71,3 +71,52 @@ describe('extractUrls — safety caps + canonicalization', () => {
     // contract, not the implementation detail.
   });
 });
+
+describe('heuristicScan — legitimate-brand allowlist (M2 adversarial fix)', () => {
+  // These tests rely on no GOOGLE_SAFE_BROWSING_API_KEY being set, so
+  // scanUrls() falls through to the heuristic path. urlSafety.test.ts
+  // does not export heuristicScan directly; scanUrls is the public
+  // surface that exercises it.
+
+  it('does NOT flag the real chase.com as smishing-keyword', async () => {
+    const findings = await urlScan.scanUrls(['https://chase.com/verify-card']);
+    assert.equal(findings.length, 1);
+    assert.ok(
+      !findings[0]!.threat_types.includes('SMISHING_KEYWORD_IN_URL'),
+      'real bank domain must not trigger SMISHING_KEYWORD_IN_URL — got ' +
+        JSON.stringify(findings[0]!.threat_types),
+    );
+  });
+
+  it('does NOT flag a subdomain of an allowlisted brand', async () => {
+    const findings = await urlScan.scanUrls(['https://secure.chase.com/verify']);
+    assert.equal(findings.length, 1);
+    assert.ok(!findings[0]!.threat_types.includes('SMISHING_KEYWORD_IN_URL'));
+  });
+
+  it('DOES flag a smisher hostname that contains a brand keyword', async () => {
+    const findings = await urlScan.scanUrls(['https://chase-verify.xyz/login']);
+    assert.equal(findings.length, 1);
+    assert.ok(findings[0]!.threat_types.includes('SMISHING_KEYWORD_IN_URL'));
+  });
+
+  it('DOES flag a brand-domain-suffix lookalike (chase.com.evil.xyz)', async () => {
+    // Critical: allowlist suffix-match must require the boundary `.` so
+    // attacker-controlled `chase.com.evil.xyz` does NOT count as chase.com.
+    const findings = await urlScan.scanUrls(['https://chase.com.evil.xyz/verify']);
+    assert.equal(findings.length, 1);
+    assert.ok(findings[0]!.threat_types.includes('SMISHING_KEYWORD_IN_URL'));
+  });
+
+  it('does NOT flag paypal.com/verify', async () => {
+    const findings = await urlScan.scanUrls(['https://paypal.com/myaccount/verify']);
+    assert.equal(findings.length, 1);
+    assert.ok(!findings[0]!.threat_types.includes('SMISHING_KEYWORD_IN_URL'));
+  });
+
+  it('does NOT flag irs.gov path with "verify" in it', async () => {
+    const findings = await urlScan.scanUrls(['https://irs.gov/refunds/verify-status']);
+    assert.equal(findings.length, 1);
+    assert.ok(!findings[0]!.threat_types.includes('SMISHING_KEYWORD_IN_URL'));
+  });
+});

@@ -28,6 +28,63 @@ const SUSPICIOUS_TLDS = new Set([
   '.monster', '.live', '.vip', '.zip', '.mov',
 ]);
 
+// Brand-keyword false-positive guard. The SMISHING_KEYWORD_IN_URL heuristic
+// fires on tokens like "chase" / "paypal" / "irs" appearing anywhere in
+// host+path. That's the right call for `chase-verify.xyz` but the wrong
+// call for `chase.com/verify` — the actual bank's domain. This allowlist
+// records the eTLD+1 (or full host for gov hosts) for brands whose name
+// is in the keyword list above. heuristicScan() short-circuits the
+// keyword flag when the URL's host ends with one of these. GSB still
+// applies — if the real chase.com gets compromised, GSB will catch it.
+//
+// Adversarial fix (M2): a real Chase SMS getting flagged in front of a
+// beta user kills trust on day one.
+const LEGITIMATE_BRAND_DOMAINS = new Set([
+  // Banks / payment processors
+  'chase.com',
+  'wellsfargo.com',
+  'bankofamerica.com',
+  'bofa.com',
+  'usbank.com',
+  'paypal.com',
+  'venmo.com',
+  // Marketplaces / accounts
+  'amazon.com',
+  'apple.com',
+  'icloud.com',
+  // Government
+  'irs.gov',
+  'usps.com',
+  // Shippers
+  'ups.com',
+  'fedex.com',
+  'dhl.com',
+  // Toll authorities (very common smishing target — keep the real ones safe)
+  'ezpassva.com',
+  'ezpassny.com',
+  'ezpassnj.com',
+  'paturnpike.com',
+  'sunpass.com',
+  'thetollroads.com',
+  'bayareafastrak.org',
+  'illinoistollway.com',
+  'peachpass.com',
+  'txtag.org',
+]);
+
+/**
+ * Returns true if `hostname` is (or is a subdomain of) one of the
+ * legitimate brand domains above. Subdomain-tolerant — `secure.chase.com`
+ * and `www.chase.com` both pass; `chase.com.evil.xyz` does not.
+ */
+function isLegitimateBrandHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  for (const domain of LEGITIMATE_BRAND_DOMAINS) {
+    if (h === domain || h.endsWith('.' + domain)) return true;
+  }
+  return false;
+}
+
 export interface UrlFinding {
   url: string;
   is_malicious: boolean;
@@ -243,7 +300,15 @@ function heuristicScan(url: string): UrlFinding {
     // Classic smishing bait tokens in host / path / query. Smishers register
     // domains like usps-redeliv.cfd or chase-verify.xyz — the brand name is
     // in the hostname, not just the path.
-    if (/(usps|ups|fedex|dhl|amazon|irs|usbank|apple[-_]?id|icloud|paypal|venmo|chase|wellsfargo|bankofamerica|bofa|reward|gift|prize|unpaid|toll|redeliv|confirm|verify|secure[-_]?login|account[-_]?locked|ezpass|sunpass|fastrak|i-?pass|tolltag|txtag|peachpass)/i.test(hostAndPath)) {
+    //
+    // Allowlist short-circuit (M2 fix): if the URL's host is on the
+    // legitimate-brand list, do NOT push the keyword flag — the real bank
+    // putting "verify" in its own path is the user navigating
+    // chase.com/verify-card, not a smisher.
+    if (
+      !isLegitimateBrandHost(host) &&
+      /(usps|ups|fedex|dhl|amazon|irs|usbank|apple[-_]?id|icloud|paypal|venmo|chase|wellsfargo|bankofamerica|bofa|reward|gift|prize|unpaid|toll|redeliv|confirm|verify|secure[-_]?login|account[-_]?locked|ezpass|sunpass|fastrak|i-?pass|tolltag|txtag|peachpass)/i.test(hostAndPath)
+    ) {
       threats.push('SMISHING_KEYWORD_IN_URL');
     }
     // Cyrillic / IDN homograph (basic check)
