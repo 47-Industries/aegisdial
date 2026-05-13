@@ -4,6 +4,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
+import '../services/family_contacts_service.dart';
 
 class _FamilyMember {
   final String name;
@@ -11,6 +12,10 @@ class _FamilyMember {
   final String phone;
   bool consentAccepted;
   bool showActivity;
+  /// Server-side row id (from /v1/family-contacts). Null when the row
+  /// was added while offline / non-Pro and hasn't been pushed yet. The
+  /// `_resyncBackend` pass back-fills this on the next sync.
+  String? backendId;
 
   _FamilyMember(
     this.name,
@@ -18,6 +23,7 @@ class _FamilyMember {
     this.phone = '',
     this.consentAccepted = false,
     this.showActivity = true,
+    this.backendId,
   });
 
   Map<String, dynamic> toJson() => {
@@ -26,6 +32,7 @@ class _FamilyMember {
         'p': phone,
         'ca': consentAccepted,
         'sa': showActivity,
+        if (backendId != null) 'id': backendId,
       };
 
   factory _FamilyMember.fromJson(Map<String, dynamic> j) => _FamilyMember(
@@ -34,6 +41,7 @@ class _FamilyMember {
         phone: (j['p'] as String?) ?? '',
         consentAccepted: (j['ca'] as bool?) ?? false,
         showActivity: (j['sa'] as bool?) ?? true,
+        backendId: j['id'] as String?,
       );
 }
 
@@ -82,6 +90,89 @@ class _FamilyScreenState extends State<FamilyScreen> {
         setState(() => _safeWord = sw);
       }
     } catch (_) {}
+    // After the local cache lands, try to pull the canonical list from
+    // the backend. Pro users get cross-device sync; everyone else falls
+    // through with `null` and the local cache stays authoritative.
+    await _resyncFromBackend();
+  }
+
+  /// Pulls the canonical list from `/v1/family-contacts` and merges it
+  /// into _members. We replace by phone-equality so a server row with a
+  /// `backendId` overrides the matching local row (same phone, no id);
+  /// any local-only rows that aren't on the server are pushed up.
+  Future<void> _resyncFromBackend() async {
+    final remote = await familyContactsService.list();
+    if (remote == null) return; // not Pro / offline / 5xx — keep local
+    if (!mounted) return;
+
+    // Index server rows by E.164 phone for cheap merge.
+    final remoteByPhone = {
+      for (final r in remote) r.phone: r,
+    };
+
+    final merged = <_FamilyMember>[];
+    final seenBackendIds = <String>{};
+
+    // Pass 1: walk local rows, upgrade with backend ids where the
+    // phone matches. Local rows without a server match get pushed up
+    // (pass 3 below).
+    for (final local in _members) {
+      final hit = remoteByPhone[local.phone];
+      if (hit != null) {
+        merged.add(_FamilyMember(
+          hit.displayName.isNotEmpty ? hit.displayName : local.name,
+          hit.relationship.isNotEmpty ? hit.relationship : local.relation,
+          phone: hit.phone,
+          consentAccepted: true, // server-persisted ⇒ accepted
+          showActivity: local.showActivity,
+          backendId: hit.backendId,
+        ));
+        if (hit.backendId != null) seenBackendIds.add(hit.backendId!);
+      } else {
+        merged.add(local);
+      }
+    }
+
+    // Pass 2: server rows we haven't already merged in.
+    for (final r in remote) {
+      if (r.backendId != null && seenBackendIds.contains(r.backendId!)) {
+        continue;
+      }
+      // Don't blow past the local 3-line cap on hydration.
+      if (merged.length >= _baseLines) break;
+      merged.add(_FamilyMember(
+        r.displayName,
+        r.relationship,
+        phone: r.phone,
+        consentAccepted: true,
+        backendId: r.backendId,
+      ));
+    }
+
+    setState(() {
+      _members
+        ..clear()
+        ..addAll(merged);
+    });
+    _saveState();
+
+    // Pass 3 (background): any local rows that don't yet have a
+    // backendId — push them up so a different device can see them.
+    if (familyContactsService.canSync) {
+      for (final m in _members.where((m) => m.backendId == null)) {
+        // Skip rows missing a phone — backend rejects without it.
+        if (m.phone.trim().isEmpty) continue;
+        final created = await familyContactsService.create(
+          displayName: m.name,
+          relationship: m.relation.isEmpty ? 'Family' : m.relation,
+          phone: m.phone,
+        );
+        if (created?.backendId != null && mounted) {
+          setState(() => m.backendId = created!.backendId);
+          _saveState();
+        }
+      }
+    }
   }
 
   Future<void> _saveState() async {
@@ -110,6 +201,21 @@ class _FamilyScreenState extends State<FamilyScreen> {
     if (added != null) {
       setState(() => _members.add(added));
       _saveState();
+      // Push to backend in the background if the user has a Pro plan +
+      // a phone number. Backend normalizes to E.164 and gates on Pro;
+      // failures stay local. The next _resyncFromBackend pass will pick
+      // up the backendId.
+      if (familyContactsService.canSync && added.phone.trim().isNotEmpty) {
+        final created = await familyContactsService.create(
+          displayName: added.name,
+          relationship: added.relation.isEmpty ? 'Family' : added.relation,
+          phone: added.phone,
+        );
+        if (created?.backendId != null && mounted) {
+          setState(() => added.backendId = created!.backendId);
+          _saveState();
+        }
+      }
     }
   }
 
@@ -210,8 +316,17 @@ class _FamilyScreenState extends State<FamilyScreen> {
             ..._members.map((m) => _MemberTile(
                   member: m,
                   onRemove: () {
+                    final removedBackendId = m.backendId;
                     setState(() => _members.remove(m));
                     _saveState();
+                    // Best-effort backend delete. We've already removed
+                    // locally so the UI feels instant; if the DELETE
+                    // fails, the next _resyncFromBackend will re-hydrate
+                    // the row (giving the user a chance to retry) which
+                    // is the safer side of the consistency gradient.
+                    if (removedBackendId != null) {
+                      familyContactsService.delete(removedBackendId);
+                    }
                   },
                   onAccept: () {
                     setState(() => m.consentAccepted = true);

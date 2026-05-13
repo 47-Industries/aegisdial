@@ -5,16 +5,27 @@ import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
+import '../services/breach_monitor_service.dart';
 
 enum _IdentifierType { name, phone, email, ssn }
 
 class _Identifier {
   final _IdentifierType type;
   final String value;
+  // Server-side row id when this identifier is syncing through
+  // `/v1/breach/monitor`. Null for SSN/name (never sent), for
+  // guest/free users, and for local-only rows the backend hasn't
+  // accepted yet (transient network errors). `remove()` uses this
+  // to fire the DELETE call; absence just means local-only cleanup.
+  String? backendId;
   bool scanning;
   bool scanned;
-  _Identifier({required this.type, required this.value, this.scanned = false})
-      : scanning = false;
+  _Identifier({
+    required this.type,
+    required this.value,
+    this.scanned = false,
+    this.backendId,
+  }) : scanning = false;
 
   IconData get icon => switch (type) {
         _IdentifierType.name => Icons.person_outline_rounded,
@@ -41,12 +52,14 @@ class _Identifier {
         't': type.index,
         'v': value,
         'sc': scanned,
+        if (backendId != null) 'bid': backendId,
       };
 
   factory _Identifier.fromJson(Map<String, dynamic> j) => _Identifier(
         type: _IdentifierType.values[j['t'] as int],
         value: j['v'] as String,
         scanned: j['sc'] as bool? ?? true,
+        backendId: j['bid'] as String?,
       );
 }
 
@@ -133,6 +146,93 @@ class _BreachScreenState extends State<BreachScreen> {
         }
       }
     } catch (_) {}
+
+    // Pro users: pull the persistent monitor list + alerts from the
+    // backend and merge by (kind, value). This is what flips this
+    // screen from a one-shot quick-check into the actual continuous
+    // monitor the marketing promises. For guest / free / non-Pro
+    // users the service returns null and we keep the local-only
+    // shared-pref flow above untouched.
+    await _resyncFromBackend();
+  }
+
+  Future<void> _resyncFromBackend() async {
+    final bundle = await breachMonitorService.list();
+    if (bundle == null || !mounted) return;
+
+    setState(() {
+      // Layer 1: stamp backendId onto any local row that matches a
+      // server-side monitor by (kind, displayValue match on prefix
+      // or value contains). The backend masks display_value (e.g.
+      // `t****@gmail.com`) so we match on type AND best-effort.
+      // When in doubt we fall through and treat the server row as
+      // authoritative.
+      final remaining = <BreachMonitor>{...bundle.monitors};
+      for (final local in _identifiers) {
+        final kind = switch (local.type) {
+          _IdentifierType.email => 'email',
+          _IdentifierType.phone => 'phone',
+          _ => null,
+        };
+        if (kind == null) continue;
+        BreachMonitor? match;
+        for (final m in remaining) {
+          if (m.kind != kind) continue;
+          // Match on suffix for emails (`@domain.com`) and last 4 for
+          // phones — works against the backend's masked display.
+          if (kind == 'email') {
+            final at = local.value.indexOf('@');
+            if (at > 0 && m.displayValue.endsWith(local.value.substring(at))) {
+              match = m;
+              break;
+            }
+          } else {
+            final digits = local.value.replaceAll(RegExp(r'\D'), '');
+            if (digits.length >= 4 &&
+                m.displayValue.endsWith(digits.substring(digits.length - 4))) {
+              match = m;
+              break;
+            }
+          }
+        }
+        if (match != null) {
+          local.backendId = match.backendId;
+          local.scanned = true;
+          remaining.remove(match);
+        }
+      }
+
+      // Layer 2: any server-side monitor we couldn't match locally
+      // gets added as a new row. We don't have the full plain value
+      // back from the server (only the masked one) so we render the
+      // masked form directly — that's still strictly more useful
+      // than dropping the row. iOS won't be able to round-trip the
+      // value to a quick re-scan, but the row's last_scan_exposure
+      // count + alerts list still reflects accurately.
+      for (final m in remaining) {
+        _identifiers.add(_Identifier(
+          type: m.kind == 'email' ? _IdentifierType.email : _IdentifierType.phone,
+          value: m.displayValue,
+          scanned: true,
+          backendId: m.backendId,
+        ));
+      }
+
+      // Replace exposures wholesale with server alerts when Pro —
+      // the backend is the source of truth and includes
+      // historically-saved alerts that quick-check can't restore.
+      _exposures
+        ..clear()
+        ..addAll(bundle.alerts.map((a) => _Exposure(
+              title: a.title,
+              source: a.sourceDomain ?? 'Unknown source',
+              date: a.date ?? '',
+              icon: Icons.cloud_off_rounded,
+              severity: a.severity,
+              dataTypes: a.dataTypes,
+            )));
+    });
+    _saveState();
   }
 
   Future<void> _saveState() async {
@@ -156,7 +256,18 @@ class _BreachScreenState extends State<BreachScreen> {
     if (result == null) return;
     setState(() => _identifiers.add(result));
     _saveState();
-    _runScan(result);
+    await _runScan(result);
+  }
+
+  Future<void> _removeIdentifier(_Identifier id) async {
+    // Optimistic local removal so the UI doesn't stall on a slow
+    // network. If the DELETE later fails we leave the local row
+    // gone — the next _resyncFromBackend() will pull it back in.
+    setState(() => _identifiers.remove(id));
+    _saveState();
+    if (id.backendId != null) {
+      await breachMonitorService.delete(id.backendId!);
+    }
   }
 
   Future<void> _runScan(_Identifier id) async {
@@ -169,42 +280,102 @@ class _BreachScreenState extends State<BreachScreen> {
     } else if (id.type == _IdentifierType.name) {
       await Future.delayed(const Duration(seconds: 1));
       // Names aren't a breach signal — show clean result
-    } else {
-      // Email or phone — call real backend if auth'd
-      final session = auth.session;
-      if (session != null && session.userId != 'guest') {
-        try {
-          final kind = id.type == _IdentifierType.email ? 'email' : 'phone';
-          final res = await api.post('/v1/breach/quick-check', {
-            'kind': kind,
-            'value': id.value,
-          });
-          final exposures = res['exposures'] as List<dynamic>? ?? [];
-          for (final e in exposures) {
-            final m = e as Map<String, dynamic>;
+    } else if (id.type == _IdentifierType.email ||
+        id.type == _IdentifierType.phone) {
+      final kind = id.type == _IdentifierType.email ? 'email' : 'phone';
+
+      // Pro path: persist this identifier on the backend so we scan
+      // it weekly going forward instead of just running a one-shot
+      // quick-check that doesn't survive reinstall.
+      if (breachMonitorService.canSync) {
+        final result = await breachMonitorService.add(
+          kind: kind,
+          value: id.value,
+        );
+        if (result.ok != null) {
+          id.backendId = result.ok!.monitor.backendId;
+          for (final a in result.ok!.alerts) {
             newExposures.add(_Exposure(
-              title: m['title'] as String? ?? 'Unknown breach',
-              source: (m['source_domain'] as String?) ?? 'Unknown source',
-              date: (m['date'] as String?) ?? '',
+              title: a.title,
+              source: a.sourceDomain ?? 'Unknown source',
+              date: a.date ?? '',
               icon: id.type == _IdentifierType.email
                   ? Icons.cloud_off_rounded
                   : Icons.phone_disabled_rounded,
-              severity: (m['severity'] as String?) ?? 'warning',
-              dataTypes: (m['data_types'] as List<dynamic>?)
-                      ?.map((e) => e.toString())
-                      .toList() ??
-                  [],
+              severity: a.severity,
+              dataTypes: a.dataTypes,
             ));
           }
-        } on ApiException catch (e) {
-          if (e.statusCode == 429) {
-            // Daily limit — show a notice but don't crash
+        } else if (result.err != null && mounted) {
+          // Surface the cap-reached / duplicate / invalid copy from
+          // the server. We let the user keep the local row in all
+          // cases except duplicate (where the server already has it)
+          // — `add()` has already done the optimistic local insert.
+          final msg = switch (result.err!.reason) {
+            BreachAddError.capReached =>
+              result.err!.message ?? 'You can monitor at most 10 identifiers.',
+            BreachAddError.duplicate => 'Already being monitored.',
+            BreachAddError.invalid =>
+              'That ${kind == 'email' ? 'email' : 'phone'} looks invalid.',
+            BreachAddError.network =>
+              "Couldn't reach the breach monitor — saved locally.",
+            BreachAddError.notPro => '',
+          };
+          if (msg.isNotEmpty) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(content: Text(msg)),
+            );
           }
-        } catch (_) {
-          // Network error — show nothing rather than fake data
+          // On duplicate or cap-reached pull the row back out — we
+          // shouldn't keep showing it as freshly-added.
+          if (result.err!.reason == BreachAddError.duplicate ||
+              result.err!.reason == BreachAddError.capReached) {
+            setState(() => _identifiers.remove(id));
+            _saveState();
+          }
         }
       } else {
-        // Guest — no results until signed in
+        // Guest / free / non-Pro: keep the one-shot quick-check flow
+        // so the screen still has *something* useful to show — but
+        // these results are throwaway and don't survive cold-start.
+        final session = auth.session;
+        if (session != null && session.userId != 'guest') {
+          try {
+            final res = await api.post('/v1/breach/quick-check', {
+              'kind': kind,
+              'value': id.value,
+            });
+            final exposures = res['exposures'] as List<dynamic>? ?? [];
+            for (final e in exposures) {
+              final m = e as Map<String, dynamic>;
+              newExposures.add(_Exposure(
+                title: m['title'] as String? ?? 'Unknown breach',
+                source: (m['source_domain'] as String?) ?? 'Unknown source',
+                date: (m['date'] as String?) ?? '',
+                icon: id.type == _IdentifierType.email
+                    ? Icons.cloud_off_rounded
+                    : Icons.phone_disabled_rounded,
+                severity: (m['severity'] as String?) ?? 'warning',
+                dataTypes: (m['data_types'] as List<dynamic>?)
+                        ?.map((e) => e.toString())
+                        .toList() ??
+                    [],
+              ));
+            }
+          } on ApiException catch (e) {
+            if (e.statusCode == 429 && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Free tier limit: 5 breach checks/day. Upgrade for unlimited monitoring.',
+                  ),
+                ),
+              );
+            }
+          } catch (_) {
+            // Network error — show nothing rather than fake data
+          }
+        }
       }
     }
 
@@ -294,7 +465,27 @@ class _BreachScreenState extends State<BreachScreen> {
               ),
             )
           else
-            ..._identifiers.map((id) => _IdentifierTile(id: id)),
+            ..._identifiers.map((id) => Dismissible(
+                  // backendId + value is stable: same identifier value can't
+                  // be added twice (server enforces, client mirrors), so
+                  // value alone is enough — backendId may be null for
+                  // SSN / name / local-only rows.
+                  key: ValueKey('${id.backendId ?? "local"}:${id.value}'),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 18),
+                    alignment: Alignment.centerRight,
+                    decoration: BoxDecoration(
+                      color: AegisColors.danger.withValues(alpha: 0.18),
+                      borderRadius: BorderRadius.circular(14),
+                    ),
+                    child: const Icon(Icons.delete_outline_rounded,
+                        color: AegisColors.danger),
+                  ),
+                  onDismissed: (_) => _removeIdentifier(id),
+                  child: _IdentifierTile(id: id),
+                )),
           const SizedBox(height: 10),
           _AddSlot(onTap: _showAddSheet),
           const SizedBox(height: 24),
