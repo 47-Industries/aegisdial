@@ -3,6 +3,8 @@ import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'api_service.dart';
+import 'consent_service.dart';
+import 'device_service.dart';
 import 'trial_service.dart';
 
 class AuthSession {
@@ -204,11 +206,28 @@ class AuthService extends ChangeNotifier {
 
   Future<void> signOut() async {
     final p = await SharedPreferences.getInstance();
+    // 1. Auth credentials.
     await p.remove(_kToken);
     await p.remove(_kUserId);
     await p.remove(_kTier);
     await p.remove(_kDisplayName);
     await p.remove(_kEmail);
+    // 2. Per-user state owned by other services. Each service exposes
+    //    its own clearForSignOut() so the responsibility for which
+    //    keys it owns stays in the service module.
+    await consentService.clearForSignOut();
+    await deviceService.clearForSignOut();
+    // 3. Per-user state persisted by screens (recovery chat, breach
+    //    monitors, SMS scan history, shield-on toggle). These are PII
+    //    or preference data that MUST NOT leak to the next user on a
+    //    shared device. Listed inline rather than service-owned because
+    //    the screens persist directly to SharedPreferences (known smell;
+    //    refactor candidate, but correctness comes first).
+    await p.remove('recovery_chat_history_v1'); // recovery_chatbot_screen
+    await p.remove('breach_identifiers_v1');    // breach_screen
+    await p.remove('breach_exposures_v1');      // breach_screen
+    await p.remove('sms_scan_history_v1');      // coverage_screen
+    await p.remove('shield_on_v1');             // home_dashboard
     _session = null;
     api.setToken(null);
     // Drop the server-anchored trial start so the next user on this

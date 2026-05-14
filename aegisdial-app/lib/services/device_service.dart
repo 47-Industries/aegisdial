@@ -278,6 +278,22 @@ class DeviceService {
     await p.remove(_kRegisterError);
   }
 
+  /// Wipe all push-diagnostic state. Called from `auth.signOut()` so a
+  /// shared-device handoff doesn't leak the prior user's APNs token
+  /// preview / error / registration timestamp into the next user's
+  /// Settings → Push diagnostic tile. Also clears the in-memory
+  /// `_lastToken` so the next user's first ensureRegistered() will
+  /// re-POST to /v1/device/register under their new bearer.
+  Future<void> clearForSignOut() async {
+    final p = await SharedPreferences.getInstance();
+    await p.remove(_kPermGranted);
+    await p.remove(_kTokenPreview);
+    await p.remove(_kRegisteredAtMs);
+    await p.remove(_kApnsError);
+    await p.remove(_kRegisterError);
+    _lastToken = null;
+  }
+
   bool get _supportsApns {
     if (kIsWeb) return false;
     try {

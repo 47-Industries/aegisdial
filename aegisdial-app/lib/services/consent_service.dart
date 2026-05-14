@@ -35,6 +35,14 @@ class ConsentService {
   Future<int> activeConsentVersion() async {
     return (await hasAcceptedV2()) ? 2 : 1;
   }
+
+  /// Wipe per-user consent. Called from `auth.signOut()` so the next
+  /// user on this device isn't presumed to have accepted v2 LLM
+  /// coaching — consent is per-person, not per-device.
+  Future<void> clearForSignOut() async {
+    final p = await SharedPreferences.getInstance();
+    await p.remove(_kV2Key);
+  }
 }
 
 final consentService = ConsentService.instance;
