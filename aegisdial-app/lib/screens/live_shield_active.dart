@@ -17,16 +17,36 @@ class LiveShieldActiveScreen extends StatefulWidget {
 
 enum _DemoPhase { idle, ringing, transcribing, verdict, done }
 
+// A single demo scenario. Plays a 5-line transcript with a rising fraud
+// score, then surfaces the v4 counter-script card (mid-call when the
+// score crosses 60) and a "why this was a scam" panel on verdict.
+//
+// `playbookId` matches the canonical v4 backend playbook IDs (see
+// `_formatPlaybookLabel`). When the live backend session returns its
+// own counter_scripts (V4_PLAYBOOK_COACHING_ENABLED + ≥0.7 confidence),
+// they overwrite the canned `counterScripts` here. Seeding them locally
+// means demo mode renders the killer feature even when the v4 brain is
+// dormant on the backend.
+//
+// `tellTales` is demo-only — it's the educational "why this is a scam"
+// list that surfaces below the verdict. Real backend sessions don't
+// produce these (yet) so they live on the client.
 class _DemoScenario {
   final String name;
   final String number;
+  final String playbookId;
   final List<String> lines;
   final List<int> scores;
+  final List<String> counterScripts;
+  final List<String> tellTales;
   const _DemoScenario({
     required this.name,
     required this.number,
+    required this.playbookId,
     required this.lines,
     required this.scores,
+    required this.counterScripts,
+    required this.tellTales,
   });
 }
 
@@ -34,6 +54,7 @@ const _kScenarios = [
   _DemoScenario(
     name: 'IRS Impersonation',
     number: '+1 (877) 234-5678',
+    playbookId: 'irs_impersonation',
     lines: [
       'Hello, this is Agent Williams from the Internal Revenue Service.',
       'Your Social Security number has been suspended due to suspicious activity.',
@@ -42,10 +63,22 @@ const _kScenarios = [
       'You owe \$4,280 in back taxes. Payment must be made via gift cards today.',
     ],
     scores: [12, 31, 58, 77, 94],
+    counterScripts: [
+      'Send me a notice in the mail. The IRS never demands payment by phone.',
+      'Give me your name and badge number — I\'ll call the IRS at the official number to verify.',
+      'I\'m hanging up. If this is real, you\'ll mail me a CP-14 notice.',
+    ],
+    tellTales: [
+      'IRS contacts taxpayers by mail first — never by phone with arrest threats',
+      'Demanded payment in gift cards — no government agency accepts gift cards',
+      'Threatened immediate arrest — real federal warrants don\'t come with a phone option',
+      'Caller ID can spoof any number, including "IRS"',
+    ],
   ),
   _DemoScenario(
     name: 'Bank Fraud Alert',
     number: '+1 (800) 935-9935',
+    playbookId: 'bank_impersonation',
     lines: [
       'This is the Wells Fargo fraud prevention team.',
       'We detected a \$2,400 unauthorized charge in Miami on your account.',
@@ -54,10 +87,22 @@ const _kScenarios = [
       'This hold is temporary — funds return within 24 hours once verified.',
     ],
     scores: [8, 28, 52, 79, 96],
+    counterScripts: [
+      'I\'ll hang up and call the number on the back of my card to verify.',
+      'My bank already has my card number — they don\'t ask me for it.',
+      'Send me a secure message in the banking app. I\'ll respond there.',
+    ],
+    tellTales: [
+      'Asked for full card number + CVV — your bank already has this data on file',
+      'Wanted to move funds to a "secure holding account" — real banks freeze fraud, they don\'t move money',
+      'Used urgency to skip verification — real banks let you call back any time',
+      'Spoofed the actual Wells Fargo fraud-line caller ID',
+    ],
   ),
   _DemoScenario(
     name: 'Tech Support',
     number: '+1 (888) 277-4537',
+    playbookId: 'tech_support_scam',
     lines: [
       'Hi, this is Apple Support calling about your Apple ID.',
       'We detected three unauthorized sign-ins from Russia and China.',
@@ -66,6 +111,161 @@ const _kScenarios = [
       'Please also provide your Apple ID password so we can reset your 2FA today.',
     ],
     scores: [10, 24, 49, 73, 97],
+    counterScripts: [
+      'Apple never makes outbound support calls. I\'ll check my Apple ID at appleid.apple.com.',
+      'I\'m not installing remote-access software for an unsolicited caller. Goodbye.',
+      'Send me your case number in writing. I\'ll contact Apple Support directly.',
+    ],
+    tellTales: [
+      'Apple does not make outbound support calls — verify any "Apple" contact at appleid.apple.com',
+      'AnyDesk / TeamViewer install request — remote-access tools are how scammers drain accounts',
+      'Demanded password to "fix" the issue — no legitimate company asks for your password',
+      'Fake 30-minute lockout window to skip verification',
+    ],
+  ),
+  _DemoScenario(
+    name: 'Grandparent Scam',
+    number: '+1 (305) 555-0184',
+    playbookId: 'grandparent_scam',
+    lines: [
+      'Grandma? It\'s me. Don\'t tell mom and dad, but I\'m in trouble.',
+      'I was in a car accident in Mexico and the police arrested me.',
+      'My lawyer says we need \$3,000 in gift cards to make the charges go away.',
+      'Please don\'t call mom — she\'ll be so upset. Just send the cards now.',
+      'I\'m scared, grandma. The officer is letting me make one more call.',
+    ],
+    scores: [18, 42, 71, 86, 93],
+    counterScripts: [
+      'I\'m calling your parents to confirm. Stay on the line.',
+      'Tell me the family code word we agreed on.',
+      'What\'s the name of the police station and the case number? I\'ll send help directly.',
+    ],
+    tellTales: [
+      'Wouldn\'t share name — real grandkids identify themselves',
+      'Asked to keep it secret from parents — isolation tactic to prevent verification',
+      'Demanded gift cards for bail — no court system accepts gift cards',
+      'AI voice cloning makes these calls more believable — always verify on a second channel',
+    ],
+  ),
+  _DemoScenario(
+    name: 'Social Security',
+    number: '+1 (800) 772-1213',
+    playbookId: 'ssa_impersonation',
+    lines: [
+      'This is the Social Security Administration\'s fraud department.',
+      'Your Social Security number has been linked to three crimes including drug trafficking.',
+      'Your benefits will be suspended in 24 hours unless we verify your identity.',
+      'I need your full SSN and date of birth to confirm you\'re not involved.',
+      'To protect your funds, transfer them to our federal safe account today.',
+    ],
+    scores: [14, 38, 65, 82, 95],
+    counterScripts: [
+      'SSA does not suspend SSNs by phone. I\'ll check at ssa.gov/myaccount.',
+      'Mail me the case file. I won\'t share my SSN with an unsolicited caller.',
+      'I\'m reporting this call to oig.ssa.gov.',
+    ],
+    tellTales: [
+      'Real SSNs cannot be "suspended" — that is not how Social Security works',
+      'Asked for SSN + DOB — SSA already has these on file',
+      'Threatened benefit suspension — SSA mails formal notices, never phones with threats',
+      'Federal "safe account" is fictional — no government agency moves your money',
+    ],
+  ),
+  _DemoScenario(
+    name: 'Police Warrant',
+    number: '+1 (212) 555-0193',
+    playbookId: 'police_warrant_scam',
+    lines: [
+      'This is Detective Roberts with the county sheriff\'s office.',
+      'You missed federal jury duty last month and a bench warrant has been issued.',
+      'To avoid arrest at your home, you can post bond by phone today.',
+      'I\'ll need a \$1,200 bond paid in Bitcoin or gift cards within the hour.',
+      'Stay on the line — disconnecting will activate the warrant immediately.',
+    ],
+    scores: [16, 40, 68, 84, 96],
+    counterScripts: [
+      'Give me the case number. I\'ll call the court clerk directly.',
+      'Police don\'t accept bonds over the phone. I\'m hanging up.',
+      'If there\'s a warrant, mail it to me — I won\'t pay an unverified call.',
+    ],
+    tellTales: [
+      'Police do not call about warrants — they show up in person or mail a summons',
+      'No US court accepts bail in Bitcoin or gift cards',
+      '"Disconnecting activates the warrant" — pressure tactic with no legal basis',
+      'Real jury-duty failures result in a mailed notice, never a phone arrest threat',
+    ],
+  ),
+  _DemoScenario(
+    name: 'Utility Shutoff',
+    number: '+1 (888) 555-0162',
+    playbookId: 'utility_shutoff_scam',
+    lines: [
+      'This is Con Edison\'s payment department.',
+      'Your account is two cycles overdue and shutoff is scheduled in 90 minutes.',
+      'To prevent disconnection during this heatwave, please pay \$487 now.',
+      'I can take payment by prepaid card — Vanilla, Green Dot, or MyVanilla.',
+      'A technician is already en route — only payment will turn him around.',
+    ],
+    scores: [12, 36, 60, 78, 92],
+    counterScripts: [
+      'I\'ll call the number on my last bill to verify the balance.',
+      'Utilities don\'t accept prepaid cards. I\'m hanging up.',
+      'Send me a written shutoff notice — that\'s the legal requirement.',
+    ],
+    tellTales: [
+      'Utility companies are legally required to send written shutoff notices',
+      'Prepaid / gift cards are never accepted by real utility billing',
+      '90-minute shutoff window doesn\'t exist — minimum notice is days',
+      'Caller ID is easily spoofed to show the real utility\'s number',
+    ],
+  ),
+  _DemoScenario(
+    name: 'Lottery Winner',
+    number: '+1 (876) 555-0100',
+    playbookId: 'sweepstakes_lottery_scam',
+    lines: [
+      'Congratulations! You\'ve won the Publishers Clearing House \$2.5 million prize.',
+      'To release the funds we need to verify your identity and tax info.',
+      'There\'s a one-time processing fee of \$899 to cover federal tax withholding.',
+      'Pay via Western Union or iTunes cards to your prize coordinator — me.',
+      'Don\'t tell anyone yet — winners must keep it confidential for legal reasons.',
+    ],
+    scores: [10, 32, 58, 81, 94],
+    counterScripts: [
+      'Real sweepstakes don\'t ask winners to pay fees up front.',
+      'Send me a written prize-claim form. I won\'t pay anything by phone.',
+      'I never entered. I\'m hanging up.',
+    ],
+    tellTales: [
+      'Legitimate lotteries deduct taxes from the prize — winners never pay up front',
+      'Asking for iTunes cards / Western Union is a universal scam signal',
+      '"Keep it confidential" isolates you from people who\'d verify',
+      'If you didn\'t enter, you didn\'t win — period',
+    ],
+  ),
+  _DemoScenario(
+    name: 'Crypto Recovery',
+    number: '+1 (650) 555-0143',
+    playbookId: 'crypto_investment_scam',
+    lines: [
+      'Hi, I\'m calling from Binance Recovery Services.',
+      'Our records show you lost \$4,200 in the recent Celsius collapse.',
+      'I can recover 80% of that for you through our blockchain insurance program.',
+      'Just send a \$500 retainer to this wallet address and I\'ll start the recovery.',
+      'We\'ve helped 12,000 investors. The window closes today — act fast.',
+    ],
+    scores: [11, 34, 62, 79, 95],
+    counterScripts: [
+      'Recovery services that demand crypto up front are themselves the scam.',
+      'I\'ll contact Binance support directly through binance.com.',
+      'I\'m reporting this to ic3.gov.',
+    ],
+    tellTales: [
+      'Real exchanges don\'t operate "recovery" services — that\'s a follow-on scam targeting prior victims',
+      'Asks to send crypto to recover crypto — irreversible by design',
+      '"Window closes today" — urgency to skip due diligence',
+      'Targets people who already lost money in known collapses (Celsius, FTX, Voyager)',
+    ],
   ),
 ];
 
@@ -172,6 +372,17 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
         // Optimistic: show scripted score immediately. If backend
         // returns one for this chunk we'll overwrite it below.
         _fraudScore = scenario.scores[i];
+        // Surface the v4 counter-script card mid-call when the
+        // scripted score crosses the same ≥0.7-confidence threshold
+        // the real backend uses. This lets demo mode show the killer
+        // feature even when V4_PLAYBOOK_COACHING_ENABLED is false on
+        // the backend (current production state). If the backend IS
+        // on and returns its own counter_scripts, the chunk handler
+        // below overwrites with the live values.
+        if (scenario.scores[i] >= 60 && _counterScripts.isEmpty) {
+          _counterScripts = scenario.counterScripts;
+          _v4PlaybookId = scenario.playbookId;
+        }
       });
       HapticFeedback.selectionClick();
 
@@ -395,6 +606,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                               coachingLine: _coachingLine,
                               counterScripts: _counterScripts,
                               v4PlaybookId: _v4PlaybookId,
+                              tellTales: _kScenarios[_scenarioIndex].tellTales,
                               onBlock: _dismissDemo,
                               onAnswer: _dismissDemo,
                               onRecovery: _openRecovery,
@@ -860,6 +1072,7 @@ class _LiveCallCard extends StatelessWidget {
   final String? coachingLine; // v2 LLM coaching — only set on Pro accounts post-consent-v2
   final List<String> counterScripts; // v4 counter-scripts — playbook-aware, ≥0.7 confidence
   final String? v4PlaybookId; // for the small "playbook detected" tag
+  final List<String> tellTales; // demo-only "why this was a scam" — surfaces below verdict
   final VoidCallback onBlock;
   final VoidCallback onAnswer;
   final VoidCallback onRecovery; // v4 — opens Recovery Chatbot preloaded with scam context
@@ -874,6 +1087,7 @@ class _LiveCallCard extends StatelessWidget {
     this.coachingLine,
     this.counterScripts = const [],
     this.v4PlaybookId,
+    this.tellTales = const [],
     required this.onBlock,
     required this.onAnswer,
     required this.onRecovery,
@@ -1181,6 +1395,78 @@ class _LiveCallCard extends StatelessWidget {
                       ],
                     ),
                   ),
+                ],
+              ),
+            ),
+          // "Why this was a scam" insight panel — educational, demo-only.
+          // Surfaces the specific signals that drove the verdict so the
+          // user (or a family member watching the demo over their
+          // shoulder) actually learns the pattern instead of just seeing
+          // a red badge. Only renders when the scenario provides
+          // tell-tales AND we've reached the verdict.
+          if (verdict && tellTales.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.fromLTRB(12, 10, 12, 0),
+              padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+              decoration: BoxDecoration(
+                color: AegisColors.surfaceElevated.withValues(alpha: 0.6),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(
+                  color: AegisColors.border,
+                  width: 0.6,
+                ),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.lightbulb_outline_rounded,
+                        size: 14,
+                        color: AegisColors.warning,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'WHY THIS WAS A SCAM',
+                        style: tt.labelSmall?.copyWith(
+                          color: AegisColors.warning,
+                          letterSpacing: 1.2,
+                          fontSize: 9,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 8),
+                  for (int i = 0; i < tellTales.length; i++)
+                    Padding(
+                      padding: EdgeInsets.only(
+                          bottom: i == tellTales.length - 1 ? 0 : 6),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 4,
+                            height: 4,
+                            margin: const EdgeInsets.only(top: 7, right: 10, left: 2),
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AegisColors.warning,
+                            ),
+                          ),
+                          Expanded(
+                            child: Text(
+                              tellTales[i],
+                              style: tt.bodySmall?.copyWith(
+                                color: AegisColors.textSecondary,
+                                height: 1.4,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ),
