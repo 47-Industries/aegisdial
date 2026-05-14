@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../widgets/aegis_logo.dart';
 import 'auth_screen.dart';
+import 'live_shield_active.dart';
 
 class WelcomeScreen extends StatelessWidget {
   const WelcomeScreen({super.key});
@@ -81,6 +82,47 @@ class WelcomeScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 32),
+                  // Pre-auth demo CTA. Lets a skeptical TestFlight user
+                  // (or App Store reviewer, or investor) see the
+                  // headline feature working in 60 seconds without
+                  // committing to sign-up. The Live Shield demo runs
+                  // entirely client-side: liveShield.start() returns
+                  // null without a bearer, the screen falls back to
+                  // scripted scores + the new client-seeded v4
+                  // counter-script + tell-tales surfaces. No account
+                  // created, no PII collected, no backend session.
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => const LiveShieldActiveScreen(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(
+                      Icons.play_circle_outline_rounded,
+                      size: 18,
+                      color: AegisColors.turquoise,
+                    ),
+                    label: const Text(
+                      'See it work — 60-second demo',
+                      style: TextStyle(
+                        color: AegisColors.turquoise,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: BorderSide(
+                        color: AegisColors.turquoise.withValues(alpha: 0.6),
+                        width: 0.8,
+                      ),
+                      padding: const EdgeInsets.symmetric(vertical: 14),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 12),
                   ElevatedButton(
                     onPressed: () {
                       Navigator.of(context).push(
