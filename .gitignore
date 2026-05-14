@@ -103,3 +103,6 @@ tmp/
 # aegisdial-web is its own Railway-deployed Express app with its own .git.
 # Keeping it as a sibling on disk for convenience, but git should ignore it.
 aegisdial-web/
+
+# --- Claude Code per-project state (transcripts, ignore list, etc.) ---
+.claude/

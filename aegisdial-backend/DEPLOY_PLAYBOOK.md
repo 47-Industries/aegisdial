@@ -39,12 +39,26 @@ Should succeed (no more "payment information" error).
 
 ---
 
-### ☐ 3. Register aegisdial.com + .ai + .io + .app — ~$60 total — ~5 min
+### 🚨 ☐ 3. Register aegisdial.com + .ai + .io + .app — ~$60 total — ~5 min — **#1 LAUNCH BLOCKER**
 
 **URL:** https://dash.cloudflare.com → Registrar (cheapest at wholesale cost)
 
 - Buy `aegisdial.com`, `.ai`, `.io`, `.app`. Leave Cloudflare as the registrar + DNS provider — no transfer needed, DNS is immediate.
 - Turn on **Cloudflare Registrar Auto-Renew** for all four.
+
+**Confirmed NXDOMAIN as of 2026-05-14** — verified via Cloudflare DoH (`1.1.1.1/dns-query?name=aegisdial.com`) returns `Status:3` at the verisign root. The domain has never been registered (or has expired).
+
+**What this breaks RIGHT NOW (silent failures in production):**
+- 🛑 **Resend email** — `RESEND_FROM=AegisDial <alerts@aegisdial.com>` in `src/config.ts:206`. Every transactional email (30d/90d nudges, support replies, password reset, breach alerts) fails at Resend's domain-verified-sender check.
+- 🛑 **App Store submission** — Apple's reviewer types the Privacy Policy / Terms / Support URLs into a browser. If they 404, automatic rejection.
+- 🛑 **Marketing SEO pages** — every "Start Recovery now →" CTA in `marketing/seo/*.md` points at `https://aegisdial.com/recovery` → dead.
+- 🛑 **Email Shield OAuth callbacks** — `api.aegisdial.com/v1/email/oauth/{google,microsoft}/callback` referenced in `test/email*Provider.test.ts` and `src/config.ts:39,55` — will need DNS + cert before email OAuth ships.
+- ⚠️ **iOS app dialog text** — `auth_screen.dart:221,233` informational mentions of `aegisdial.com/terms` + `/privacy`. Cosmetic in TestFlight; embarrassing at GA.
+- ⚠️ **`support@aegisdial.com`** in iOS Settings / About / Paywall — every support email bounces.
+
+**iOS API base is fine** — `aegisdial-api-production.up.railway.app` resolves and `/health` returns 200. Users won't see "site down" — they'll see "I emailed support and nobody replied" and "I got no breach alert."
+
+**Workaround until registered:** none. Don't swap in-app text to the long Railway URL — it looks unprofessional. Apple won't approve a build whose Privacy Policy URL field in App Store Connect doesn't resolve.
 
 **Why now:** Resend and the privacy policy URLs in the iOS app both point at aegisdial.com. The App Store submission will be rejected if these 404.
 
