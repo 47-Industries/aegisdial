@@ -3,11 +3,168 @@ import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
+import '../services/device_service.dart';
 import 'welcome_screen.dart';
 import 'family_alert_privacy_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
+
+  // Push diagnostic — surfaces the APNs registration chain so we can
+  // tell whether silent pushes are because (a) user declined permission,
+  // (b) iOS never handed us a token (entitlement / network issue), or
+  // (c) backend's /v1/device/register rejected the POST. Without this
+  // every "I'm not getting alerts" report is unfalsifiable.
+  void _showPushDiagnostic(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AegisColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Push diagnostic'),
+        content: SizedBox(
+          width: 320,
+          child: FutureBuilder<PushDiagnostic>(
+            future: deviceService.snapshot(),
+            builder: (c, snap) {
+              if (snap.connectionState != ConnectionState.done) {
+                return const SizedBox(
+                  height: 60,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final d = snap.data ??
+                  const PushDiagnostic(); // empty = nothing recorded yet
+              final dotColor = d.healthy
+                  ? AegisColors.success
+                  : (d.lastApnsError != null || d.lastRegisterError != null)
+                      ? AegisColors.danger
+                      : AegisColors.warning;
+              final summary = d.healthy
+                  ? 'Push notifications are wired end-to-end.'
+                  : d.permissionGranted == false
+                      ? 'You declined notifications. Tap "Retry" after enabling them in iOS Settings → AegisDial → Notifications.'
+                      : d.lastApnsError != null
+                          ? 'iOS reported an APNs error. The backend can\'t reach this device for alerts.'
+                          : d.lastRegisterError != null
+                              ? 'iOS gave us a token but the backend rejected it. Push will retry on next app launch.'
+                              : 'No push activity yet on this install. Tap "Retry" to register now.';
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: dotColor,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          summary,
+                          style: const TextStyle(
+                            color: AegisColors.textSecondary,
+                            height: 1.4,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _diagRow('Permission', _yesNoMaybe(d.permissionGranted)),
+                  _diagRow('iOS token', d.lastTokenPreview ?? '—'),
+                  _diagRow(
+                    'Registered with backend',
+                    d.lastRegisteredAt != null
+                        ? _humanTimeAgo(d.lastRegisteredAt!)
+                        : '—',
+                  ),
+                  if (d.lastApnsError != null)
+                    _diagRow('APNs error', d.lastApnsError!,
+                        valueColor: AegisColors.danger),
+                  if (d.lastRegisterError != null)
+                    _diagRow('Backend error', d.lastRegisterError!,
+                        valueColor: AegisColors.danger),
+                ],
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await deviceService.ensureRegistered();
+              if (context.mounted) _showPushDiagnostic(context);
+            },
+            child: const Text(
+              'Retry',
+              style: TextStyle(color: AegisColors.turquoise),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              backgroundColor: AegisColors.turquoise,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _diagRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AegisColors.textTertiary,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: valueColor ?? AegisColors.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _yesNoMaybe(bool? v) {
+    if (v == null) return 'unknown';
+    return v ? 'granted' : 'declined';
+  }
+
+  String _humanTimeAgo(DateTime when) {
+    final diff = DateTime.now().difference(when);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours} hr ago';
+    return '${diff.inDays} day${diff.inDays == 1 ? '' : 's'} ago';
+  }
 
   void _showInfo(BuildContext context, String title, String body) {
     showDialog(
@@ -612,13 +769,18 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _showHelp(context),
           ),
           _SettingsTile(
+            icon: Icons.notifications_active_outlined,
+            title: 'Push diagnostic',
+            onTap: () => _showPushDiagnostic(context),
+          ),
+          _SettingsTile(
             icon: Icons.info_outline,
             title: 'About AegisDial',
-            trailing: 'v1.0.0 (16)',
+            trailing: 'v1.0.0 (17)',
             onTap: () => _showInfo(
               context,
               'About AegisDial',
-              'AegisDial v1.0.0 (16)\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: support@aegisdial.com',
+              'AegisDial v1.0.0 (17)\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: support@aegisdial.com',
             ),
           ),
           const SizedBox(height: 24),
