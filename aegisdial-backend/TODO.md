@@ -1,5 +1,12 @@
 # AegisDial — TODO to finish the app
 
+> ⚠️ **Some entries below are stale (Fly-era).** Production is on
+> Railway, not Fly.io — anywhere this doc says `fly secrets set X` or
+> `*.fly.dev`, the real command is "Railway dashboard → Variables → Add"
+> and the URL is `*.up.railway.app`. The `DATA_ENCRYPTION_KEY` item is
+> still critical (see `project_critical_secrets.md`); just set it on
+> Railway instead of Fly.
+
 Organized by phase. Tick as you complete. External/manual items (Fly,
 Apple, Stripe, etc.) need your hands — I can't do those. Everything
 else I can ship from code.

@@ -1,5 +1,12 @@
 # AegisDial Launch Checklist
 
+> ⚠️ **Partially stale.** Section 4 ("Fly.io production secrets audit")
+> and any `fly secrets set …` commands assume Fly.io. Production is on
+> **Railway** — substitute "Railway dashboard → service → Variables".
+> `*.fly.dev` URLs don't resolve; the live API is at
+> `https://aegisdial-api-production.up.railway.app`. Everything else
+> (Apple, App Store Connect, Stripe, RevenueCat steps) is still valid.
+
 Everything that requires your hands on an external system. The code side is
 done; this list is what you — Kyle — need to run, click, or configure before
 TestFlight goes wide.

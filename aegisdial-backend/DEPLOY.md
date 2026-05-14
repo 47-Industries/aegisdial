@@ -1,5 +1,14 @@
 # Deployment — AegisDial Backend
 
+> ⚠️ **STALE — read DEPLOY_PLAYBOOK.md instead.** This doc was written
+> for the original Fly.io + Neon + Upstash plan. Production pivoted to
+> **Railway** (single platform: app + Postgres + Redis under one
+> dashboard). The `fly secrets set …` commands below are wrong;
+> substitute Railway → Variables → Add. The `*.fly.dev` URLs don't
+> exist. The current iOS API base is
+> `https://aegisdial-api-production.up.railway.app`. Leaving this file
+> here for archaeology until the rewrite lands.
+
 Tech stack: Fly.io (Docker runtime) + Neon (Postgres) + Upstash (Redis). All three have free tiers that cover AegisDial's first few thousand users.
 
 Total cost at that scale: **$0/mo** (Fly's free machine-hours + Neon's free tier + Upstash's free tier). Once you outgrow the free tier, expect ~$5–25/mo for the backend.
