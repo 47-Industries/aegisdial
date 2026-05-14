@@ -3,6 +3,7 @@ import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
+import '../services/app_version.dart';
 import '../services/device_service.dart';
 import 'welcome_screen.dart';
 import 'family_alert_privacy_screen.dart';
@@ -776,11 +777,11 @@ class SettingsScreen extends StatelessWidget {
           _SettingsTile(
             icon: Icons.info_outline,
             title: 'About AegisDial',
-            trailing: 'v1.0.0 (18)',
+            trailing: AppVersion.current.short,
             onTap: () => _showInfo(
               context,
               'About AegisDial',
-              'AegisDial v1.0.0 (18)\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: support@aegisdial.com',
+              'AegisDial ${AppVersion.current.short}\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: support@aegisdial.com',
             ),
           ),
           const SizedBox(height: 24),

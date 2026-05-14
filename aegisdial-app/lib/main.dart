@@ -5,6 +5,7 @@ import 'services/auth_service.dart';
 import 'services/trial_service.dart';
 import 'services/purchase_service.dart';
 import 'services/device_service.dart';
+import 'services/app_version.dart';
 import 'screens/splash_screen.dart';
 
 void main() async {
@@ -20,6 +21,11 @@ void main() async {
   await auth.boot();
   await TrialService.ensureStarted();
   await PurchaseService.initialize();
+  // Cache the app version once at boot so Settings → About + the push
+  // diagnostic don't have to FutureBuilder it. Cheap (single platform
+  // channel call), and means we stop hand-editing the version string
+  // every time pubspec gets bumped.
+  await AppVersion.load();
   // Wire the APNs channel handler synchronously at boot so any
   // late-arriving token from a previous registration (token rotation
   // during a cold start) is delivered to a live handler — the system
