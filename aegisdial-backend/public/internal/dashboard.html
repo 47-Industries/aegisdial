@@ -138,6 +138,21 @@
 
   .kpi.loading .kpi-value { color: var(--text4); }
 
+  /* Derived metrics — subtle left accent so it's obvious at a glance
+     which cards are raw data vs computed from it. */
+  .kpi.derived { border-left: 2px solid var(--text4); }
+  .kpi.derived .kpi-label::after {
+    content: 'DERIVED';
+    margin-left: 8px;
+    font-size: 8px;
+    letter-spacing: 1px;
+    color: var(--text4);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 4px;
+    vertical-align: middle;
+  }
+
   /* ── Ask panel ── */
   .ask {
     background: var(--surface);
@@ -343,6 +358,25 @@
     <div class="kpi-value">—</div>
     <div class="kpi-sub">subscriptions churned</div>
   </div>
+  <!-- Derived metrics — computed client-side from the six raw KPIs
+       above. No extra DB query. These are the numbers a YC partner
+       asks for first, so they're worth surfacing directly instead of
+       leaving them as mental math. -->
+  <div class="kpi loading derived" data-key="arr">
+    <div class="kpi-label">ARR</div>
+    <div class="kpi-value">—</div>
+    <div class="kpi-sub">MRR × 12 — annual run-rate</div>
+  </div>
+  <div class="kpi loading derived" data-key="arpu">
+    <div class="kpi-label">ARPU</div>
+    <div class="kpi-value">—</div>
+    <div class="kpi-sub">MRR ÷ active subs</div>
+  </div>
+  <div class="kpi loading derived" data-key="churn">
+    <div class="kpi-label">Monthly Churn</div>
+    <div class="kpi-value">—</div>
+    <div class="kpi-sub">cancels ÷ (active + cancels)</div>
+  </div>
 </div>
 
 <!-- Ask panel -->
@@ -388,6 +422,30 @@
     if (n >= 1000) return (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'K';
     return String(n);
   }
+  // ARR is MRR×12 — render it on the same K-suffix scale as MRR but
+  // tolerate the larger magnitude (M suffix once we cross $1M run-rate).
+  function fmtARR(cents) {
+    if (cents == null) return '—';
+    const dollars = (cents * 12) / 100;
+    if (dollars >= 1_000_000) return '$' + (dollars / 1_000_000).toFixed(2) + 'M';
+    if (dollars >= 1000)      return '$' + (dollars / 1000).toFixed(1) + 'K';
+    return '$' + dollars.toFixed(0);
+  }
+  // ARPU — MRR per active subscriber. Guard divide-by-zero: with no
+  // subscribers ARPU is undefined, not 0, so render the em-dash.
+  function fmtARPU(cents, subs) {
+    if (cents == null || !subs) return '—';
+    return '$' + (cents / 100 / subs).toFixed(2);
+  }
+  // Monthly churn — cancels as a share of the at-risk base (everyone
+  // who was a subscriber at some point this month: still-active plus
+  // those who cancelled). Denominator guards zero.
+  function fmtChurn(cancels, activeSubs) {
+    if (cancels == null || activeSubs == null) return '—';
+    const base = activeSubs + cancels;
+    if (base === 0) return '—';
+    return ((cancels / base) * 100).toFixed(1) + '%';
+  }
   function fmtTimeAgo(iso) {
     if (!iso) return '—';
     const d = new Date(iso);
@@ -415,6 +473,10 @@
         blocks_today:        fmtNum(k.blocks_today),
         recoveries_month:    fmtNum(k.recoveries_month),
         cancellations_month: fmtNum(k.cancellations_month),
+        // Derived — no extra fetch, just arithmetic on the six above.
+        arr:                 fmtARR(k.mrr_cents),
+        arpu:                fmtARPU(k.mrr_cents, k.active_subscribers),
+        churn:               fmtChurn(k.cancellations_month, k.active_subscribers),
       };
       document.querySelectorAll('.kpi').forEach((el) => {
         const key = el.dataset.key;
