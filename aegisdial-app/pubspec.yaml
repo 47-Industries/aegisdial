@@ -3,7 +3,7 @@ description: "AegisDial — fraud prevention + recovery"
 publish_to: 'none'
 # Version is auto-mirrored to Settings → About via lib/services/app_version.dart.
 # Bump this and the UI follows automatically — no string-literal hand-syncing.
-version: 1.0.0+21
+version: 1.0.0+22
 
 environment:
   sdk: ^3.11.5
