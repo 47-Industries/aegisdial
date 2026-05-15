@@ -26,15 +26,17 @@ class HomeDashboard extends StatefulWidget {
 class _HomeDashboardState extends State<HomeDashboard> {
   static const _kShieldKey = 'shield_on_v1';
 
+  // Raw integers — _StatTile count-up-animates from 0 to these. The
+  // community-impact placeholders shown before per-user stats load.
   static const _kPlatformStats = [
-    ('2.4M', 'Calls\nscreened', AegisColors.turquoise),
-    ('847K', 'Scams\nblocked', AegisColors.success),
-    ('12.8K', 'Breaches\ncaught', AegisColors.blueAccent),
+    (2400000, 'Calls\nscreened', AegisColors.turquoise),
+    (847000, 'Scams\nblocked', AegisColors.success),
+    (12800, 'Breaches\ncaught', AegisColors.blueAccent),
   ];
 
   bool _shieldOn = true;
   String _statsLabel = 'COMMUNITY IMPACT';
-  List<(String, String, Color)> _displayStats = _kPlatformStats;
+  List<(int, String, Color)> _displayStats = _kPlatformStats;
   IdentityShieldTile? _identityTile;
 
   @override
@@ -75,19 +77,13 @@ class _HomeDashboardState extends State<HomeDashboard> {
         if (calls > 0 || scams > 0 || breaches > 0) {
           _statsLabel = 'MY STATS';
           _displayStats = [
-            (_fmtNum(calls), 'Calls\nscreened', AegisColors.turquoise),
-            (_fmtNum(scams), 'Scams\nblocked', AegisColors.success),
-            (_fmtNum(breaches), 'Breaches\ncaught', AegisColors.blueAccent),
+            (calls, 'Calls\nscreened', AegisColors.turquoise),
+            (scams, 'Scams\nblocked', AegisColors.success),
+            (breaches, 'Breaches\ncaught', AegisColors.blueAccent),
           ];
         }
       });
     } catch (_) {}
-  }
-
-  static String _fmtNum(int n) {
-    if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
-    if (n >= 1000) return '${(n / 1000).toStringAsFixed(0)}K';
-    return '$n';
   }
 
   String _greeting() {
@@ -355,7 +351,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                     for (int i = 0; i < _displayStats.length; i++) ...[
                       if (i > 0) const SizedBox(width: 10),
                       _StatTile(
-                        displayValue: _displayStats[i].$1,
+                        value: _displayStats[i].$1,
                         label: _displayStats[i].$2,
                         color: _displayStats[i].$3,
                       ),
@@ -390,12 +386,20 @@ class _HomeDashboardState extends State<HomeDashboard> {
   }
 }
 
+/// Compact K/M formatter for the dashboard stat tiles. Top-level so
+/// _StatTile's count-up animation can format each interpolated frame.
+String _formatStat(int n) {
+  if (n >= 1000000) return '${(n / 1000000).toStringAsFixed(1)}M';
+  if (n >= 1000) return '${(n / 1000).toStringAsFixed(0)}K';
+  return '$n';
+}
+
 class _StatTile extends StatelessWidget {
-  final String displayValue;
+  final int value;
   final String label;
   final Color color;
   const _StatTile(
-      {required this.displayValue, required this.label, required this.color});
+      {required this.value, required this.label, required this.color});
 
   @override
   Widget build(BuildContext context) {
@@ -410,12 +414,24 @@ class _StatTile extends StatelessWidget {
         ),
         child: Column(
           children: [
-            Text(
-              displayValue,
-              style: tt.headlineSmall?.copyWith(
-                fontWeight: FontWeight.w800,
-                color: color,
-                height: 1,
+            // Count-up: animates 0 → value on first paint, and from the
+            // old value → new value when stats reload (community
+            // placeholder → the user's real numbers). easeOutCubic
+            // decelerates into the final figure so it lands rather than
+            // snapping. `key: ValueKey(value)` would restart the tween;
+            // we deliberately omit it so a value change animates FROM
+            // the current figure instead of from 0.
+            TweenAnimationBuilder<double>(
+              tween: Tween<double>(begin: 0, end: value.toDouble()),
+              duration: const Duration(milliseconds: 900),
+              curve: Curves.easeOutCubic,
+              builder: (context, v, _) => Text(
+                _formatStat(v.round()),
+                style: tt.headlineSmall?.copyWith(
+                  fontWeight: FontWeight.w800,
+                  color: color,
+                  height: 1,
+                ),
               ),
             ),
             const SizedBox(height: 5),
