@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
+import '../config/app_config.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/app_version.dart';
@@ -165,6 +167,30 @@ class SettingsScreen extends StatelessWidget {
     if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
     if (diff.inHours < 24) return '${diff.inHours} hr ago';
     return '${diff.inDays} day${diff.inDays == 1 ? '' : 's'} ago';
+  }
+
+  // Opens the system mail composer pre-addressed to support, with the
+  // app version pre-filled in the body so triage starts with the build
+  // number instead of asking for it. Until aegisdial.com is registered
+  // the message bounces — but the composer still opens, and a copyable
+  // address dialog is the fallback when no mail client is configured.
+  Future<void> _emailSupport(BuildContext context) async {
+    final body = Uri.encodeComponent(
+      '\n\n— — —\nApp: AegisDial ${AppVersion.current.short}\n'
+      '(written above this line so support has the build number)',
+    );
+    final subject = Uri.encodeComponent(kSupportEmailSubject);
+    final uri = Uri.parse('mailto:$kSupportEmail?subject=$subject&body=$body');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else if (context.mounted) {
+      // No mail client — show the address so the user can copy it.
+      _showInfo(
+        context,
+        'Email support',
+        'No mail app is set up on this device.\n\nReach us at:\n$kSupportEmail\n\nWe respond within 24 hours.',
+      );
+    }
   }
 
   void _showInfo(BuildContext context, String title, String body) {
@@ -533,7 +559,7 @@ class SettingsScreen extends StatelessWidget {
               ('How do I add family members?',
                   'Go to the Family tab and tap "Add a family member." Pro covers up to 3 lines.'),
               ('How do I contact support?',
-                  'Email us at support@aegisdial.com. We respond within 24 hours.'),
+                  'Email us at $kSupportEmail. We respond within 24 hours.'),
             ].map(
               (faq) => Container(
                 margin: const EdgeInsets.only(bottom: 10),
@@ -770,6 +796,11 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _showHelp(context),
           ),
           _SettingsTile(
+            icon: Icons.mail_outline_rounded,
+            title: 'Email support',
+            onTap: () => _emailSupport(context),
+          ),
+          _SettingsTile(
             icon: Icons.notifications_active_outlined,
             title: 'Push diagnostic',
             onTap: () => _showPushDiagnostic(context),
@@ -781,7 +812,7 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _showInfo(
               context,
               'About AegisDial',
-              'AegisDial ${AppVersion.current.short}\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: support@aegisdial.com',
+              'AegisDial ${AppVersion.current.short}\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: $kSupportEmail',
             ),
           ),
           const SizedBox(height: 24),

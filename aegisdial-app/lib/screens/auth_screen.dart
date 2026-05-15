@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../config/app_config.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
@@ -100,7 +102,12 @@ class _AuthScreenState extends State<AuthScreen> {
     _enter();
   }
 
-  void _showLegal(BuildContext context, String title, String body) {
+  void _showLegal(
+    BuildContext context,
+    String title,
+    String body,
+    String fullDocUrl,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -113,6 +120,22 @@ class _AuthScreenState extends State<AuthScreen> {
               color: AegisColors.textSecondary, height: 1.55, fontSize: 13),
         ),
         actions: [
+          // Opens the canonical hosted document in the system browser.
+          // Until aegisdial.com is registered this 404s — but it's the
+          // correct URL and starts working the moment DNS lands, with
+          // no code change. See lib/config/app_config.dart.
+          TextButton(
+            onPressed: () async {
+              final uri = Uri.parse(fullDocUrl);
+              if (await canLaunchUrl(uri)) {
+                await launchUrl(uri, mode: LaunchMode.externalApplication);
+              }
+            },
+            child: const Text(
+              'Open full document',
+              style: TextStyle(color: AegisColors.turquoise),
+            ),
+          ),
           ElevatedButton(
             onPressed: () => Navigator.of(ctx).pop(),
             style: ElevatedButton.styleFrom(
@@ -217,8 +240,11 @@ class _AuthScreenState extends State<AuthScreen> {
                             decorationColor: AegisColors.turquoise,
                           ),
                           recognizer: TapGestureRecognizer()
-                            ..onTap = () => _showLegal(context, 'Terms of Service',
-                                'AegisDial Terms of Service\n\nBy using AegisDial you agree to use it lawfully. We provide fraud-detection tools for informational purposes only. We are not liable for outcomes arising from scam incidents.\n\nFull terms at aegisdial.com/terms.'),
+                            ..onTap = () => _showLegal(
+                                context,
+                                'Terms of Service',
+                                'AegisDial Terms of Service\n\nBy using AegisDial you agree to use it lawfully. We provide fraud-detection tools for informational purposes only. We are not liable for outcomes arising from scam incidents.\n\nTap "Open full document" for the complete terms.',
+                                kLegalTermsUrl),
                         ),
                         const TextSpan(text: ' and '),
                         TextSpan(
@@ -229,8 +255,11 @@ class _AuthScreenState extends State<AuthScreen> {
                             decorationColor: AegisColors.turquoise,
                           ),
                           recognizer: TapGestureRecognizer()
-                            ..onTap = () => _showLegal(context, 'Privacy Policy',
-                                'AegisDial Privacy Policy\n\nAll call transcripts and SMS scans are processed entirely on your device. We never upload your personal conversations, contacts, or messages.\n\nFull policy at aegisdial.com/privacy.'),
+                            ..onTap = () => _showLegal(
+                                context,
+                                'Privacy Policy',
+                                'AegisDial Privacy Policy\n\nAll call transcripts and SMS scans are processed entirely on your device. We never upload your personal conversations, contacts, or messages.\n\nTap "Open full document" for the complete policy.',
+                                kLegalPrivacyUrl),
                         ),
                         const TextSpan(text: '.'),
                       ],
