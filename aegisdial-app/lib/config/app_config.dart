@@ -1,20 +1,19 @@
 // App-wide constants that point at AegisDial's public-facing addresses.
 //
-// These live in ONE file because they all depend on the `aegisdial.com`
-// domain, which (as of 2026-05-14) is not yet registered. When it goes
-// live, this is the single file to touch — every screen reads from here.
+// These live in ONE file because they all depend on the AegisDial domain.
+// As of 2026-05-18 the domain is registered (GoDaddy) and the marketing +
+// legal site is LIVE, served by the `aegisdial-web` Railway service through
+// the custom domain `www.aegisdial.com`.
 //
-// Until the domain resolves:
-//   - kSupportEmail mail composes fine, but the message bounces (no MX).
-//   - kLegalTermsUrl / kLegalPrivacyUrl 404 in a browser.
-// Both are correct values that start working the moment Cloudflare
-// registration + DNS land — no code change needed at that point.
+// Why `www.` and not the bare apex: DNS for aegisdial.com is hosted at
+// GoDaddy, which cannot CNAME a root domain onto Railway. So Railway serves
+// `www.aegisdial.com`, and the bare `aegisdial.com` is a GoDaddy 301 forward
+// to it. That forward only redirects the root — it does NOT preserve paths
+// (`aegisdial.com/terms` 404s). Every deep link below therefore uses the
+// `www.` host directly; only typed-in bare-domain visits rely on the forward.
 //
-// The legal docs are ALSO live right now on the Railway web service
-// (aegisdial-web-production.up.railway.app/{terms,privacy}). We don't
-// point at the Railway URL because shipping a long *.up.railway.app
-// string into a TestFlight build looks unfinished; the 5-minute domain
-// registration is the right fix.
+// Still pending: `support@aegisdial.com` needs MX records before mail sent
+// to it is delivered — composing a message works, delivery does not yet.
 
 /// Support inbox. Surfaced in Settings, the paywall, and About.
 const String kSupportEmail = 'support@aegisdial.com';
@@ -23,9 +22,10 @@ const String kSupportEmail = 'support@aegisdial.com';
 const String kSupportEmailSubject = 'AegisDial support request';
 
 /// Public legal documents. Mentioned in the auth screen's Terms /
-/// Privacy disclosures and linked from Settings.
-const String kLegalTermsUrl = 'https://aegisdial.com/terms';
-const String kLegalPrivacyUrl = 'https://aegisdial.com/privacy';
+/// Privacy disclosures and linked from Settings. Uses the `www.` host —
+/// the bare-apex forward does not preserve these sub-paths.
+const String kLegalTermsUrl = 'https://www.aegisdial.com/terms';
+const String kLegalPrivacyUrl = 'https://www.aegisdial.com/privacy';
 
 /// Marketing site root — used by any "learn more" affordance.
-const String kMarketingUrl = 'https://aegisdial.com';
+const String kMarketingUrl = 'https://www.aegisdial.com';
