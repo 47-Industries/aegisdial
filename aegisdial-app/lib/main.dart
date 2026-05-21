@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'theme/app_theme.dart';
+import 'services/api_service.dart';
 import 'services/auth_service.dart';
 import 'services/trial_service.dart';
 import 'services/purchase_service.dart';
@@ -19,6 +20,9 @@ void main() async {
     ),
   );
   await auth.boot();
+  // After auth boots, wire 401 → sign-out so stale tokens don't trap
+  // the user in a half-authenticated state.
+  api.onSessionExpired = auth.signOut;
   await TrialService.ensureStarted();
   await PurchaseService.initialize();
   // Cache the app version once at boot so Settings → About + the push

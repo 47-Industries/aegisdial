@@ -242,8 +242,16 @@ class _BreachScreenState extends State<BreachScreen> {
 
   Future<void> _saveState() async {
     final p = await SharedPreferences.getInstance();
-    await p.setString(_kIdentifiersKey,
-        jsonEncode(_identifiers.map((e) => e.toJson()).toList()));
+    // SSN values are deliberately stripped from the persisted snapshot.
+    // SharedPreferences is plaintext-on-disk + included in iCloud
+    // backups — even though SSN never leaves the device on the wire,
+    // persisting it at rest would broaden the attack surface for
+    // anyone with backup access. Users re-enter SSN each session.
+    final persistable = _identifiers
+        .where((e) => e.type != _IdentifierType.ssn)
+        .map((e) => e.toJson())
+        .toList();
+    await p.setString(_kIdentifiersKey, jsonEncode(persistable));
     await p.setString(_kExposuresKey,
         jsonEncode(_exposures.map((e) => e.toJson()).toList()));
   }
