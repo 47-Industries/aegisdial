@@ -26,17 +26,21 @@ class HomeDashboard extends StatefulWidget {
 class _HomeDashboardState extends State<HomeDashboard> {
   static const _kShieldKey = 'shield_on_v1';
 
-  // Raw integers — _StatTile count-up-animates from 0 to these. The
-  // community-impact placeholders shown before per-user stats load.
-  static const _kPlatformStats = [
-    (2400000, 'Calls\nscreened', AegisColors.turquoise),
-    (847000, 'Scams\nblocked', AegisColors.success),
-    (12800, 'Breaches\ncaught', AegisColors.blueAccent),
+  // Neutral placeholder shown until /v1/stats/summary returns. The
+  // app has no users yet — fabricating "2.4M calls screened / 847K
+  // scams blocked" community-impact numbers on every cold-start was
+  // an investor + reviewer screenshot risk and unfair to the eventual
+  // users whose first impression would be inflated counts. Tiles
+  // now read 0 until real data lands.
+  static const _kInitialStats = [
+    (0, 'Calls\nscreened', AegisColors.turquoise),
+    (0, 'Scams\nblocked', AegisColors.success),
+    (0, 'Breaches\ncaught', AegisColors.blueAccent),
   ];
 
   bool _shieldOn = true;
-  String _statsLabel = 'COMMUNITY IMPACT';
-  List<(int, String, Color)> _displayStats = _kPlatformStats;
+  String _statsLabel = 'MY STATS';
+  List<(int, String, Color)> _displayStats = _kInitialStats;
   IdentityShieldTile? _identityTile;
 
   @override
@@ -74,14 +78,12 @@ class _HomeDashboardState extends State<HomeDashboard> {
       final identityTile = IdentityShieldTile.fromStats(res);
       setState(() {
         _identityTile = identityTile;
-        if (calls > 0 || scams > 0 || breaches > 0) {
-          _statsLabel = 'MY STATS';
-          _displayStats = [
-            (calls, 'Calls\nscreened', AegisColors.turquoise),
-            (scams, 'Scams\nblocked', AegisColors.success),
-            (breaches, 'Breaches\ncaught', AegisColors.blueAccent),
-          ];
-        }
+        _statsLabel = 'MY STATS';
+        _displayStats = [
+          (calls, 'Calls\nscreened', AegisColors.turquoise),
+          (scams, 'Scams\nblocked', AegisColors.success),
+          (breaches, 'Breaches\ncaught', AegisColors.blueAccent),
+        ];
       });
     } catch (_) {}
   }
