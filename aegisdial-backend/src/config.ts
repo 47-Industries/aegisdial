@@ -681,5 +681,28 @@ if (!parsed.success) {
   process.exit(1);
 }
 
+// Production refuses to boot with dev-only defaults still in place. Each
+// of these has a permissive default so local dev works out of the box,
+// but shipping any of them to prod is a footgun (universal forge keys,
+// known-secret JWTs, "everyone is a pro user" bearer shortcut). Fail
+// loudly at boot rather than ship a deceptively-running app.
+if (parsed.data.NODE_ENV === 'production') {
+  const errors: string[] = [];
+  if (parsed.data.JWT_SECRET === 'dev-only-jwt-secret-change-me-immediately-in-production-12345') {
+    errors.push('JWT_SECRET is still the dev default — set a real 32+ byte secret');
+  }
+  if (parsed.data.DATA_ENCRYPTION_KEY === 'ZGV2LW9ubHkta2V5LWRvLW5vdC11c2UtaW4tcHJvZC1lbnYtMzI=') {
+    errors.push('DATA_ENCRYPTION_KEY is still the dev default — generate a real AES-256 key');
+  }
+  if (parsed.data.ALLOW_DEV_BEARER) {
+    errors.push('ALLOW_DEV_BEARER must be false in production (universal forge key)');
+  }
+  if (errors.length > 0) {
+    console.error('Refusing to boot in production with dev-only config:');
+    for (const e of errors) console.error('  - ' + e);
+    process.exit(1);
+  }
+}
+
 export const config = parsed.data;
 export type Config = typeof config;
