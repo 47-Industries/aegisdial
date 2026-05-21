@@ -5,6 +5,7 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'api_service.dart';
 import 'consent_service.dart';
 import 'device_service.dart';
+import 'purchase_service.dart';
 import 'trial_service.dart';
 
 class AuthSession {
@@ -230,6 +231,9 @@ class AuthService extends ChangeNotifier {
     await p.remove('shield_on_v1');             // home_dashboard
     _session = null;
     api.setToken(null);
+    // Detach the RevenueCat identity so the next user on this device
+    // doesn't inherit the previous user's cached entitlement state.
+    unawaited(PurchaseService.logOut());
     // Drop the server-anchored trial start so the next user on this
     // device falls back to local (or their own server anchor on sign-in).
     TrialService.setServerStart(null);
@@ -301,6 +305,13 @@ class AuthService extends ChangeNotifier {
     await p.setString(_kTier, s.tier);
     if (s.displayName != null) await p.setString(_kDisplayName, s.displayName!);
     if (s.email != null) await p.setString(_kEmail, s.email!);
+    // Tie this device's RevenueCat identity to the AegisDial user ID
+    // so the server-to-server webhook can find the right user row when
+    // an entitlement event fires. No-op for guest sessions and for
+    // builds without REVENUECAT_IOS_API_KEY.
+    if (s.userId != 'guest') {
+      unawaited(PurchaseService.logIn(s.userId));
+    }
     notifyListeners();
   }
 

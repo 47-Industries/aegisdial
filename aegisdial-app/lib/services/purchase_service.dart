@@ -14,12 +14,14 @@ const _kRevenueCatApiKey = String.fromEnvironment(
 const _kRevenueCatPlaceholder = 'REVENUECAT_IOS_API_KEY_PLACEHOLDER';
 
 // Product IDs — must match App Store Connect in-app purchase IDs exactly.
-// Pricing tier locked 2026-05-12 per founder's spec.
-const kProductProAnnual = 'aegisdial_pro_annual';            // $399/yr
-const kProductProMonthly = 'aegisdial_pro_monthly';          // $49.99/mo
-const kProductRecoverySession = 'aegisdial_recovery_session';// $149 one-time + 14d Pro
-const kProductRecoveryAnnual = 'aegisdial_recovery_annual';  // $899/yr (Concierge)
-const kProductRecoveryMonthly = 'aegisdial_recovery_monthly';// $99/mo (Concierge)
+// Pricing tier locked 2026-05-12 per founder's spec. After the bundle
+// ID rename (com.aegiadial.ios → com.aegisdial.app, commit 794a5f0)
+// the SKU prefix follows the bundle ID per Apple convention.
+const kProductProAnnual = 'com.aegisdial.app.pro.yearly';             // $399/yr
+const kProductProMonthly = 'com.aegisdial.app.pro.monthly';           // $49.99/mo
+const kProductRecoverySession = 'com.aegisdial.app.recovery.session'; // $149 one-time + 14d Pro
+const kProductRecoveryAnnual = 'com.aegisdial.app.recovery.yearly';   // $899/yr (Concierge)
+const kProductRecoveryMonthly = 'com.aegisdial.app.recovery.monthly'; // $99/mo (Concierge)
 
 // DEPRECATED 2026-05-12: `aegisdial_family_plus_monthly` ($69.99/mo,
 // 3 + 2 add-on lines). The constant lived here so iOS code could
@@ -157,6 +159,31 @@ class PurchaseService {
       return _hasAnyEntitlement(info);
     } catch (e) {
       return false;
+    }
+  }
+
+  /// Tie RevenueCat's app_user_id to AegisDial's stable user id. Called
+  /// right after sign-in. Without this, the RevenueCat → backend webhook
+  /// has no reliable way to find which DB row to flip to Pro when a
+  /// purchase, renewal, or refund event fires server-to-server.
+  static Future<void> logIn(String userId) async {
+    if (!isConfigured) return;
+    try {
+      await Purchases.logIn(userId);
+    } catch (e) {
+      if (kDebugMode) debugPrint('RevenueCat logIn error: $e');
+    }
+  }
+
+  /// Detach the local install from the previous user's RevenueCat
+  /// identity. Called on sign-out so a different account on the same
+  /// device doesn't inherit the prior user's entitlement state in cache.
+  static Future<void> logOut() async {
+    if (!isConfigured) return;
+    try {
+      await Purchases.logOut();
+    } catch (e) {
+      if (kDebugMode) debugPrint('RevenueCat logOut error: $e');
     }
   }
 
