@@ -101,8 +101,21 @@ export async function lookupExposuresWithStatus(
   kind: EnzoicIdentifierKind,
   identifier: string,
 ): Promise<EnzoicExposure[] | EnzoicDisabled> {
-  // Mock mode continues to return fake data so dev UX isn't gated on
-  // a future provider migration.
+  // Production never serves mock breach data — fabricating fraud
+  // hits in a fraud-prevention product is a deceptive-practices
+  // App Store rejection risk plus a serious trust violation. If
+  // we somehow ended up in prod with no real Enzoic creds or with
+  // ENZOIC_MOCK=true on (config drift), return the disabled
+  // sentinel so the UI shows "monitoring pending" instead of
+  // hallucinated breaches.
+  if (
+    config.NODE_ENV === 'production' &&
+    (config.ENZOIC_MOCK || !config.ENZOIC_API_KEY || !config.ENZOIC_API_SECRET)
+  ) {
+    return { disabled: true, reason: 'breach_monitoring_pending_provider' };
+  }
+  // Mock mode continues to return fake data in dev so UX isn't
+  // gated on a future provider migration.
   if (config.ENZOIC_MOCK || !config.ENZOIC_API_KEY || !config.ENZOIC_API_SECRET) {
     return mockExposures(kind, identifier);
   }
@@ -119,6 +132,16 @@ export async function lookupExposures(
   kind: EnzoicIdentifierKind,
   identifier: string,
 ): Promise<EnzoicExposure[]> {
+  // Same prod-safety guard as lookupExposuresWithStatus — return an
+  // empty array rather than mock breach hits when we're in prod
+  // without real creds. Callers that need to distinguish "no hits"
+  // from "monitoring disabled" should use lookupExposuresWithStatus.
+  if (
+    config.NODE_ENV === 'production' &&
+    (config.ENZOIC_MOCK || !config.ENZOIC_API_KEY || !config.ENZOIC_API_SECRET)
+  ) {
+    return [];
+  }
   if (config.ENZOIC_MOCK || !config.ENZOIC_API_KEY || !config.ENZOIC_API_SECRET) {
     return mockExposures(kind, identifier);
   }
