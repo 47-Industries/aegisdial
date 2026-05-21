@@ -552,6 +552,254 @@ export const SCAM_PATTERNS: PhrasePattern[] = [
     weight: 0.5,
     label: 'Pig-butchering investment pretext',
   },
+
+  // ---- 2026-05 expansion: SMS-heavy patterns ----
+  // Caught from FTC Sentinel + carrier complaint summaries 2025-2026.
+  // Smishing especially is where the volume has shifted; the original
+  // 7-pattern set was missing several of the top-10 by US complaint
+  // volume (streaming, 2FA harvest, bank-transfer-confirm, etc.).
+
+  // ---- smishing_bait expansions ----
+  {
+    id: 'streaming_service_billing',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(netflix|disney\\s*\\+|disney\\s*plus|hulu|max|hbo|paramount|peacock|spotify|apple\\s*tv|youtube\\s*premium)\\b.*\\b(payment|billing|subscription|account|charge)\\b.*\\b(failed|declined|expired|suspend|update|verify|confirm)\\b',
+      '\\b(your\\s+)?(netflix|hulu|spotify|disney\\s*\\+?)\\s+(account|membership)\\s+(has\\s+been\\s+)?(suspend|cancel|put\\s+on\\s+hold|placed\\s+on\\s+hold)\\b',
+    ],
+    severity: 4,
+    weight: 0.85,
+    label: 'Streaming-service billing-failed smishing',
+  },
+  {
+    id: 'two_factor_otp_harvest',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(do\\s+not|don[\'\\s]*t)\\s+share\\s+(this|the)\\s+code\\b',
+      '\\bif\\s+(this|that)\\s+(was|wasn[\'\\s]*t)\\s+(you|your\\s+request)\\b.*\\b(reply|text|send)\\s+\\b',
+      '\\byour\\s+(verification|security|one[-\\s]*time)\\s+(code|pin|password)\\s+is\\s+\\d{4,8}\\b.*\\bdid\\s+not\\s+request\\b',
+    ],
+    severity: 4,
+    weight: 0.85,
+    label: '2FA / OTP harvesting bait',
+  },
+  {
+    id: 'bank_transfer_confirm_bait',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(did\\s+you|are\\s+you)\\s+(authorize|attempting|trying|requesting)\\s+(this|a)\\s+(\\$?\\d+|transfer|payment|zelle|wire|venmo|cash\\s*app)\\b',
+      '\\b(zelle|wire|payment|transfer)\\s+(of\\s+)?\\$?\\d+(\\.\\d+)?\\s+(to|for)\\s+\\b.*\\breply\\s+(yes|no|y|n|stop)\\b',
+      '\\b(approve|deny|verify)\\s+(this|the)\\s+(transaction|transfer|charge|payment)\\b.*\\breply\\s+\\b',
+    ],
+    severity: 5,
+    weight: 0.95,
+    label: 'Bank "Did you authorize this transfer?" bait',
+  },
+  {
+    id: 'crypto_wallet_alert',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(coinbase|metamask|trust\\s*wallet|kraken|binance|gemini|crypto\\.com)\\b.*\\b(verify|verification|security|alert|locked|suspend|frozen|unauthorized|unusual)\\b',
+      '\\b(your\\s+)?wallet\\s+(has\\s+been\\s+)?(compromised|drained|locked|flagged)\\b',
+    ],
+    severity: 4,
+    weight: 0.9,
+    label: 'Crypto wallet / exchange smishing',
+  },
+  {
+    id: 'tax_refund_smishing',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(irs|tax)\\s+(refund|return)\\s+(is\\s+)?(pending|ready|available|approved)\\b',
+      '\\bclaim\\s+your\\s+(stimulus|tax\\s+refund|eitc|child\\s+tax\\s+credit)\\b',
+      '\\b(stimulus|treasury)\\s+(check|payment|deposit)\\s+(is\\s+)?(pending|ready|waiting)\\b',
+    ],
+    severity: 4,
+    weight: 0.9,
+    label: 'Tax refund / stimulus smishing',
+  },
+  {
+    id: 'govt_grant_or_aid',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(government|federal|fema|cares|hud|usda)\\s+(grant|relief|assistance|aid|stimulus)\\b.*\\b(approved|qualif|eligible|claim|process)\\b',
+      '\\byou\\s+(qualify|are\\s+eligible)\\s+for\\s+(a|the)\\s+\\$?\\d+\\s+(grant|relief|assistance)\\b',
+    ],
+    severity: 3,
+    weight: 0.75,
+    label: 'Government grant / aid smishing',
+  },
+  {
+    id: 'dmv_license_suspension',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(dmv|department\\s+of\\s+motor\\s+vehicles?)\\b.*\\b(suspend|expire|revoke|register|fee|fine|penalty)\\b',
+      '\\b(driver[\'\\s]*s|drivers)\\s+licen[cs]e\\s+(suspension|will\\s+be\\s+suspended|has\\s+been\\s+suspended)\\b',
+      '\\b(vehicle|car)\\s+registration\\s+(expired|suspended|will\\s+be\\s+suspended)\\b',
+    ],
+    severity: 4,
+    weight: 0.85,
+    label: 'DMV / driver-license smishing',
+  },
+  {
+    id: 'subscription_auto_renew_bait',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(your\\s+)?(norton|mcafee|geek\\s*squad|best\\s*buy|kaspersky|webroot|avast|avg)\\b.*\\b(auto[-\\s]*renew|will\\s+(be\\s+)?(charged|charge|debit)|subscription\\s+(renew|charge))\\b',
+      '\\byour\\s+(antivirus|security|protection)\\s+(plan|subscription)\\s+(will\\s+)?(auto[-\\s]*renew|expire|charge)\\b.*\\$\\s*\\d+',
+    ],
+    severity: 4,
+    weight: 0.9,
+    label: 'Antivirus / Geek Squad auto-renew bait',
+  },
+  {
+    id: 'charity_disaster_smishing',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(donate|donation|contribut)\\b.*\\b(disaster|hurricane|earthquake|wildfire|flood|tornado|relief\\s+fund)\\b',
+      '\\b(red\\s+cross|salvation\\s+army|gofundme|relief\\s+fund)\\b.*\\b(text|reply|send)\\s+(donate|give|\\$\\d+)\\b',
+    ],
+    severity: 3,
+    weight: 0.7,
+    label: 'Charity / disaster donation smishing',
+  },
+  {
+    id: 'healthcare_insurance_smishing',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(medicare|medicaid|aca|obamacare|affordable\\s+care)\\b.*\\b(expir|enroll|verify|update|suspend|new\\s+benefit|new\\s+card)\\b',
+      '\\byour\\s+(health\\s+)?insurance\\s+(plan|coverage|policy)\\s+(will\\s+)?(expir|terminat|cancel|lapse)\\b',
+    ],
+    severity: 3,
+    weight: 0.75,
+    label: 'Health-insurance / Medicare smishing',
+  },
+  {
+    id: 'student_loan_forgiveness',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(student\\s+loan)\\b.*\\b(forgiv|discharg|cancel|relief|eligible|qualify)\\b',
+      '\\b(public\\s+service\\s+loan\\s+forgiveness|pslf|biden\\s+plan)\\b.*\\b(apply|enroll|claim)\\b',
+    ],
+    severity: 3,
+    weight: 0.7,
+    label: 'Student-loan forgiveness smishing',
+  },
+  {
+    id: 'ssn_smishing',
+    category: 'smishing_bait',
+    patterns: [
+      '\\b(social\\s+security|ssn|ss#)\\s+(number\\s+)?(has\\s+been\\s+)?(suspend|frozen|compromise|terminated)\\b',
+      '\\bssa\\s+(fraud|investigation|case|claim)\\s+(against|involving)\\s+you\\b',
+    ],
+    severity: 5,
+    weight: 0.95,
+    label: 'SSN suspension smishing (SSA never texts)',
+  },
+
+  // ---- impersonation_authority expansions ----
+  {
+    id: 'police_jury_duty',
+    category: 'impersonation_authority',
+    patterns: [
+      '\\bjury\\s+duty\\b.*\\b(missed|failed\\s+to\\s+appear|warrant|fine|contempt)\\b',
+      '\\b(failed|failure)\\s+to\\s+appear\\b.*\\b(warrant|arrest|contempt|fine)\\b',
+      '\\b(bench|arrest)\\s+warrant\\b.*\\b(post\\s+bond|pay|bitcoin|gift\\s+card)\\b',
+    ],
+    severity: 5,
+    weight: 1.0,
+    label: 'Jury-duty / bench-warrant impersonation',
+  },
+  {
+    id: 'fbi_federal_agent',
+    category: 'impersonation_authority',
+    patterns: [
+      '\\b(this\\s+is|i[\'\\s]*m)\\s+(special\\s+)?(agent|officer)\\s+\\w+\\s+(with|from|of)\\s+(the\\s+)?(fbi|dea|cia|nsa|ice|atf|hsi|secret\\s+service)\\b',
+      '\\bfederal\\s+(investigation|case|warrant|charges?)\\b.*\\b(against|involving|in)\\s+(your\\s+)?name\\b',
+    ],
+    severity: 5,
+    weight: 1.0,
+    label: 'Federal-agent impersonation',
+  },
+  {
+    id: 'court_appearance_threat',
+    category: 'impersonation_authority',
+    patterns: [
+      '\\b(missed|failed\\s+to\\s+make)\\s+(your\\s+)?(court\\s+)?(appearance|date)\\b',
+      '\\b(judge|court)\\s+(has\\s+)?(issued|signed)\\s+(a\\s+)?(warrant|order|summons)\\b.*\\b(your\\s+name|you)\\b',
+      '\\bcontempt\\s+of\\s+court\\b.*\\b(fine|warrant|arrest)\\b',
+    ],
+    severity: 5,
+    weight: 0.95,
+    label: 'Court / contempt-of-court threat',
+  },
+
+  // ---- impersonation_financial expansions ----
+  {
+    id: 'payment_processor_impersonation',
+    category: 'impersonation_financial',
+    patterns: [
+      '\\b(stripe|square|paypal|venmo|cash\\s*app|zelle)\\s+(fraud|security|risk|investigations?)\\s+(team|department|unit)\\b',
+      '\\b(stripe|square|paypal|venmo|cash\\s*app|zelle)\\b.*\\b(suspicious\\s+(activity|charge|transaction)|account\\s+(locked|frozen|suspended|on\\s+hold))\\b.*\\bcalled?\\b',
+    ],
+    severity: 4,
+    weight: 0.85,
+    label: 'Payment-processor "fraud team" impersonation',
+  },
+
+  // ---- time_pressure expansion ----
+  {
+    id: 'countdown_minutes_explicit',
+    category: 'time_pressure',
+    patterns: [
+      "\\bin\\s+the\\s+next\\s+(30|45|60|fifteen|thirty|forty[-\\s]*five|sixty)\\s+(minutes?|mins?)\\b",
+      '\\b(expir|run\\s+out|deactivat|cancel)\\s+(today|tonight|by\\s+midnight|in\\s+\\d+\\s+(minutes?|hours?))\\b',
+      "\\byou\\s+have\\s+until\\s+(midnight|noon|the\\s+end\\s+of\\s+(today|the\\s+day))\\b",
+    ],
+    severity: 4,
+    weight: 0.7,
+    label: 'Explicit countdown / deadline pressure',
+  },
+
+  // ---- remote_access expansion ----
+  {
+    id: 'mobile_pair_or_sync',
+    category: 'remote_access',
+    patterns: [
+      '\\b(pair|sync|link|connect|mirror)\\s+your\\s+(phone|device|account)\\b.*\\b(with|to)\\s+(my|our|the\\s+technician)\\b',
+      '\\b(install|download)\\s+(quick\\s*support|airdroid|vysor|scrcpy|move\\s*to\\s*ios)\\b.*\\b(let\\s+me|so\\s+(i|we)\\s+can)\\s+(see|access|fix)\\b',
+    ],
+    severity: 5,
+    weight: 0.95,
+    label: 'Asked to pair / mirror your mobile device',
+  },
+
+  // ---- isolation expansion ----
+  {
+    id: 'dont_tell_family_variant',
+    category: 'isolation',
+    patterns: [
+      "\\b(don[\'\\s]*t|do\\s+not)\\s+tell\\s+(your|my|our)?\\s*(spouse|husband|wife|kids|parents?|family|anyone)\\b",
+      '\\b(this\\s+is|keep\\s+this)\\s+(confidential|between\\s+us|private)\\b.*\\b(family|spouse|partner|anyone)\\b',
+      "\\bif\\s+anyone\\s+asks\\b.*\\b(say|tell\\s+them)\\b",
+    ],
+    severity: 4,
+    weight: 0.85,
+    label: 'Asked you to hide it from family',
+  },
+
+  // ---- sensitive_data expansion ----
+  {
+    id: 'ssn_last_four_request',
+    category: 'sensitive_data',
+    patterns: [
+      "\\b(last|final)\\s+(4|four)\\s+(digits|numbers)\\s+of\\s+(your\\s+)?(ssn|social|social\\s+security)\\b",
+      "\\b(verify|confirm)\\s+(your\\s+)?(identity|account)\\s+(by|with|using)\\s+(your\\s+)?(ssn|social\\s+security|date\\s+of\\s+birth|dob|mother[\'\\s]*s\\s+maiden)\\b",
+    ],
+    severity: 5,
+    weight: 0.95,
+    label: 'Asked for SSN / DOB / mother\'s maiden name',
+  },
 ];
 
 export interface PhraseHit {

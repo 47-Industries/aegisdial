@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
+import '../config/app_config.dart';
 import '../services/purchase_service.dart';
 
 enum PaywallReason { trialExpired, dailyLimitReached }
@@ -23,12 +24,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
     // so the paywall button isn't a confusing dead-end.
     if (!PurchaseService.isConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             'Payments aren\'t ready yet. Please try again later or '
-            'email support@aegisdial.com.',
+            'email $kSupportEmail.',
           ),
-          duration: Duration(seconds: 5),
+          duration: const Duration(seconds: 5),
         ),
       );
       return;
@@ -43,12 +44,12 @@ class _PaywallScreenState extends State<PaywallScreen> {
   Future<void> _restore() async {
     if (!PurchaseService.isConfigured) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
             'Restore unavailable. Please try again later or email '
-            'support@aegisdial.com.',
+            '$kSupportEmail.',
           ),
-          duration: Duration(seconds: 5),
+          duration: const Duration(seconds: 5),
         ),
       );
       return;

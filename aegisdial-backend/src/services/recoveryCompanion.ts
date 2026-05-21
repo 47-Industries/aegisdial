@@ -499,8 +499,24 @@ export async function generateCompanionReply(
 }
 
 // Offline / failure fallback. Written deliberately to still be useful —
-// acknowledges the situation and points to the verified step plan.
-function fallbackReply(ctx: CompanionSessionContext, _userMessage: string): string {
+// pattern-matches the user's message against 18 common recovery
+// scenarios and returns a scenario-specific actionable reply. Falls
+// through to the generic 3-line response only when nothing matches.
+//
+// Why pattern-match offline: when ANTHROPIC_API_KEY is missing or the
+// LLM is timing out, the alternative is shipping the same 3 generic
+// sentences regardless of whether the user typed "I sent gift cards"
+// or "I'm worried about my mom." That's a worse experience than the
+// honest pattern-match below, which gives concrete next actions
+// (specific phone numbers, specific URLs, specific sequences).
+//
+// IMPORTANT: this runs AFTER detectCrisisLanguage / crisisReply, so
+// suicide/self-harm patterns are already handled upstream. Don't
+// duplicate them here.
+function fallbackReply(ctx: CompanionSessionContext, userMessage: string): string {
+  const matched = matchOfflinePattern(userMessage);
+  if (matched != null) return matched;
+
   const nextStep = ctx.nextStepTitle
     ? `The next step in your plan is "${ctx.nextStepTitle}" — you can tap it in the app when you're ready.`
     : `You're close to the end of your plan. Take a breath.`;
@@ -509,4 +525,308 @@ function fallbackReply(ctx: CompanionSessionContext, _userMessage: string): stri
     nextStep,
     `If you need to talk to a real person right now, you can call AARP's fraud helpline at 1-877-908-3360, or if you're in crisis, dial or text 988.`,
   ].join('\n\n');
+}
+
+// Offline-mode pattern matcher. Each entry pairs a set of trigger
+// regexes with a concrete, actionable reply. Ordered by specificity:
+// "gift cards" must match BEFORE "I sent money," "Apple ID" must
+// match before "password," etc. First-match wins. When adding new
+// patterns, put them above more general ones in the array.
+//
+// All replies should:
+//   1. Acknowledge what happened in 1 sentence (no preamble)
+//   2. Give 1-3 concrete next actions with real phone numbers / URLs
+//   3. Set a realistic expectation about recovery timeline
+//
+// Phone numbers and URLs are stable, US-only public-help resources.
+// They're hardcoded rather than templated because the offline path
+// has no DB / Resend access and we never want a broken hyperlink in
+// the user's most fragile moment.
+type OfflinePattern = {
+  triggers: RegExp[];
+  reply: string;
+};
+
+const OFFLINE_PATTERNS: OfflinePattern[] = [
+  // 1) Gift cards — common scam payment, recoverable in first hour or two.
+  {
+    triggers: [
+      /gift card/i,
+      /itunes card/i,
+      /vanilla|green ?dot|myvanilla/i,
+      /amazon (gift )?card/i,
+      /steam card/i,
+      /walmart (gift )?card/i,
+    ],
+    reply: [
+      "Time matters — gift cards are sometimes recoverable in the first hour or two. Call the card issuer NOW: Apple 1-800-275-2273, Amazon 1-888-280-4331, Google Play 1-855-466-4438, Steam 1-833-470-3287, Vanilla 1-800-571-1376, Green Dot 1-866-795-7597.",
+      "Tell them: \"I'm a scam victim. Please freeze the cards and any balance.\" Have the card numbers and PINs ready.",
+      "After the freeze call, file at ic3.gov (FBI's complaint center). Time matters — do the freeze first, then the report.",
+    ].join('\n\n'),
+  },
+
+  // 2) Crypto sent — irreversible, but exchanges can flag the destination wallet.
+  {
+    triggers: [
+      /\b(bitcoin|btc|ethereum|eth|usdt|usdc|crypto|cryptocurrency)\b/i,
+      /sent (it |to )?(a |the )?wallet/i,
+      /wallet address/i,
+      /coin ?base|binance|kraken|gemini/i,
+    ],
+    reply: [
+      "Crypto transactions can't be reversed, but exchanges can sometimes flag the destination wallet — contact the fraud team at the exchange you sent from (Coinbase, Binance, Kraken, Gemini, etc.).",
+      "Then file at BOTH ic3.gov AND chainabuse.com. Both feed law enforcement and the wallet-tracking community that flags these addresses for future victims.",
+      "Heads up: if a \"recovery service\" calls offering to get your crypto back — that's a follow-on scam targeting prior victims. Real recovery doesn't work that way.",
+    ].join('\n\n'),
+  },
+
+  // 3) Wire / transfer / money sent — bank claw-back possible in first 24-48 hours.
+  {
+    triggers: [
+      /i (sent|wired|transferred|paid|gave them) (\$|\d|money|cash)/i,
+      /\bwired\b/i,
+      /\bzelle|venmo|cash ?app|paypal\b/i,
+      /western union|moneygram/i,
+      /transferred .* (to (them|him|her|that))/i,
+    ],
+    reply: [
+      "Time matters most here. If the wire or transfer was in the last 24-48 hours, your bank can sometimes claw it back — call the fraud line on the back of your card RIGHT NOW. Don't wait until business hours; fraud lines are 24/7.",
+      "Specifically ask for: \"recall request\" (for wires), \"chargeback\" (for debit/credit), or \"reversal\" (for Zelle/Venmo/CashApp). Each platform has different windows; the bank knows which apply.",
+      "Then file at ic3.gov. Banks treat IC3-filed cases more seriously than self-reported claims.",
+    ].join('\n\n'),
+  },
+
+  // 4) SSN given — credit fraud alert is the immediate move.
+  {
+    triggers: [
+      /i gave .* (my )?(ssn|social security|social)/i,
+      /they have my (ssn|social)/i,
+      /told them my ssn/i,
+      /shared my (ssn|social)/i,
+    ],
+    reply: [
+      "Right now: place a free fraud alert on your credit. Fastest path is experian.com/fraudalert — it propagates to Equifax + TransUnion automatically (one filing, three bureaus).",
+      "Then consider a credit freeze (stronger than the alert) at all three bureaus. Free, takes about 5 minutes per bureau. A freeze blocks new credit applications entirely; you temporarily lift it when you need to apply for something legitimate.",
+      "Finally, file at identitytheft.gov for a personalized recovery plan with templated letters and a recovery PIN.",
+    ].join('\n\n'),
+  },
+
+  // 5) Card / account info given — bank fraud line.
+  {
+    triggers: [
+      /i gave .* (card|debit|credit) ?(number|info|details)/i,
+      /they have my (card|account|cvv)/i,
+      /shared my (card|cvv|account number)/i,
+      /told them my (card|cvv|account)/i,
+    ],
+    reply: [
+      "Call the number on the back of your card right now. Tell them: \"Suspected fraud — please freeze the card and issue a replacement.\"",
+      "While you're on the call, ask them to enable account-takeover protection if they offer it (most major banks do, and it's free).",
+      "Then check your last 30 days of charges and dispute anything you don't recognize. Federal law (Reg E for debit, Reg Z for credit) gives you 60 days to dispute fraudulent charges.",
+    ].join('\n\n'),
+  },
+
+  // 6) Remote access tools installed — most dangerous, requires physical disconnect.
+  {
+    triggers: [
+      /any ?desk|team ?viewer|log ?me ?in|chrome remote/i,
+      /remote ?(access|desktop|control)/i,
+      /let them onto (my )?computer/i,
+      /they took control/i,
+      /screen ?share/i,
+    ],
+    reply: [
+      "Disconnect from the internet RIGHT NOW (unplug Ethernet, turn off Wi-Fi). Don't power the machine off — keep it on as evidence in case you need it later.",
+      "From a DIFFERENT device (your phone is fine): change the passwords for your email, bank, and any sites you logged into recently. Enable 2-factor authentication on each.",
+      "Then run a full scan with Malwarebytes (free at malwarebytes.com) on the affected machine before reconnecting it to the internet. If anything was banking-related, also call the bank's fraud line.",
+    ].join('\n\n'),
+  },
+
+  // 7) Apple ID / iCloud
+  {
+    triggers: [
+      /apple ?id/i,
+      /\bicloud\b/i,
+      /apple account/i,
+    ],
+    reply: [
+      "Sign in at appleid.apple.com from a trusted device. Change your password to a brand-new one (not a variation of the old one).",
+      "Under \"Devices\", remove anything you don't recognize. Under \"Sign-In and Security\", confirm your trusted phone number is yours and 2-factor is on.",
+      "If you can't sign in (they already changed the password), use iforgot.apple.com from a device that's still signed into your account — it can re-grant access without the new password.",
+    ].join('\n\n'),
+  },
+
+  // 8) Password given (general, after Apple ID branch above)
+  {
+    triggers: [
+      /i gave .* (my )?password/i,
+      /they have my password/i,
+      /shared my password/i,
+      /told them my password/i,
+    ],
+    reply: [
+      "Change that password immediately on the real site. Type the URL yourself in the address bar; do NOT click any link they sent you (it might lead to a lookalike site).",
+      "Then enable 2-factor authentication if it isn't on already — that locks them out of the account even if they still know the password.",
+      "Check the account's recent-activity log for unauthorized actions, sign out of all other sessions, and review any password-reset emails you may have missed.",
+    ].join('\n\n'),
+  },
+
+  // 9) Romance scam pattern — gentle, named directly.
+  {
+    triggers: [
+      /(boyfriend|girlfriend|partner|fiance) (online|on the internet|i('ve)? never met)/i,
+      /(met|dating) .* online .* (months|year)/i,
+      /(he|she) asked (me )?for money/i,
+      /(he|she) needs money/i,
+      /sending him money|sending her money/i,
+      /he('s)? (in the military|on a oil rig|deployed|overseas)/i,
+    ],
+    reply: [
+      "I want to ask carefully: have you ever met them in person? Have they ever video-chatted with you live (not pre-recorded), or only voice and text?",
+      "If the answer is \"never met / never live video\" AND money has come up — even framed as a loan, an emergency, an investment, customs fees, medical bills — that's the romance-scam pattern. It's heartbreaking, but recognizing it is how you stop the loss.",
+      "When you're ready: stop sending money, save all the messages and photos as evidence (don't delete the chats), and file at ic3.gov. We can walk through the next steps together when you want to.",
+    ].join('\n\n'),
+  },
+
+  // 10) Reporting questions
+  {
+    triggers: [
+      /should i (call|tell|report)/i,
+      /how do i report/i,
+      /file a (report|complaint)/i,
+      /\b(police|fbi|ftc) report\b/i,
+      /report .* scam/i,
+    ],
+    reply: [
+      "Three places, in this order — all are free, all online:",
+      "1. **ic3.gov** — FBI's complaint center. Best single filing because federal + local share data from it.\n2. **ReportFraud.ftc.gov** — Federal Trade Commission. Fast online form, no follow-up needed.\n3. **Local police** — only if you need a report number for an insurance claim, your bank's recovery process, or identity-theft remediation.",
+      "Skip your state AG unless the scam crossed state lines AND involved a registered business. Most phone scams aren't actionable at the state level, so the FBI/FTC route is faster.",
+    ].join('\n\n'),
+  },
+
+  // 11) Embarrassed / ashamed — emotional, no actions.
+  {
+    triggers: [
+      /(embarrassed|ashamed|humiliated)/i,
+      /(feel|i was|i am) (stupid|dumb|foolish|gullible|idiot|naive)/i,
+      /can'?t believe i fell for/i,
+      /how could i (be|have)/i,
+    ],
+    reply: [
+      "These scams are designed by professionals to bypass exactly the careful, cautious thinking you usually rely on. Falling for one means you encountered a skilled adversary, not that you were careless.",
+      "The Federal Trade Commission's data shows people of every age, every income, every education level get targeted — and a meaningful share get caught. Doctors. Engineers. Police officers. Lawyers. You are in the company of millions.",
+      "What separates recovery from prolonged damage is acting fast — and you're already here doing that. Let's keep going.",
+    ].join('\n\n'),
+  },
+
+  // 12) Worried about elderly parent
+  {
+    triggers: [
+      /\b(my mom|my dad|my parent|my grandma|my grandfather|my grandmother|elderly|older)\b/i,
+      /(she|he) (sent|gave|wired|paid)/i,
+    ],
+    reply: [
+      "When you talk to them, lead with: \"I love you. This wasn't your fault. We're going to fix this together.\" Don't lead with the dollar amount or \"how could you\" — that shuts the conversation down before any recovery work starts.",
+      "Practical first moves: help them call their bank's fraud line, freeze any compromised cards, and place a credit alert at experian.com/fraudalert (free, propagates to all three bureaus).",
+      "If the same scammers keep calling, install a call-screener (this app is built exactly for that), and consider getting joint visibility on their accounts via the bank's authorized-user feature so the next attempt is caught faster.",
+    ].join('\n\n'),
+  },
+
+  // 13) How do I tell my family
+  {
+    triggers: [
+      /how (do|can) i tell (my )?(family|husband|wife|spouse|kids|son|daughter|partner)/i,
+      /(don'?t want to tell|can'?t tell|afraid to tell)/i,
+      /(my husband|my wife) (will|is going to)/i,
+    ],
+    reply: [
+      "Be direct: \"I made a mistake. I need your help fixing it.\" That sentence does most of the work. Most families respond with relief, not blame — they'd rather know now than discover it later from a credit alert.",
+      "If you're worried about a specific person who tends to react badly, you can tell a different one first: a sibling, an adult child, a trusted friend. You don't have to do this alone, and you don't have to tell everyone at once.",
+      "Practical tip: have the recovery steps written down before the conversation. It shifts the tone from \"something terrible happened\" to \"I'm already working on it and here's the plan.\"",
+    ].join('\n\n'),
+  },
+
+  // 14) Will I get my money back
+  {
+    triggers: [
+      /(get|will i get) my money back/i,
+      /(refund|recover) (the|my) money/i,
+      /how do i get .* back/i,
+      /chance(s)? of getting/i,
+    ],
+    reply: [
+      "Honest answer: in the first 24-48 hours, banks can sometimes claw wires back and freeze gift cards. After that, recovery rates drop sharply. Your single biggest lever is **time**.",
+      "If you wired money: call the bank's fraud line right now. If you used gift cards: call the card issuer. If you sent crypto: call the exchange you sent from. (See my other replies for the specific phone numbers.)",
+      "Past the 48-hour window, focus your energy on stopping further loss — fraud alerts, credit freeze, password changes, blocking the number — rather than chasing the money. Reclamation often costs more (in time and stress) than it returns.",
+    ].join('\n\n'),
+  },
+
+  // 15) They keep calling
+  {
+    triggers: [
+      /(still|keep|won'?t stop|kept) calling/i,
+      /(call|called) (me )?again/i,
+      /more calls/i,
+      /every day/i,
+    ],
+    reply: [
+      "Block the number on your phone. Also: don't answer unknown numbers for the next 2-3 weeks — every answered call confirms you're a \"live\" contact and gets your number resold to other scam operations.",
+      "Report the number at ReportFraud.ftc.gov (it feeds the carrier-blocking lists used by Verizon, AT&T, T-Mobile).",
+      "If they're using a different number each time (number-spoofing), AegisDial's Live Shield is exactly what catches that pattern — keep the shield on. Same scammer, same script, even when the number changes.",
+    ].join('\n\n'),
+  },
+
+  // 16) Threats / arrest / lawsuit
+  {
+    triggers: [
+      /(they|he|she) (threaten|threatened)/i,
+      /\b(arrest|warrant|deport|jail|prison)\b/i,
+      /(lawsuit|sue me|legal action|charges against)/i,
+      /(court|judge|jury)/i,
+    ],
+    reply: [
+      "These threats have no legal weight. The IRS, Social Security Administration, the FBI, and police never call to threaten arrest. Real warrants are served in person; real lawsuits arrive by certified mail; real federal agencies write before they call.",
+      "Block the number, do not answer when they call back, and do not pay anything to make them stop — paying once marks you as a \"productive\" contact and the calls escalate, not stop.",
+      "If they have personal information about you (address, employer, family names) and you feel physically unsafe, file a non-emergency police report so it's documented. Otherwise, blocking + reporting is the right path.",
+    ].join('\n\n'),
+  },
+
+  // 17) Identity theft suspected
+  {
+    triggers: [
+      /identity ?theft/i,
+      /(stole|stolen) my identity/i,
+      /(opened|using) accounts in my name/i,
+      /credit (report|card) i didn'?t/i,
+    ],
+    reply: [
+      "Three steps in this order:",
+      "1. **Fraud alert** — experian.com/fraudalert (free, takes 2 minutes, propagates to all three bureaus).\n2. **Credit reports** — annualcreditreport.com (free, all three bureaus). Look for accounts you didn't open.\n3. **identitytheft.gov** — generates a personalized recovery plan with letters you can send to creditors and a personal recovery PIN.",
+      "If you find unauthorized accounts: contact each lender's fraud department directly (faster than letters), and consider escalating to a credit freeze (stronger than the alert, and free).",
+    ].join('\n\n'),
+  },
+
+  // 18) Hacked / account compromised
+  {
+    triggers: [
+      /i('?ve)? been hacked/i,
+      /(hacker|broken into|compromised|got into) my (email|account|computer|phone)/i,
+      /(my )?account .* (hacked|compromised|locked out)/i,
+    ],
+    reply: [
+      "From a different, clean device: change the password for the compromised account first, then your email (because email controls password resets for everything else).",
+      "Enable 2-factor authentication on every account. Use an authenticator app (Authy, 1Password, Google Authenticator) rather than SMS where possible — SMS can be hijacked via SIM swap.",
+      "Check the compromised account for: password-reset emails you didn't request, sign-in alerts from unknown locations, forwarding rules added to your email, and recent transactions or messages sent from your account.",
+    ].join('\n\n'),
+  },
+];
+
+function matchOfflinePattern(userMessage: string): string | null {
+  if (!userMessage || userMessage.trim().length === 0) return null;
+  for (const p of OFFLINE_PATTERNS) {
+    if (p.triggers.some((r) => r.test(userMessage))) {
+      return p.reply;
+    }
+  }
+  return null;
 }

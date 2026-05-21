@@ -1,13 +1,197 @@
 import 'package:flutter/material.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
+import '../config/app_config.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
+import '../services/app_version.dart';
+import '../services/device_service.dart';
 import 'welcome_screen.dart';
 import 'family_alert_privacy_screen.dart';
 
 class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
+
+  // Push diagnostic — surfaces the APNs registration chain so we can
+  // tell whether silent pushes are because (a) user declined permission,
+  // (b) iOS never handed us a token (entitlement / network issue), or
+  // (c) backend's /v1/device/register rejected the POST. Without this
+  // every "I'm not getting alerts" report is unfalsifiable.
+  void _showPushDiagnostic(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AegisColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Push diagnostic'),
+        content: SizedBox(
+          width: 320,
+          child: FutureBuilder<PushDiagnostic>(
+            future: deviceService.snapshot(),
+            builder: (c, snap) {
+              if (snap.connectionState != ConnectionState.done) {
+                return const SizedBox(
+                  height: 60,
+                  child: Center(child: CircularProgressIndicator()),
+                );
+              }
+              final d = snap.data ??
+                  const PushDiagnostic(); // empty = nothing recorded yet
+              final dotColor = d.healthy
+                  ? AegisColors.success
+                  : (d.lastApnsError != null || d.lastRegisterError != null)
+                      ? AegisColors.danger
+                      : AegisColors.warning;
+              final summary = d.healthy
+                  ? 'Push notifications are wired end-to-end.'
+                  : d.permissionGranted == false
+                      ? 'You declined notifications. Tap "Retry" after enabling them in iOS Settings → AegisDial → Notifications.'
+                      : d.lastApnsError != null
+                          ? 'iOS reported an APNs error. The backend can\'t reach this device for alerts.'
+                          : d.lastRegisterError != null
+                              ? 'iOS gave us a token but the backend rejected it. Push will retry on next app launch.'
+                              : 'No push activity yet on this install. Tap "Retry" to register now.';
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Container(
+                        width: 10,
+                        height: 10,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: dotColor,
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: Text(
+                          summary,
+                          style: const TextStyle(
+                            color: AegisColors.textSecondary,
+                            height: 1.4,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 14),
+                  _diagRow('Permission', _yesNoMaybe(d.permissionGranted)),
+                  _diagRow('iOS token', d.lastTokenPreview ?? '—'),
+                  _diagRow(
+                    'Registered with backend',
+                    d.lastRegisteredAt != null
+                        ? _humanTimeAgo(d.lastRegisteredAt!)
+                        : '—',
+                  ),
+                  if (d.lastApnsError != null)
+                    _diagRow('APNs error', d.lastApnsError!,
+                        valueColor: AegisColors.danger),
+                  if (d.lastRegisterError != null)
+                    _diagRow('Backend error', d.lastRegisterError!,
+                        valueColor: AegisColors.danger),
+                ],
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () async {
+              Navigator.of(ctx).pop();
+              await deviceService.ensureRegistered();
+              if (context.mounted) _showPushDiagnostic(context);
+            },
+            child: const Text(
+              'Retry',
+              style: TextStyle(color: AegisColors.turquoise),
+            ),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            style: ElevatedButton.styleFrom(
+              minimumSize: const Size(0, 44),
+              backgroundColor: AegisColors.turquoise,
+              foregroundColor: Colors.black,
+            ),
+            child: const Text('Got it'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _diagRow(String label, String value, {Color? valueColor}) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              label,
+              style: const TextStyle(
+                color: AegisColors.textTertiary,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: TextStyle(
+                color: valueColor ?? AegisColors.textPrimary,
+                fontSize: 12,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _yesNoMaybe(bool? v) {
+    if (v == null) return 'unknown';
+    return v ? 'granted' : 'declined';
+  }
+
+  String _humanTimeAgo(DateTime when) {
+    final diff = DateTime.now().difference(when);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes} min ago';
+    if (diff.inHours < 24) return '${diff.inHours} hr ago';
+    return '${diff.inDays} day${diff.inDays == 1 ? '' : 's'} ago';
+  }
+
+  // Opens the system mail composer pre-addressed to support, with the
+  // app version pre-filled in the body so triage starts with the build
+  // number instead of asking for it. Until aegisdial.com is registered
+  // the message bounces — but the composer still opens, and a copyable
+  // address dialog is the fallback when no mail client is configured.
+  Future<void> _emailSupport(BuildContext context) async {
+    final body = Uri.encodeComponent(
+      '\n\n— — —\nApp: AegisDial ${AppVersion.current.short}\n'
+      '(written above this line so support has the build number)',
+    );
+    final subject = Uri.encodeComponent(kSupportEmailSubject);
+    final uri = Uri.parse('mailto:$kSupportEmail?subject=$subject&body=$body');
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else if (context.mounted) {
+      // No mail client — show the address so the user can copy it.
+      _showInfo(
+        context,
+        'Email support',
+        'No mail app is set up on this device.\n\nReach us at:\n$kSupportEmail\n\nWe respond within 24 hours.',
+      );
+    }
+  }
 
   void _showInfo(BuildContext context, String title, String body) {
     showDialog(
@@ -375,7 +559,7 @@ class SettingsScreen extends StatelessWidget {
               ('How do I add family members?',
                   'Go to the Family tab and tap "Add a family member." Pro covers up to 3 lines.'),
               ('How do I contact support?',
-                  'Email us at support@aegisdial.com. We respond within 24 hours.'),
+                  'Email us at $kSupportEmail. We respond within 24 hours.'),
             ].map(
               (faq) => Container(
                 margin: const EdgeInsets.only(bottom: 10),
@@ -612,13 +796,23 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _showHelp(context),
           ),
           _SettingsTile(
+            icon: Icons.mail_outline_rounded,
+            title: 'Email support',
+            onTap: () => _emailSupport(context),
+          ),
+          _SettingsTile(
+            icon: Icons.notifications_active_outlined,
+            title: 'Push diagnostic',
+            onTap: () => _showPushDiagnostic(context),
+          ),
+          _SettingsTile(
             icon: Icons.info_outline,
             title: 'About AegisDial',
-            trailing: 'v1.0.0 (9)',
+            trailing: AppVersion.current.short,
             onTap: () => _showInfo(
               context,
               'About AegisDial',
-              'AegisDial v1.0.0 (9)\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: support@aegisdial.com',
+              'AegisDial ${AppVersion.current.short}\n\nBuilt by 47 Industries.\n\nAegisDial helps you prevent phone scams with real-time AI call screening and recover from fraud with a guided companion.\n\nFor support: $kSupportEmail',
             ),
           ),
           const SizedBox(height: 24),
