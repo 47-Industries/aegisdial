@@ -280,9 +280,12 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
         // Server-side daily limit hit (should match client limit, edge case).
         return "You've reached today's message limit. Upgrade to Pro for unlimited access.";
       }
-      return _respond(message);
+      // Other API errors → fall back to local pattern responses, but
+      // prefix so the user knows we lost the AI coach. Silent fallback
+      // makes a real outage look identical to a working backend.
+      return '⚠️ Offline — using local guidance.\n\n${_respond(message)}';
     } catch (_) {
-      return _respond(message);
+      return '⚠️ Offline — using local guidance.\n\n${_respond(message)}';
     }
   }
 
@@ -363,7 +366,9 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
             ),
             const SizedBox(height: 2),
             Text(
-              'AI-powered fraud recovery',
+              _isPro
+                  ? 'AI-powered fraud recovery'
+                  : 'Fraud-recovery guide',
               style: tt.labelSmall?.copyWith(
                 color: AegisColors.textTertiary,
                 letterSpacing: 0.4,
