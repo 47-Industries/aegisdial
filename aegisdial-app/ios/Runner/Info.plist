@@ -67,7 +67,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>AegisDial uses your microphone only when Live Shield is active during a phone call to detect scam patterns on-device. Audio never leaves your phone.</string>
+	<string>AegisDial uses your microphone when you start a Live Shield session or record a family safe-word. The mic only runs while the relevant screen is in the foreground — no background listening.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>AegisDial uses speech recognition once during safe word setup to register your voice. This helps verify family members during emergencies.</string>
 	<key>NSContactsUsageDescription</key>
@@ -83,7 +83,6 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
-		<string>audio</string>
 	</array>
 	<!-- url_launcher schemes (iOS 9+ requires explicit declaration for
 	     canLaunchUrl). `tel` is for the bank fraud-line jumper in the
