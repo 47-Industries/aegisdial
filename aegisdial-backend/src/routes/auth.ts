@@ -44,7 +44,19 @@ const emailLoginSchema = z.object({
 });
 
 export async function authRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/auth/apple', async (req, reply) => {
+  app.post(
+    '/auth/apple',
+    {
+      config: {
+        // Pre-auth endpoint — no req.appUser exists yet, so we key on
+        // IP. 10/min is generous for legitimate users (Apple Sign In
+        // succeeds first try almost always) but kills credential
+        // stuffing / token replay floods. Global 300/min/IP from
+        // server.ts still applies on top.
+        rateLimit: { max: 10, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
     const body = appleBodySchema.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
 
@@ -108,7 +120,18 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ token, user_id: userId, tier });
   });
 
-  app.post('/auth/email/signup', async (req, reply) => {
+  app.post(
+    '/auth/email/signup',
+    {
+      config: {
+        // Pre-auth, IP-keyed. 5/min — signups are rare and a human
+        // rarely needs more than 1-2 attempts. Tight cap blunts
+        // automated account-creation farms (used for trial abuse +
+        // referral fraud).
+        rateLimit: { max: 5, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
     const body = emailSignupSchema.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
 
@@ -144,7 +167,18 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ token, user_id: userId, tier });
   });
 
-  app.post('/auth/email/login', async (req, reply) => {
+  app.post(
+    '/auth/email/login',
+    {
+      config: {
+        // Pre-auth, IP-keyed. 5/min throttles credential-stuffing
+        // floods. Legitimate retries (typo'd password) easily fit;
+        // a botnet rotating proxies still hits the global 300/min/IP
+        // before getting deep into a wordlist.
+        rateLimit: { max: 5, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
     const body = emailLoginSchema.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
 
