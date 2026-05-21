@@ -86,10 +86,10 @@
 	</array>
 	<!-- url_launcher schemes (iOS 9+ requires explicit declaration for
 	     canLaunchUrl). `tel` is for the bank fraud-line jumper in the
-	     Recovery chatbot; `sms` reserved for the future "report this
-	     scam to 7726" SHAFT flow; `mailto` for Settings → Email support;
-	     `https` for the auth screen's Terms / Privacy "Open full
-	     document" links. -->
+	     Recovery chatbot; `sms` is the Family screen "Text invite"
+	     composer; `mailto` for Settings → Email support; `https`
+	     for the auth screen's Terms / Privacy "Open full document"
+	     links. -->
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>tel</string>

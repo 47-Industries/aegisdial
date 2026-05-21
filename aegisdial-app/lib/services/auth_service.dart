@@ -99,15 +99,31 @@ class AuthService extends ChangeNotifier {
   /// the same identity token avoids prompting Face ID twice in the
   /// new-user flow.
   AppleSignInPayload? _pendingApplePayload;
+  /// Wall-clock when `_pendingApplePayload` was cached. Apple's identity
+  /// tokens have a short validity window — if the user gets stuck on
+  /// the age-gate sheet for several minutes (or backgrounds the app
+  /// mid-flow), reusing the stale token will fail signature verify on
+  /// our backend. We expire the cache after 60s and force a fresh
+  /// Apple modal, which is cheap (Face ID) and always works.
+  DateTime? _pendingApplePayloadCachedAt;
+
+  static const Duration _kApplePayloadTtl = Duration(seconds: 60);
 
   /// Pop the Apple modal, parse the credential, and POST to the
   /// backend. On a brand-new user the backend returns 400
   /// dob_year_required — the caller should catch that, show the
   /// age-gate sheet, and call signInWithApple again with `dobYear` set.
   /// The cached Apple credential is reused so Face ID doesn't fire
-  /// twice.
+  /// twice — but only within `_kApplePayloadTtl`. Past that, we re-prompt.
   Future<AuthSession> signInWithApple({int? dobYear}) async {
-    var payload = _pendingApplePayload;
+    final cachedAt = _pendingApplePayloadCachedAt;
+    final cacheExpired = cachedAt == null ||
+        DateTime.now().difference(cachedAt) > _kApplePayloadTtl;
+    var payload = cacheExpired ? null : _pendingApplePayload;
+    if (cacheExpired) {
+      _pendingApplePayload = null;
+      _pendingApplePayloadCachedAt = null;
+    }
     if (payload == null) {
       final cred = await SignInWithApple.getAppleIDCredential(
         scopes: const [
@@ -128,6 +144,7 @@ class AuthService extends ChangeNotifier {
         displayName: fullName.isEmpty ? null : fullName,
       );
       _pendingApplePayload = payload;
+      _pendingApplePayloadCachedAt = DateTime.now();
     }
 
     final body = <String, dynamic>{
@@ -145,6 +162,7 @@ class AuthService extends ChangeNotifier {
       // keep it between a missing-DOB attempt and the retry; any other
       // failure should force a fresh Apple modal next time.
       _pendingApplePayload = null;
+      _pendingApplePayloadCachedAt = null;
       return session;
     } on ApiException catch (e) {
       // Keep the cached payload only for the specific "missing DOB"
@@ -152,6 +170,7 @@ class AuthService extends ChangeNotifier {
       // ID token is likely stale and the next attempt should re-prompt.
       if (e.code != 'dob_year_required') {
         _pendingApplePayload = null;
+        _pendingApplePayloadCachedAt = null;
       }
       rethrow;
     }
