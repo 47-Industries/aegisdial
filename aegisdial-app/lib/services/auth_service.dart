@@ -213,6 +213,31 @@ class AuthService extends ChangeNotifier {
     return session;
   }
 
+  /// Request a 6-digit password-reset code be emailed to the address.
+  /// Backend returns 200 even when the email doesn't match any account
+  /// (anti-enumeration), so we never tell the user "no such email" —
+  /// we just say "if that email is on file, you'll get a code."
+  Future<void> requestPasswordReset({required String email}) async {
+    await api.post('/auth/email/forgot-password', {'email': email});
+  }
+
+  /// Submit the 6-digit code + new password. Backend returns 401 with
+  /// code='invalid_code' for any of: wrong code / expired / already
+  /// used / unknown email — the UI just says "code didn't match." The
+  /// user does NOT get auto-signed-in afterwards; they go back to the
+  /// login screen with the new password.
+  Future<void> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    await api.post('/auth/email/reset-password', {
+      'email': email,
+      'code': code,
+      'new_password': newPassword,
+    });
+  }
+
   /// Local-only "guest" session. Useful for visual demos / TestFlight reviewers.
   /// Real device-bound anonymous auth lands later via App Attest backend flow.
   Future<void> continueAsGuest() async {

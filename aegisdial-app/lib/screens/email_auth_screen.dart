@@ -4,6 +4,7 @@ import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
 import '../widgets/age_gate_sheet.dart';
 import '../widgets/hyperspace_stars.dart';
+import 'forgot_password_screen.dart';
 
 class EmailAuthScreen extends StatefulWidget {
   final bool initialSignUp;
@@ -219,6 +220,30 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
                       ),
                     ),
                   ),
+                  // "Forgot password?" only on the sign-in tab — irrelevant
+                  // for someone creating a brand-new account.
+                  if (!_isSignUp)
+                    Center(
+                      child: TextButton(
+                        onPressed: () {
+                          Navigator.of(context).push(MaterialPageRoute(
+                            builder: (_) => ForgotPasswordScreen(
+                              prefilledEmail: _email.text.trim().isEmpty
+                                  ? null
+                                  : _email.text.trim(),
+                            ),
+                          ));
+                        },
+                        child: Text(
+                          'Forgot password?',
+                          style: TextStyle(
+                            color: AegisColors.textTertiary,
+                            decoration: TextDecoration.underline,
+                            decorationColor: AegisColors.textTertiary,
+                          ),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),

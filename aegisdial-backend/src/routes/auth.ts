@@ -43,6 +43,25 @@ const emailLoginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  email: z.string().email(),
+  code: z.string().regex(/^\d{6}$/, '6-digit numeric code required'),
+  new_password: z.string().min(8).max(200),
+});
+
+// 6-digit numeric code via cryptographically-secure RNG. Bcrypt-hashed
+// before storage so a DB dump doesn't give an attacker live codes.
+import { randomInt } from 'node:crypto';
+function generateResetCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+const RESET_CODE_TTL_MINUTES = 15;
+
 export async function authRoutes(app: FastifyInstance): Promise<void> {
   app.post(
     '/auth/apple',
@@ -166,6 +185,132 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     const token = await signAppJwt({ sub: userId, auth_method: 'email', tier });
     return reply.send({ token, user_id: userId, tier });
   });
+
+  // Forgot-password: send a 6-digit code to the email if it exists.
+  // Returns 200 even when the email doesn't match a user — leaking
+  // "this email exists in our DB" via response code is a common
+  // enumeration vector. The Resend send is async/best-effort.
+  app.post(
+    '/auth/email/forgot-password',
+    {
+      config: {
+        // 3/min/IP is tight. A legit user retries once or twice if
+        // their first email lands in spam; a script floods this to
+        // probe valid emails.
+        rateLimit: { max: 3, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
+      const body = forgotPasswordSchema.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      const emailLower = body.data.email.toLowerCase();
+
+      const userRes = await query<{ id: string }>(
+        `SELECT id FROM users WHERE email = $1 AND auth_method = 'email'`,
+        [emailLower],
+      );
+      // Always pretend success — don't reveal whether the email exists.
+      if (userRes.rows.length === 0) {
+        return reply.send({ sent: true });
+      }
+      const userId = userRes.rows[0]!.id;
+
+      // Invalidate any previous unused code for this user (the unique
+      // partial index `password_reset_codes_one_unused_per_user`
+      // enforces only-one-active, so we explicitly mark prior rows
+      // used before inserting the new one).
+      await query(
+        `UPDATE password_reset_codes
+            SET used_at = NOW()
+          WHERE user_id = $1 AND used_at IS NULL`,
+        [userId],
+      );
+      const code = generateResetCode();
+      const codeHash = await bcrypt.hash(code, BCRYPT_ROUNDS);
+      const expiresAt = new Date(
+        Date.now() + RESET_CODE_TTL_MINUTES * 60 * 1000,
+      );
+      await query(
+        `INSERT INTO password_reset_codes (user_id, code_hash, expires_at)
+         VALUES ($1, $2, $3)`,
+        [userId, codeHash, expiresAt.toISOString()],
+      );
+      void sendEmail({
+        userId,
+        to: emailLower,
+        template: 'password_reset_code',
+        data: { code, expires_in_minutes: RESET_CODE_TTL_MINUTES },
+      });
+      void track('password_reset_requested', { userId });
+      return reply.send({ sent: true });
+    },
+  );
+
+  // Reset-password: verify the 6-digit code + set a new password.
+  // The route bcrypts the submitted code and compares against the
+  // stored hash so a SQL-injection or db-dump scenario can't leak
+  // live codes. Same generic 401 for "wrong code" + "expired code"
+  // + "code already used" — granular errors leak more than they
+  // help a legit user.
+  app.post(
+    '/auth/email/reset-password',
+    {
+      config: {
+        // 5/min/IP — accommodates a user typo'ing the code twice
+        // before fetching another email. Tighter than signup
+        // because the attack surface is "guess a 6-digit code I
+        // intercepted from the same email."
+        rateLimit: { max: 5, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
+      const body = resetPasswordSchema.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      const emailLower = body.data.email.toLowerCase();
+
+      const userRes = await query<{ id: string }>(
+        `SELECT id FROM users WHERE email = $1 AND auth_method = 'email'`,
+        [emailLower],
+      );
+      if (userRes.rows.length === 0) {
+        return reply.code(401).send({ error: 'invalid_code' });
+      }
+      const userId = userRes.rows[0]!.id;
+
+      const codeRes = await query<{ id: string; code_hash: string }>(
+        `SELECT id, code_hash FROM password_reset_codes
+          WHERE user_id = $1
+            AND used_at IS NULL
+            AND expires_at > NOW()
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [userId],
+      );
+      if (codeRes.rows.length === 0) {
+        return reply.code(401).send({ error: 'invalid_code' });
+      }
+      const row = codeRes.rows[0]!;
+      const match = await bcrypt.compare(body.data.code, row.code_hash);
+      if (!match) {
+        return reply.code(401).send({ error: 'invalid_code' });
+      }
+
+      // Code verified — rotate the user's password + burn the code.
+      // Both queries inside the same statement so a crash between
+      // them can't leave the code reusable AFTER the password is
+      // already changed.
+      const newHash = await bcrypt.hash(body.data.new_password, BCRYPT_ROUNDS);
+      await query(
+        `WITH burned AS (
+           UPDATE password_reset_codes SET used_at = NOW() WHERE id = $1
+         )
+         UPDATE users SET email_hash = $2 WHERE id = $3`,
+        [row.id, newHash, userId],
+      );
+      void track('password_reset_completed', { userId });
+      return reply.send({ reset: true });
+    },
+  );
 
   app.post(
     '/auth/email/login',

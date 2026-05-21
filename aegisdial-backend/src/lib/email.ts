@@ -33,6 +33,7 @@ export type EmailTemplate =
   | 'recovery_followup'
   | 'welcome'
   | 'account_deleted'
+  | 'password_reset_code'
   | 'support_ticket_forward';
 
 interface RenderedEmail {
@@ -130,9 +131,36 @@ function render(template: EmailTemplate, data: Record<string, unknown>): Rendere
       return renderWelcome(data);
     case 'account_deleted':
       return renderAccountDeleted(data);
+    case 'password_reset_code':
+      return renderPasswordResetCode(data);
     case 'support_ticket_forward':
       return renderSupportTicketForward(data);
   }
+}
+
+function renderPasswordResetCode(d: Record<string, unknown>): RenderedEmail {
+  const code = esc(d.code ?? '------');
+  const minutes = esc(d.expires_in_minutes ?? 15);
+  const inner = `
+    <h1 style="font-size:24px;font-weight:700;margin:24px 0 8px;">Reset your AegisDial password</h1>
+    <p style="font-size:16px;line-height:1.55;color:#c8cdda;">
+      Enter this 6-digit code in the AegisDial app to set a new password.
+      It expires in ${minutes} minutes.
+    </p>
+    <div style="margin:24px 0;padding:20px;background:#161823;border-radius:12px;text-align:center;font-family:'SF Mono',Menlo,Monaco,monospace;font-size:32px;letter-spacing:6px;color:#6aa9ff;font-weight:700;">${code}</div>
+    <p style="font-size:14px;color:#9097a3;">
+      If you didn't request this, you can ignore the email — your password won't change
+      until someone enters this code. If you keep getting these and didn't request them,
+      reply to this email and we'll help secure your account.
+    </p>`;
+  return {
+    subject: `AegisDial password reset code: ${code}`,
+    html: wrap(inner, 'Your password reset code is inside.'),
+    text:
+      `Your AegisDial password reset code is ${code}. ` +
+      `It expires in ${minutes} minutes. ` +
+      `Enter it in the app to set a new password.`,
+  };
 }
 
 function wrap(inner: string, preheader?: string): string {
