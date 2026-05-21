@@ -90,9 +90,6 @@ class _CoverageScreenState extends State<CoverageScreen> {
   static const _kHistoryKey = 'sms_scan_history_v1';
   static const _kMaxHistory = 20;
 
-  bool _autoDelete = true;
-  bool _scanLinks = true;
-  bool _scanAttachments = true;
 
   final _pasteCtrl = TextEditingController();
   bool _scanning = false;
@@ -491,44 +488,6 @@ class _CoverageScreenState extends State<CoverageScreen> {
               ],
             ),
           ),
-          const SizedBox(height: 20),
-          Text(
-            'SCANNER SETTINGS',
-            style: tt.labelSmall?.copyWith(
-              color: AegisColors.textTertiary,
-              letterSpacing: 1.6,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 10),
-          _Toggle(
-            icon: Icons.delete_sweep_outlined,
-            title: 'Auto-delete confirmed scams',
-            subtitle: 'High-confidence matches removed without review.',
-            value: _autoDelete,
-            onChanged: (v) => setState(() => _autoDelete = v),
-          ),
-          _Toggle(
-            icon: Icons.preview_rounded,
-            title: 'Review before deleting',
-            subtitle: 'Flagged messages queue here so you confirm each one.',
-            value: !_autoDelete,
-            onChanged: (v) => setState(() => _autoDelete = !v),
-          ),
-          _Toggle(
-            icon: Icons.link_off_rounded,
-            title: 'Inspect links',
-            subtitle: 'Cross-check URLs against Google Safe Browsing.',
-            value: _scanLinks,
-            onChanged: (v) => setState(() => _scanLinks = v),
-          ),
-          _Toggle(
-            icon: Icons.attachment_outlined,
-            title: 'Inspect attachments',
-            subtitle: 'Scan images and files for known scam payloads.',
-            value: _scanAttachments,
-            onChanged: (v) => setState(() => _scanAttachments = v),
-          ),
           if (_history.isNotEmpty) ...[
             const SizedBox(height: 24),
             Row(
@@ -560,30 +519,46 @@ class _CoverageScreenState extends State<CoverageScreen> {
             ..._history.map((e) => _HistoryTile(entry: e)),
           ],
           const SizedBox(height: 24),
-          Text(
-            'CAUGHT MESSAGES',
-            style: tt.labelSmall?.copyWith(
-              color: AegisColors.textTertiary,
-              letterSpacing: 1.6,
-              fontWeight: FontWeight.w600,
-            ),
+          Row(
+            children: [
+              Text(
+                'EXAMPLES OF WHAT WE CATCH',
+                style: tt.labelSmall?.copyWith(
+                  color: AegisColors.textTertiary,
+                  letterSpacing: 1.6,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: AegisColors.warning.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(
+                    color: AegisColors.warning.withValues(alpha: 0.5),
+                    width: 0.8,
+                  ),
+                ),
+                child: Text(
+                  'SAMPLE',
+                  style: tt.labelSmall?.copyWith(
+                    color: AegisColors.warning,
+                    letterSpacing: 1.4,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 9,
+                  ),
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
-            _autoDelete
-                ? 'Auto-deleted scam messages — tap to review.'
-                : 'Review each flagged message before deleting.',
+            'iOS does not allow third-party apps to scan your inbox automatically. Paste any text message above to scan it. Below: examples of what AegisDial flags.',
             style: tt.bodySmall?.copyWith(color: AegisColors.textTertiary),
           ),
           const SizedBox(height: 10),
-          ..._caught.map(
-            (m) => _CaughtMessageTile(
-              message: m,
-              autoDelete: _autoDelete,
-              onDelete: () => setState(() => m.deleted = true),
-              onKeep: () => setState(() => _caught.remove(m)),
-            ),
-          ),
+          ..._caught.map((m) => _CaughtMessageTile(message: m)),
         ],
       ),
     );
@@ -687,15 +662,7 @@ class _ScanResultCard extends StatelessWidget {
 
 class _CaughtMessageTile extends StatelessWidget {
   final _CaughtMessage message;
-  final bool autoDelete;
-  final VoidCallback onDelete;
-  final VoidCallback onKeep;
-  const _CaughtMessageTile({
-    required this.message,
-    required this.autoDelete,
-    required this.onDelete,
-    required this.onKeep,
-  });
+  const _CaughtMessageTile({required this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -767,71 +734,18 @@ class _CaughtMessageTile extends StatelessWidget {
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
           ),
-          if (!autoDelete && !message.deleted) ...[
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: OutlinedButton(
-                    onPressed: onKeep,
-                    style: OutlinedButton.styleFrom(
-                      minimumSize: const Size.fromHeight(36),
-                      side: const BorderSide(
-                          color: AegisColors.textTertiary, width: 0.6),
-                      padding: EdgeInsets.zero,
-                    ),
-                    child: const Text(
-                      'Keep',
-                      style: TextStyle(
-                          color: AegisColors.textSecondary, fontSize: 13),
-                    ),
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: onDelete,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: AegisColors.danger,
-                      foregroundColor: Colors.white,
-                      minimumSize: const Size.fromHeight(36),
-                      padding: EdgeInsets.zero,
-                    ),
-                    child: const Text('Delete', style: TextStyle(fontSize: 13)),
-                  ),
-                ),
-              ],
-            ),
-          ],
-          if (message.deleted) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.check_circle_outline,
-                    size: 14, color: AegisColors.success),
-                const SizedBox(width: 6),
-                Text(
-                  'Deleted',
-                  style: tt.labelSmall?.copyWith(color: AegisColors.success),
-                ),
-              ],
-            ),
-          ],
-          if (autoDelete && !message.deleted) ...[
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.delete_sweep_outlined,
-                    size: 14, color: AegisColors.textTertiary),
-                const SizedBox(width: 6),
-                Text(
-                  'Auto-deleted',
-                  style:
-                      tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
-                ),
-              ],
-            ),
-          ],
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Icon(Icons.info_outline_rounded,
+                  size: 14, color: AegisColors.textTertiary),
+              const SizedBox(width: 6),
+              Text(
+                'Example',
+                style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
+              ),
+            ],
+          ),
         ],
       ),
     );
@@ -912,70 +826,6 @@ class _HistoryTile extends StatelessWidget {
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Toggle extends StatelessWidget {
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final bool value;
-  final ValueChanged<bool> onChanged;
-  const _Toggle({
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.value,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final tt = Theme.of(context).textTheme;
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
-      decoration: BoxDecoration(
-        color: AegisColors.surface.withValues(alpha: 0.55),
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AegisColors.border, width: 0.6),
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: AegisColors.turquoise.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(10),
-            ),
-            child: Icon(icon, color: AegisColors.turquoise, size: 18),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  title,
-                  style: tt.bodyLarge?.copyWith(fontWeight: FontWeight.w600),
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  subtitle,
-                  style: tt.bodySmall?.copyWith(
-                      color: AegisColors.textTertiary, height: 1.35),
-                ),
-              ],
-            ),
-          ),
-          Switch(
-            value: value,
-            onChanged: onChanged,
-            activeThumbColor: AegisColors.turquoise,
           ),
         ],
       ),

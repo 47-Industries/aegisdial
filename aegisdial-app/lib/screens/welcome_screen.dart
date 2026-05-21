@@ -67,7 +67,7 @@ class WelcomeScreen extends StatelessWidget {
                       _Pillar(
                         icon: Icons.shield_moon_outlined,
                         label: 'Live Shield',
-                        sub: 'On-device call AI',
+                        sub: 'Scam-call coach',
                       ),
                       _Pillar(
                         icon: Icons.healing_outlined,

@@ -190,7 +190,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'On-device call AI',
+                                  'Scam-call coach — tap to open',
                                   style: tt.bodySmall?.copyWith(
                                     color: AegisColors.textTertiary,
                                   ),
@@ -228,7 +228,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             Expanded(
                               child: Text(
                                 _shieldOn
-                                    ? 'Listening — transcripts stay on device'
+                                    ? 'Ready — open during a suspicious call'
                                     : 'Shield paused — tap to resume',
                                 style: tt.bodySmall?.copyWith(
                                   color: AegisColors.textSecondary,

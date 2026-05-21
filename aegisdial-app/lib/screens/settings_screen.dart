@@ -551,11 +551,11 @@ class SettingsScreen extends StatelessWidget {
             const SizedBox(height: 16),
             ...[
               ('How does Live Shield work?',
-                  'AegisDial transcribes every call on-device using on-device AI. Nothing leaves your phone. If the transcript matches a scam pattern, you get an immediate alert.'),
+                  'Open Live Shield when you get a suspicious call. AegisDial transcribes the conversation in chunks, matches it against scam patterns (regex on the free tier; AI coaching on Pro), and surfaces a counter-script to steer the call away from the scam.'),
               ('What is the recovery chatbot?',
                   'The recovery companion walks you through the first 60 minutes after a scam — contacting your bank, filing FTC / IC3 reports, freezing credit, and more.'),
               ('What does the SMS Filter scan?',
-                  'It scans every incoming SMS and iMessage for phishing links, package-redelivery scams, fake bank alerts, and more. Paste any message in manually to scan it.'),
+                  'Paste any text message into the SMS Filter screen and AegisDial scans it for phishing links, package-redelivery scams, fake bank alerts, and more. iOS does not allow third-party apps to read inbound SMS automatically, so scanning is paste-driven.'),
               ('How do I add family members?',
                   'Go to the Family tab and tap "Add a family member." Pro covers up to 3 lines.'),
               ('How do I contact support?',
