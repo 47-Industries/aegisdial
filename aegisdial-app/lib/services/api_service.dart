@@ -3,9 +3,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 
 /// Compile-time-injected API URL. Codemagic passes via --dart-define=API_URL=...
+/// Public hostname is api.aegisdial.com (CNAME -> the aegisdial-api Railway
+/// service); the raw *.up.railway.app URL still resolves to the same service.
 const String kApiUrl = String.fromEnvironment(
   'API_URL',
-  defaultValue: 'https://aegisdial-api-production.up.railway.app',
+  defaultValue: 'https://api.aegisdial.com',
 );
 
 class ApiException implements Exception {
