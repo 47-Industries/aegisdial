@@ -18,6 +18,10 @@ COPY certs ./certs
 # at /internal/dashboard. Without this COPY, /internal/dashboard
 # would 500 in prod even though the route handler is registered.
 COPY public ./public
+# Legal + support HTML (privacy, terms, support, index). Served at
+# api.aegisdial.com/privacy etc as a fallback for when the standalone
+# aegisdial-web Railway service is unhealthy.
+COPY legal ./legal
 USER node
 EXPOSE 3000
 CMD ["node", "dist/server.js"]
