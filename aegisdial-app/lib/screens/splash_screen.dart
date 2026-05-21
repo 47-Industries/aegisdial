@@ -85,7 +85,10 @@ class _SplashScreenState extends State<SplashScreen>
   }
 
   Future<void> _route() async {
-    await Future.delayed(const Duration(milliseconds: 2400));
+    // Short delay so the hyperspace warp reads as intentional brand
+    // motion, not a frozen cold-start. auth.boot() already completed
+    // in main() before runApp(), so we're only waiting on visual polish.
+    await Future.delayed(const Duration(milliseconds: 900));
     if (!mounted) return;
     Widget next;
     if (auth.isSignedIn) {

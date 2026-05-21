@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/family_contacts_service.dart';
@@ -627,7 +628,7 @@ class _MemberTile extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    'INVITE PENDING',
+                    'NOT VERIFIED',
                     style: tt.labelSmall?.copyWith(
                       color: AegisColors.warning,
                       fontWeight: FontWeight.w700,
@@ -638,23 +639,51 @@ class _MemberTile extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Waiting for ${member.name} to accept monitoring',
+                    "Confirm verbally with ${member.name} before alerts go to them.",
                     style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
                   ),
                 ),
-                TextButton(
-                  onPressed: onAccept,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text(
-                    'Mark accepted',
-                    style: tt.labelSmall?.copyWith(
-                      color: AegisColors.turquoise,
-                      fontWeight: FontWeight.w600,
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final body = Uri.encodeComponent(
+                        "Hey ${member.name}, I added you to AegisDial as a family contact. If I ever get a scam call, you may get a heads-up. Reply OK if that's fine — or NO and I'll remove you.",
+                      );
+                      final phoneClean =
+                          member.phone.replaceAll(RegExp(r'[^+0-9]'), '');
+                      final uri = Uri.parse('sms:$phoneClean?body=$body');
+                      await launchUrl(uri);
+                    },
+                    icon: const Icon(Icons.sms_outlined, size: 16),
+                    label: const Text('Text invite'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AegisColors.textSecondary,
+                      side: const BorderSide(
+                          color: AegisColors.border, width: 0.8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      minimumSize: const Size(0, 32),
+                      textStyle: const TextStyle(fontSize: 12),
                     ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextButton(
+                    onPressed: onAccept,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AegisColors.turquoise,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      minimumSize: const Size(0, 32),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    child: const Text("I've spoken with them"),
                   ),
                 ),
               ],
