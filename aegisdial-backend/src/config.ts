@@ -242,6 +242,13 @@ const schema = z.object({
   // is skipped (with a loud warning) when the secret is missing.
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+
+  // Shared secret for the RevenueCat → backend webhook. Configure in
+  // RevenueCat dashboard → Project Settings → Integrations → Webhook,
+  // set Authorization header to `Bearer <this-value>`. Without this,
+  // /subscription/revenuecat/webhook 503's rather than silently
+  // accepting unsigned events as authentic.
+  REVENUECAT_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_MONTHLY_PRICE_ID: z.string().optional(),
   STRIPE_YEARLY_PRICE_ID: z.string().optional(),
   STRIPE_FAMILY_PLUS_MONTHLY_PRICE_ID: z.string().optional(),
