@@ -3,7 +3,7 @@ import { z } from 'zod';
 import bcrypt from 'bcrypt';
 import { query } from '../lib/db.js';
 import { signAppJwt, verifyAppleIdToken } from '../lib/jwt.js';
-import { currentTier } from '../lib/subscription.js';
+import { currentTier, ensureTierPersisted } from '../lib/subscription.js';
 import { track } from '../lib/analytics.js';
 import { sendEmail } from '../lib/email.js';
 import { requireAppUser } from '../lib/auth.js';
@@ -368,7 +368,16 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         [user.id],
       );
       if (result.rows.length === 0) return reply.code(404).send({ error: 'not_found' });
-      return reply.send(result.rows[0]);
+      // Compute the live tier (covers PRO_GRANT_EMAILS allowlist hits +
+      // family-plan inheritance) and reconcile users.tier in the DB so
+      // every other read site stays consistent. Without this, a founder
+      // on the allowlist would still see 'pending' in the iOS app
+      // because the row's tier column was never updated.
+      const liveTier = await currentTier(user.id);
+      if (liveTier !== result.rows[0]!.tier) {
+        await ensureTierPersisted(user.id, liveTier);
+      }
+      return reply.send({ ...result.rows[0], tier: liveTier });
     },
   );
 
