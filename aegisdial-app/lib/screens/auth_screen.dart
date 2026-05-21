@@ -65,7 +65,9 @@ class _AuthScreenState extends State<AuthScreen> {
       if (!mounted) return;
       final dobYear = await showAgeGateSheet(context);
       if (dobYear == null) {
-        // User cancelled the age gate — bail without an error toast.
+        // User dismissed the age gate. Surface a snackbar so the auth
+        // screen doesn't appear frozen mid-flow after Face ID succeeded.
+        _toast('Sign-in cancelled.');
         return;
       }
 

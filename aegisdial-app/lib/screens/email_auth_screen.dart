@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../services/api_service.dart';
 import '../services/auth_service.dart';
 import '../theme/app_theme.dart';
+import '../widgets/age_gate_sheet.dart';
 import '../widgets/hyperspace_stars.dart';
 
 class EmailAuthScreen extends StatefulWidget {
@@ -62,7 +63,17 @@ class _EmailAuthScreenState extends State<EmailAuthScreen> {
       }
       if (mounted) Navigator.of(context).pop(true);
     } on ApiException catch (e) {
-      _toast(e.message);
+      // Translate known backend error codes to friendly messages.
+      // Falls back to the server-provided message if the code is
+      // unrecognised so we don't hide useful debugging info.
+      final friendly = switch (e.code) {
+        'email_already_registered' => 'This email is already in use. Try signing in instead.',
+        'invalid_credentials' => "Email or password didn't match.",
+        'invalid_body' => 'Please double-check the email and password fields.',
+        'age_restriction' => 'AegisDial is for users aged $kAegisDialMinAge and over.',
+        _ => e.message,
+      };
+      _toast(friendly);
     } catch (e) {
       _toast('Could not sign in. Try again.');
     } finally {
