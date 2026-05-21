@@ -230,6 +230,12 @@ const schema = z.object({
     .default('ZGV2LW9ubHkta2V5LWRvLW5vdC11c2UtaW4tcHJvZC1lbnYtMzI='),
   JWT_SECRET: z.string().min(32).default('dev-only-jwt-secret-change-me-immediately-in-production-12345'),
   APPLE_CLIENT_ID: z.string().default('com.aegisdial.app'),
+  // App Attest: reserved for a future hardening pass. The config vars
+  // exist so a deploy doesn't have to add new env keys when the
+  // verification logic lands, but as of this commit there is NO
+  // /v1/app-attest/* route, no Flutter client integration, and no
+  // call site reading these values. Treat the iOS bearer token as
+  // the only client-side identity gate today.
   APP_ATTEST_BUNDLE_ID: z.string().default('com.aegisdial.app'),
   APP_ATTEST_ENV: z.enum(['development', 'production']).default('development'),
 
