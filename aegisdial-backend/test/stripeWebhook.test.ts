@@ -4,7 +4,7 @@ import assert from 'node:assert/strict';
 // Stand up the env the config schema demands BEFORE any src/* imports.
 // config.ts fails fast on missing required vars, so every test file has to
 // do this dance. We also set Stripe price IDs here so priceToProductId maps
-// price_test_monthly -> com.aegiadial.ios.pro.monthly — the same catalog
+// price_test_monthly -> com.aegisdial.app.pro.monthly — the same catalog
 // key an Apple-originated subscription row would use.
 process.env.DATA_ENCRYPTION_KEY ||= 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=';
 process.env.API_SHARED_SECRET ||= 'test-shared-secret-12345';
@@ -274,7 +274,7 @@ describe('handleStripeEvent — checkout.session.completed', () => {
     assert.equal(row.status, 'active');
     // Price ID should be translated to the internal catalog SKU so family
     // seat sync + tier derivation treat Stripe + Apple consistently.
-    assert.equal(row.provider_product_id, 'com.aegiadial.ios.pro.monthly');
+    assert.equal(row.provider_product_id, 'com.aegisdial.app.pro.monthly');
     assert.equal(row.auto_renew, true);
   });
 

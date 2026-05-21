@@ -20,7 +20,7 @@ class AppVersion {
   final String version;
   /// e.g. "18"
   final String buildNumber;
-  /// e.g. "com.aegiadial.ios"
+  /// e.g. "com.aegisdial.app"
   final String packageName;
 
   /// "v1.0.0 (18)" — the canonical short display string used in
@@ -32,7 +32,7 @@ class AppVersion {
   static AppVersion current = AppVersion._(
     version: '1.0.0',
     buildNumber: '?',
-    packageName: 'com.aegiadial.ios',
+    packageName: 'com.aegisdial.app',
   );
 
   /// Fetch from the platform once and cache. Idempotent — safe to call
