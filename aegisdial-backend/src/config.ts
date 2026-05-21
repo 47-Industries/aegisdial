@@ -205,6 +205,21 @@ const schema = z.object({
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().default('AegisDial <alerts@aegisdial.com>'),
 
+  // Comma-separated email allowlist for permanent Pro entitlement.
+  // Founders, full-time team, press/partner comp accounts, and the
+  // App Store reviewer test login all live here. currentTier() short-
+  // circuits to 'pro' for any user whose email matches (case-insensitive)
+  // without writing a subscriptions row — these are NOT StoreKit
+  // transactions, just a server-side override.
+  //
+  // Example: PRO_GRANT_EMAILS=jesiah@example.com,dean@example.com,review@aegisdial.com
+  PRO_GRANT_EMAILS: z.string().default('').transform((s) =>
+    s
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => e.length > 0),
+  ),
+
   // APNs (Apple Push). All four must be set for push to fire; absent
   // means the push worker runs but no-ops (alerts still land in-DB).
   APNS_KEY_ID: z.string().optional(),

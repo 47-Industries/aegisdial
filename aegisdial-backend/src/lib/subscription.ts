@@ -1,10 +1,12 @@
 import { query } from './db.js';
+import { config } from '../config.js';
 
 // Single source of truth for "is this user entitled to live lookups right
-// now?" — derived from two checks:
-//   1. Does the user have their own active subscription?
-//   2. If not, are they a member of a family plan whose OWNER has one?
-// Whichever answer is more favorable wins.
+// now?" — derived from three checks (most favorable wins):
+//   1. Is this user's email on the PRO_GRANT_EMAILS allowlist?
+//      (founders, full-time team, App Store reviewer, partner comps)
+//   2. Does the user have their own active subscription?
+//   3. Are they a member of a family plan whose OWNER has one?
 
 export type UserTier = 'pending' | 'pro' | 'expired' | 'cancelled';
 
@@ -14,6 +16,20 @@ export async function currentTier(userId: string): Promise<UserTier> {
   if (userId === DEV_USER_ID) {
     // Dev shared-secret placeholder — always pro so local curls keep working.
     return 'pro';
+  }
+
+  // Short-circuit for allowlisted accounts (founders, team, reviewer).
+  // One small DB read here is cheaper than risking a cofounder hitting
+  // the paywall mid-demo because their trial timer ran out.
+  if (config.PRO_GRANT_EMAILS.length > 0) {
+    const emailRes = await query<{ email: string | null }>(
+      `SELECT email FROM users WHERE id = $1`,
+      [userId],
+    );
+    const email = emailRes.rows[0]?.email?.toLowerCase() ?? null;
+    if (email && config.PRO_GRANT_EMAILS.includes(email)) {
+      return 'pro';
+    }
   }
 
   const [ownRes, familyRes] = await Promise.all([
