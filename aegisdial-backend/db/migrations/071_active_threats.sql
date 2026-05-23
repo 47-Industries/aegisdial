@@ -133,12 +133,14 @@ CREATE TABLE IF NOT EXISTS active_threats (
   UNIQUE (threat_kind, threat_value, provenance)
 );
 
--- The hot index. Every scorer hit lands here. WHERE clause matches
--- the scorer's runtime filter so the planner uses this index without
--- needing the broader idx_threats_recent.
+-- The hot index. Every scorer hit lands here.
+-- Postgres rejects NOW() in a partial-index predicate (functions in
+-- index predicates must be IMMUTABLE — `42P17`). The retention cron
+-- DELETEs expired rows daily, so a non-partial index here stays small
+-- in steady state; the runtime WHERE in the scorer still filters any
+-- not-yet-swept expired rows.
 CREATE INDEX IF NOT EXISTS idx_threats_by_value
-  ON active_threats(threat_kind, threat_value)
-  WHERE expires_at IS NULL OR expires_at > NOW();
+  ON active_threats(threat_kind, threat_value);
 
 -- Admin "what arrived this hour" timeline + the retention sweep
 -- (DELETE WHERE expires_at < NOW()). Descending order matches the
