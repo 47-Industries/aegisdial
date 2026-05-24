@@ -3,7 +3,7 @@ import { z } from 'zod';
 import bcrypt from 'bcrypt';
 import { query } from '../lib/db.js';
 import { signAppJwt, verifyAppleIdToken } from '../lib/jwt.js';
-import { currentTier } from '../lib/subscription.js';
+import { currentTier, ensureTierPersisted } from '../lib/subscription.js';
 import { track } from '../lib/analytics.js';
 import { sendEmail } from '../lib/email.js';
 import { requireAppUser } from '../lib/auth.js';
@@ -43,8 +43,39 @@ const emailLoginSchema = z.object({
   password: z.string().min(1).max(200),
 });
 
+const forgotPasswordSchema = z.object({
+  email: z.string().email(),
+});
+
+const resetPasswordSchema = z.object({
+  email: z.string().email(),
+  code: z.string().regex(/^\d{6}$/, '6-digit numeric code required'),
+  new_password: z.string().min(8).max(200),
+});
+
+// 6-digit numeric code via cryptographically-secure RNG. Bcrypt-hashed
+// before storage so a DB dump doesn't give an attacker live codes.
+import { randomInt } from 'node:crypto';
+function generateResetCode(): string {
+  return String(randomInt(0, 1_000_000)).padStart(6, '0');
+}
+
+const RESET_CODE_TTL_MINUTES = 15;
+
 export async function authRoutes(app: FastifyInstance): Promise<void> {
-  app.post('/auth/apple', async (req, reply) => {
+  app.post(
+    '/auth/apple',
+    {
+      config: {
+        // Pre-auth endpoint — no req.appUser exists yet, so we key on
+        // IP. 10/min is generous for legitimate users (Apple Sign In
+        // succeeds first try almost always) but kills credential
+        // stuffing / token replay floods. Global 300/min/IP from
+        // server.ts still applies on top.
+        rateLimit: { max: 10, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
     const body = appleBodySchema.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
 
@@ -108,7 +139,18 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ token, user_id: userId, tier });
   });
 
-  app.post('/auth/email/signup', async (req, reply) => {
+  app.post(
+    '/auth/email/signup',
+    {
+      config: {
+        // Pre-auth, IP-keyed. 5/min — signups are rare and a human
+        // rarely needs more than 1-2 attempts. Tight cap blunts
+        // automated account-creation farms (used for trial abuse +
+        // referral fraud).
+        rateLimit: { max: 5, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
     const body = emailSignupSchema.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
 
@@ -144,7 +186,144 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
     return reply.send({ token, user_id: userId, tier });
   });
 
-  app.post('/auth/email/login', async (req, reply) => {
+  // Forgot-password: send a 6-digit code to the email if it exists.
+  // Returns 200 even when the email doesn't match a user — leaking
+  // "this email exists in our DB" via response code is a common
+  // enumeration vector. The Resend send is async/best-effort.
+  app.post(
+    '/auth/email/forgot-password',
+    {
+      config: {
+        // 3/min/IP is tight. A legit user retries once or twice if
+        // their first email lands in spam; a script floods this to
+        // probe valid emails.
+        rateLimit: { max: 3, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
+      const body = forgotPasswordSchema.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      const emailLower = body.data.email.toLowerCase();
+
+      const userRes = await query<{ id: string }>(
+        `SELECT id FROM users WHERE email = $1 AND auth_method = 'email'`,
+        [emailLower],
+      );
+      // Always pretend success — don't reveal whether the email exists.
+      if (userRes.rows.length === 0) {
+        return reply.send({ sent: true });
+      }
+      const userId = userRes.rows[0]!.id;
+
+      // Invalidate any previous unused code for this user (the unique
+      // partial index `password_reset_codes_one_unused_per_user`
+      // enforces only-one-active, so we explicitly mark prior rows
+      // used before inserting the new one).
+      await query(
+        `UPDATE password_reset_codes
+            SET used_at = NOW()
+          WHERE user_id = $1 AND used_at IS NULL`,
+        [userId],
+      );
+      const code = generateResetCode();
+      const codeHash = await bcrypt.hash(code, BCRYPT_ROUNDS);
+      const expiresAt = new Date(
+        Date.now() + RESET_CODE_TTL_MINUTES * 60 * 1000,
+      );
+      await query(
+        `INSERT INTO password_reset_codes (user_id, code_hash, expires_at)
+         VALUES ($1, $2, $3)`,
+        [userId, codeHash, expiresAt.toISOString()],
+      );
+      void sendEmail({
+        userId,
+        to: emailLower,
+        template: 'password_reset_code',
+        data: { code, expires_in_minutes: RESET_CODE_TTL_MINUTES },
+      });
+      void track('password_reset_requested', { userId });
+      return reply.send({ sent: true });
+    },
+  );
+
+  // Reset-password: verify the 6-digit code + set a new password.
+  // The route bcrypts the submitted code and compares against the
+  // stored hash so a SQL-injection or db-dump scenario can't leak
+  // live codes. Same generic 401 for "wrong code" + "expired code"
+  // + "code already used" — granular errors leak more than they
+  // help a legit user.
+  app.post(
+    '/auth/email/reset-password',
+    {
+      config: {
+        // 5/min/IP — accommodates a user typo'ing the code twice
+        // before fetching another email. Tighter than signup
+        // because the attack surface is "guess a 6-digit code I
+        // intercepted from the same email."
+        rateLimit: { max: 5, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
+      const body = resetPasswordSchema.safeParse(req.body);
+      if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
+      const emailLower = body.data.email.toLowerCase();
+
+      const userRes = await query<{ id: string }>(
+        `SELECT id FROM users WHERE email = $1 AND auth_method = 'email'`,
+        [emailLower],
+      );
+      if (userRes.rows.length === 0) {
+        return reply.code(401).send({ error: 'invalid_code' });
+      }
+      const userId = userRes.rows[0]!.id;
+
+      const codeRes = await query<{ id: string; code_hash: string }>(
+        `SELECT id, code_hash FROM password_reset_codes
+          WHERE user_id = $1
+            AND used_at IS NULL
+            AND expires_at > NOW()
+          ORDER BY created_at DESC
+          LIMIT 1`,
+        [userId],
+      );
+      if (codeRes.rows.length === 0) {
+        return reply.code(401).send({ error: 'invalid_code' });
+      }
+      const row = codeRes.rows[0]!;
+      const match = await bcrypt.compare(body.data.code, row.code_hash);
+      if (!match) {
+        return reply.code(401).send({ error: 'invalid_code' });
+      }
+
+      // Code verified — rotate the user's password + burn the code.
+      // Both queries inside the same statement so a crash between
+      // them can't leave the code reusable AFTER the password is
+      // already changed.
+      const newHash = await bcrypt.hash(body.data.new_password, BCRYPT_ROUNDS);
+      await query(
+        `WITH burned AS (
+           UPDATE password_reset_codes SET used_at = NOW() WHERE id = $1
+         )
+         UPDATE users SET email_hash = $2 WHERE id = $3`,
+        [row.id, newHash, userId],
+      );
+      void track('password_reset_completed', { userId });
+      return reply.send({ reset: true });
+    },
+  );
+
+  app.post(
+    '/auth/email/login',
+    {
+      config: {
+        // Pre-auth, IP-keyed. 5/min throttles credential-stuffing
+        // floods. Legitimate retries (typo'd password) easily fit;
+        // a botnet rotating proxies still hits the global 300/min/IP
+        // before getting deep into a wordlist.
+        rateLimit: { max: 5, timeWindow: '1 minute' },
+      },
+    },
+    async (req, reply) => {
     const body = emailLoginSchema.safeParse(req.body);
     if (!body.success) return reply.code(400).send({ error: 'invalid_body' });
 
@@ -189,7 +368,16 @@ export async function authRoutes(app: FastifyInstance): Promise<void> {
         [user.id],
       );
       if (result.rows.length === 0) return reply.code(404).send({ error: 'not_found' });
-      return reply.send(result.rows[0]);
+      // Compute the live tier (covers PRO_GRANT_EMAILS allowlist hits +
+      // family-plan inheritance) and reconcile users.tier in the DB so
+      // every other read site stays consistent. Without this, a founder
+      // on the allowlist would still see 'pending' in the iOS app
+      // because the row's tier column was never updated.
+      const liveTier = await currentTier(user.id);
+      if (liveTier !== result.rows[0]!.tier) {
+        await ensureTierPersisted(user.id, liveTier);
+      }
+      return reply.send({ ...result.rows[0], tier: liveTier });
     },
   );
 

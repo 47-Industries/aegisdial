@@ -23,12 +23,12 @@ Estimated: **5–10 days** once you start.
 - [ ] **Run migrations 018–040 against prod Neon**: `DATABASE_URL='<prod-neon-url>' npm run migrate`. Migration 040 ships the `anonymous_analyzer_trials` table for the 3-day Paste-a-Text trial.
 - [ ] **App Store Connect — create app record** (AegisDial, bundle ID `com.aegisdial.app`).
 - [ ] **App Store Connect — create subscription products at correct prices** (2026-05-12 cutover, locked per Jesiah):
-  - `com.aegiadial.ios.pro.monthly` = **$49.99/mo** (auto-renewable, 3 lines)
-  - `com.aegiadial.ios.pro.yearly` = **$399/yr** (auto-renewable, 3 lines, "Save $200")
-  - `com.aegiadial.ios.recovery.session` = **$149 one-time** (NON-CONSUMABLE, grants 14-day Pro on verify) — the wedge SKU.
-  - `com.aegiadial.ios.recovery.monthly` = **$99/mo** (Recovery Concierge: dedicated agent, priority response)
-  - `com.aegiadial.ios.recovery.yearly` = **$899/yr** (Recovery Concierge — annual)
-  - `com.aegiadial.ios.pro.family_plus.monthly` = $69.99/mo — **deprecated**, mark "not available for new purchases" but honor existing subs.
+  - `com.aegisdial.app.pro.monthly` = **$49.99/mo** (auto-renewable, 3 lines)
+  - `com.aegisdial.app.pro.yearly` = **$399/yr** (auto-renewable, 3 lines, "Save $200")
+  - `com.aegisdial.app.recovery.session` = **$149 one-time** (NON-CONSUMABLE, grants 14-day Pro on verify) — the wedge SKU.
+  - `com.aegisdial.app.recovery.monthly` = **$99/mo** (Recovery Concierge: dedicated agent, priority response)
+  - `com.aegisdial.app.recovery.yearly` = **$899/yr** (Recovery Concierge — annual)
+  - `com.aegisdial.app.pro.family_plus.monthly` = $69.99/mo — **deprecated**, mark "not available for new purchases" but honor existing subs.
 - [ ] **App Store Connect — privacy labels** (email, phone, audio declared correctly per `PrivacyInfo.xcprivacy`).
 - [ ] **Apple Developer Program enrolled** ($99/yr) — required for provisioning profiles.
 - [ ] **Provisioning profiles regenerated** after Keychain access group entitlement change.

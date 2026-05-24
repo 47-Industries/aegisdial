@@ -5,6 +5,7 @@ import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 import 'api_service.dart';
 import 'consent_service.dart';
 import 'device_service.dart';
+import 'purchase_service.dart';
 import 'trial_service.dart';
 
 class AuthSession {
@@ -98,15 +99,31 @@ class AuthService extends ChangeNotifier {
   /// the same identity token avoids prompting Face ID twice in the
   /// new-user flow.
   AppleSignInPayload? _pendingApplePayload;
+  /// Wall-clock when `_pendingApplePayload` was cached. Apple's identity
+  /// tokens have a short validity window — if the user gets stuck on
+  /// the age-gate sheet for several minutes (or backgrounds the app
+  /// mid-flow), reusing the stale token will fail signature verify on
+  /// our backend. We expire the cache after 60s and force a fresh
+  /// Apple modal, which is cheap (Face ID) and always works.
+  DateTime? _pendingApplePayloadCachedAt;
+
+  static const Duration _kApplePayloadTtl = Duration(seconds: 60);
 
   /// Pop the Apple modal, parse the credential, and POST to the
   /// backend. On a brand-new user the backend returns 400
   /// dob_year_required — the caller should catch that, show the
   /// age-gate sheet, and call signInWithApple again with `dobYear` set.
   /// The cached Apple credential is reused so Face ID doesn't fire
-  /// twice.
+  /// twice — but only within `_kApplePayloadTtl`. Past that, we re-prompt.
   Future<AuthSession> signInWithApple({int? dobYear}) async {
-    var payload = _pendingApplePayload;
+    final cachedAt = _pendingApplePayloadCachedAt;
+    final cacheExpired = cachedAt == null ||
+        DateTime.now().difference(cachedAt) > _kApplePayloadTtl;
+    var payload = cacheExpired ? null : _pendingApplePayload;
+    if (cacheExpired) {
+      _pendingApplePayload = null;
+      _pendingApplePayloadCachedAt = null;
+    }
     if (payload == null) {
       final cred = await SignInWithApple.getAppleIDCredential(
         scopes: const [
@@ -127,6 +144,7 @@ class AuthService extends ChangeNotifier {
         displayName: fullName.isEmpty ? null : fullName,
       );
       _pendingApplePayload = payload;
+      _pendingApplePayloadCachedAt = DateTime.now();
     }
 
     final body = <String, dynamic>{
@@ -144,6 +162,7 @@ class AuthService extends ChangeNotifier {
       // keep it between a missing-DOB attempt and the retry; any other
       // failure should force a fresh Apple modal next time.
       _pendingApplePayload = null;
+      _pendingApplePayloadCachedAt = null;
       return session;
     } on ApiException catch (e) {
       // Keep the cached payload only for the specific "missing DOB"
@@ -151,6 +170,7 @@ class AuthService extends ChangeNotifier {
       // ID token is likely stale and the next attempt should re-prompt.
       if (e.code != 'dob_year_required') {
         _pendingApplePayload = null;
+        _pendingApplePayloadCachedAt = null;
       }
       rethrow;
     }
@@ -193,6 +213,31 @@ class AuthService extends ChangeNotifier {
     return session;
   }
 
+  /// Request a 6-digit password-reset code be emailed to the address.
+  /// Backend returns 200 even when the email doesn't match any account
+  /// (anti-enumeration), so we never tell the user "no such email" —
+  /// we just say "if that email is on file, you'll get a code."
+  Future<void> requestPasswordReset({required String email}) async {
+    await api.post('/auth/email/forgot-password', {'email': email});
+  }
+
+  /// Submit the 6-digit code + new password. Backend returns 401 with
+  /// code='invalid_code' for any of: wrong code / expired / already
+  /// used / unknown email — the UI just says "code didn't match." The
+  /// user does NOT get auto-signed-in afterwards; they go back to the
+  /// login screen with the new password.
+  Future<void> resetPassword({
+    required String email,
+    required String code,
+    required String newPassword,
+  }) async {
+    await api.post('/auth/email/reset-password', {
+      'email': email,
+      'code': code,
+      'new_password': newPassword,
+    });
+  }
+
   /// Local-only "guest" session. Useful for visual demos / TestFlight reviewers.
   /// Real device-bound anonymous auth lands later via App Attest backend flow.
   Future<void> continueAsGuest() async {
@@ -230,6 +275,9 @@ class AuthService extends ChangeNotifier {
     await p.remove('shield_on_v1');             // home_dashboard
     _session = null;
     api.setToken(null);
+    // Detach the RevenueCat identity so the next user on this device
+    // doesn't inherit the previous user's cached entitlement state.
+    unawaited(PurchaseService.logOut());
     // Drop the server-anchored trial start so the next user on this
     // device falls back to local (or their own server anchor on sign-in).
     TrialService.setServerStart(null);
@@ -301,6 +349,13 @@ class AuthService extends ChangeNotifier {
     await p.setString(_kTier, s.tier);
     if (s.displayName != null) await p.setString(_kDisplayName, s.displayName!);
     if (s.email != null) await p.setString(_kEmail, s.email!);
+    // Tie this device's RevenueCat identity to the AegisDial user ID
+    // so the server-to-server webhook can find the right user row when
+    // an entitlement event fires. No-op for guest sessions and for
+    // builds without REVENUECAT_IOS_API_KEY.
+    if (s.userId != 'guest') {
+      unawaited(PurchaseService.logIn(s.userId));
+    }
     notifyListeners();
   }
 

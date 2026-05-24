@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:speech_to_text/speech_to_text.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/family_contacts_service.dart';
@@ -11,7 +12,6 @@ class _FamilyMember {
   final String relation;
   final String phone;
   bool consentAccepted;
-  bool showActivity;
   /// Server-side row id (from /v1/family-contacts). Null when the row
   /// was added while offline / non-Pro and hasn't been pushed yet. The
   /// `_resyncBackend` pass back-fills this on the next sync.
@@ -22,7 +22,6 @@ class _FamilyMember {
     this.relation, {
     this.phone = '',
     this.consentAccepted = false,
-    this.showActivity = true,
     this.backendId,
   });
 
@@ -31,7 +30,6 @@ class _FamilyMember {
         'r': relation,
         'p': phone,
         'ca': consentAccepted,
-        'sa': showActivity,
         if (backendId != null) 'id': backendId,
       };
 
@@ -40,7 +38,6 @@ class _FamilyMember {
         j['r'] as String,
         phone: (j['p'] as String?) ?? '',
         consentAccepted: (j['ca'] as bool?) ?? false,
-        showActivity: (j['sa'] as bool?) ?? true,
         backendId: j['id'] as String?,
       );
 }
@@ -124,7 +121,6 @@ class _FamilyScreenState extends State<FamilyScreen> {
           hit.relationship.isNotEmpty ? hit.relationship : local.relation,
           phone: hit.phone,
           consentAccepted: true, // server-persisted ⇒ accepted
-          showActivity: local.showActivity,
           backendId: hit.backendId,
         ));
         if (hit.backendId != null) seenBackendIds.add(hit.backendId!);
@@ -332,10 +328,6 @@ class _FamilyScreenState extends State<FamilyScreen> {
                     setState(() => m.consentAccepted = true);
                     _saveState();
                   },
-                  onToggleActivity: () {
-                    setState(() => m.showActivity = !m.showActivity);
-                    _saveState();
-                  },
                 )),
           if (!isAtCap) ...[
             const SizedBox(height: 8),
@@ -529,12 +521,10 @@ class _MemberTile extends StatelessWidget {
   final _FamilyMember member;
   final VoidCallback? onRemove;
   final VoidCallback? onAccept;
-  final VoidCallback? onToggleActivity;
   const _MemberTile({
     required this.member,
     this.onRemove,
     this.onAccept,
-    this.onToggleActivity,
   });
 
   @override
@@ -593,19 +583,6 @@ class _MemberTile extends StatelessWidget {
                   ],
                 ),
               ),
-              if (member.consentAccepted)
-                IconButton(
-                  icon: Icon(
-                    member.showActivity ? Icons.visibility_outlined : Icons.visibility_off_outlined,
-                    color: AegisColors.textTertiary,
-                    size: 18,
-                  ),
-                  onPressed: onToggleActivity,
-                  tooltip: member.showActivity ? 'Hide activity' : 'Show activity',
-                  padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(),
-                ),
-              const SizedBox(width: 8),
               IconButton(
                 icon: const Icon(Icons.remove_circle_outline_rounded,
                     color: AegisColors.textTertiary, size: 20),
@@ -627,7 +604,7 @@ class _MemberTile extends StatelessWidget {
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
-                    'INVITE PENDING',
+                    'NOT VERIFIED',
                     style: tt.labelSmall?.copyWith(
                       color: AegisColors.warning,
                       fontWeight: FontWeight.w700,
@@ -638,23 +615,51 @@ class _MemberTile extends StatelessWidget {
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                    'Waiting for ${member.name} to accept monitoring',
+                    "Confirm verbally with ${member.name} before alerts go to them.",
                     style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
                   ),
                 ),
-                TextButton(
-                  onPressed: onAccept,
-                  style: TextButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-                    minimumSize: Size.zero,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                  ),
-                  child: Text(
-                    'Mark accepted',
-                    style: tt.labelSmall?.copyWith(
-                      color: AegisColors.turquoise,
-                      fontWeight: FontWeight.w600,
+              ],
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                Expanded(
+                  child: OutlinedButton.icon(
+                    onPressed: () async {
+                      final body = Uri.encodeComponent(
+                        "Hey ${member.name}, I added you to AegisDial as a family contact. If I ever get a scam call, you may get a heads-up. Reply OK if that's fine — or NO and I'll remove you.",
+                      );
+                      final phoneClean =
+                          member.phone.replaceAll(RegExp(r'[^+0-9]'), '');
+                      final uri = Uri.parse('sms:$phoneClean?body=$body');
+                      await launchUrl(uri);
+                    },
+                    icon: const Icon(Icons.sms_outlined, size: 16),
+                    label: const Text('Text invite'),
+                    style: OutlinedButton.styleFrom(
+                      foregroundColor: AegisColors.textSecondary,
+                      side: const BorderSide(
+                          color: AegisColors.border, width: 0.8),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      minimumSize: const Size(0, 32),
+                      textStyle: const TextStyle(fontSize: 12),
                     ),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextButton(
+                    onPressed: onAccept,
+                    style: TextButton.styleFrom(
+                      foregroundColor: AegisColors.turquoise,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 6),
+                      minimumSize: const Size(0, 32),
+                      textStyle: const TextStyle(fontSize: 12),
+                    ),
+                    child: const Text("I've spoken with them"),
                   ),
                 ),
               ],
@@ -702,15 +707,8 @@ class _MemberExposureTile extends StatelessWidget {
             Row(children: [
               const Icon(Icons.hourglass_empty_rounded, size: 13, color: AegisColors.warning),
               const SizedBox(width: 5),
-              Text('Invite pending',
+              Text('Not verified',
                   style: tt.labelSmall?.copyWith(color: AegisColors.warning, fontWeight: FontWeight.w600)),
-            ])
-          else if (!member.showActivity)
-            Row(children: [
-              const Icon(Icons.visibility_off_outlined, size: 13, color: AegisColors.textTertiary),
-              const SizedBox(width: 5),
-              Text('Hidden',
-                  style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary)),
             ])
           else
             Row(children: [

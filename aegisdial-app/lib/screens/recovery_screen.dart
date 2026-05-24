@@ -240,13 +240,13 @@ class RecoveryScreen extends StatelessWidget {
           const SizedBox(height: 10),
           const _CoverageRow(
             icon: Icons.shield_moon,
-            title: 'Live Shield on every call',
-            subtitle: 'On-device AI screens incoming calls in real time.',
+            title: 'Live Shield during suspicious calls',
+            subtitle: 'Open Live Shield mid-call — AegisDial coaches you off the scam.',
           ),
           const _CoverageRow(
             icon: Icons.message_outlined,
-            title: 'Coverage scanner on SMS / iMessage',
-            subtitle: 'Auto-deletes confirmed scam messages.',
+            title: 'SMS / iMessage scanner',
+            subtitle: 'Paste a suspect message; AegisDial grades it instantly.',
           ),
           const _CoverageRow(
             icon: Icons.fingerprint_rounded,

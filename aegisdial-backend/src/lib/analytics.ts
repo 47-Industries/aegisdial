@@ -13,6 +13,8 @@ import { query } from './db.js';
 export type AnalyticsEvent =
   | 'user_signed_up'
   | 'user_signed_in'
+  | 'password_reset_requested'
+  | 'password_reset_completed'
   | 'subscription_started'
   | 'subscription_cancelled'
   | 'shield_started'

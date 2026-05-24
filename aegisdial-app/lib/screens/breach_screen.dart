@@ -20,12 +20,17 @@ class _Identifier {
   String? backendId;
   bool scanning;
   bool scanned;
+  // Set when the most recent scan failed (network error / 5xx). Drives
+  // the row's retry affordance so we never render a misleading "clean"
+  // state when we actually got no answer.
+  bool scanError;
   _Identifier({
     required this.type,
     required this.value,
     this.scanned = false,
     this.backendId,
-  }) : scanning = false;
+  })  : scanning = false,
+        scanError = false;
 
   IconData get icon => switch (type) {
         _IdentifierType.name => Icons.person_outline_rounded,
@@ -237,8 +242,16 @@ class _BreachScreenState extends State<BreachScreen> {
 
   Future<void> _saveState() async {
     final p = await SharedPreferences.getInstance();
-    await p.setString(_kIdentifiersKey,
-        jsonEncode(_identifiers.map((e) => e.toJson()).toList()));
+    // SSN values are deliberately stripped from the persisted snapshot.
+    // SharedPreferences is plaintext-on-disk + included in iCloud
+    // backups — even though SSN never leaves the device on the wire,
+    // persisting it at rest would broaden the attack surface for
+    // anyone with backup access. Users re-enter SSN each session.
+    final persistable = _identifiers
+        .where((e) => e.type != _IdentifierType.ssn)
+        .map((e) => e.toJson())
+        .toList();
+    await p.setString(_kIdentifiersKey, jsonEncode(persistable));
     await p.setString(_kExposuresKey,
         jsonEncode(_exposures.map((e) => e.toJson()).toList()));
   }
@@ -271,7 +284,10 @@ class _BreachScreenState extends State<BreachScreen> {
   }
 
   Future<void> _runScan(_Identifier id) async {
-    setState(() => id.scanning = true);
+    setState(() {
+      id.scanning = true;
+      id.scanError = false;
+    });
 
     final newExposures = <_Exposure>[];
 
@@ -371,9 +387,34 @@ class _BreachScreenState extends State<BreachScreen> {
                   ),
                 ),
               );
+            } else if (mounted) {
+              id.scanError = true;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text("Couldn't check this identifier — try again."),
+                  action: SnackBarAction(
+                    label: 'Retry',
+                    onPressed: () => _runScan(id),
+                  ),
+                ),
+              );
             }
           } catch (_) {
-            // Network error — show nothing rather than fake data
+            // Network error. Don't fabricate a clean result — flag the
+            // identifier so the row can show a retry affordance instead
+            // of a misleading "no breaches found" green check.
+            if (mounted) {
+              id.scanError = true;
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: const Text("Couldn't reach the breach monitor — check your connection."),
+                  action: SnackBarAction(
+                    label: 'Retry',
+                    onPressed: () => _runScan(id),
+                  ),
+                ),
+              );
+            }
           }
         }
       }

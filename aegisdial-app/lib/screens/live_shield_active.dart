@@ -501,13 +501,42 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
           icon: const Icon(Icons.close_rounded, size: 24),
           onPressed: () => Navigator.of(context).maybePop(),
         ),
-        title: Text(
-          'LIVE SHIELD',
-          style: tt.labelMedium?.copyWith(
-            color: AegisColors.turquoise,
-            letterSpacing: 2.5,
-            fontWeight: FontWeight.w700,
-          ),
+        title: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Text(
+              'LIVE SHIELD',
+              style: tt.labelMedium?.copyWith(
+                color: AegisColors.turquoise,
+                letterSpacing: 2.5,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(width: 10),
+            // Demo badge — until on-device call audio capture ships,
+            // this screen plays scripted scenarios. Labeling it
+            // honestly avoids any reviewer/customer surprise.
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+              decoration: BoxDecoration(
+                color: AegisColors.warning.withValues(alpha: 0.18),
+                borderRadius: BorderRadius.circular(4),
+                border: Border.all(
+                  color: AegisColors.warning.withValues(alpha: 0.55),
+                  width: 1,
+                ),
+              ),
+              child: Text(
+                'DEMO',
+                style: tt.labelSmall?.copyWith(
+                  color: AegisColors.warning,
+                  letterSpacing: 1.6,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 10,
+                ),
+              ),
+            ),
+          ],
         ),
       ),
       body: Stack(
@@ -535,6 +564,41 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
               padding: const EdgeInsets.only(top: 8, bottom: 28),
               children: [
                 _StatusHeader(),
+                const SizedBox(height: 12),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: AegisColors.surfaceElevated.withValues(alpha: 0.7),
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(
+                        color: AegisColors.border,
+                        width: 0.8,
+                      ),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(
+                          Icons.info_outline_rounded,
+                          color: AegisColors.textTertiary,
+                          size: 16,
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: Text(
+                            'Sample call. Real-time protection activates automatically during actual phone calls.',
+                            style: tt.bodySmall?.copyWith(
+                              color: AegisColors.textSecondary,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
                 const SizedBox(height: 16),
                 SizedBox(
                   height: 240,

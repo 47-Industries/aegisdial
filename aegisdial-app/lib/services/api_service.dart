@@ -26,6 +26,12 @@ class ApiService {
   String? _token;
   String get baseUrl => kApiUrl;
 
+  /// Hook fired when the backend returns 401 on an authenticated request.
+  /// Wired at boot to AuthService.signOut() so a stale/expired token kicks
+  /// the user back to the welcome screen instead of leaving them in a
+  /// half-authenticated state where every screen toasts errors.
+  Future<void> Function()? onSessionExpired;
+
   void setToken(String? token) {
     _token = token;
   }
@@ -106,6 +112,15 @@ class ApiService {
 
     if (res.statusCode >= 200 && res.statusCode < 300) return body;
 
+    if (res.statusCode == 401 && _token != null) {
+      // Stale/expired bearer — drop credentials so the next paint
+      // routes back to the welcome screen instead of looping
+      // authenticated calls.
+      final cb = onSessionExpired;
+      if (cb != null) {
+        unawaited(cb());
+      }
+    }
     final code = body['error']?.toString();
     final msg = body['message']?.toString() ??
         switch (res.statusCode) {

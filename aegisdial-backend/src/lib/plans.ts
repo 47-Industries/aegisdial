@@ -42,16 +42,16 @@ export interface Plan {
 }
 
 export const PLANS: Record<string, Plan> = {
-  'com.aegiadial.ios.pro.monthly': {
-    product_id: 'com.aegiadial.ios.pro.monthly',
+  'com.aegisdial.app.pro.monthly': {
+    product_id: 'com.aegisdial.app.pro.monthly',
     included_lines: 3,
     addon_lines: 0,
     period: 'monthly',
     display_name: 'AegisDial Pro',
     price_usd_cents: 4999,
   },
-  'com.aegiadial.ios.pro.yearly': {
-    product_id: 'com.aegiadial.ios.pro.yearly',
+  'com.aegisdial.app.pro.yearly': {
+    product_id: 'com.aegisdial.app.pro.yearly',
     included_lines: 3,
     addon_lines: 0,
     period: 'yearly',
@@ -66,8 +66,8 @@ export const PLANS: Record<string, Plan> = {
   // (not auto-renewable subscription). The Apple verify path detects
   // period='one_time_14d' and writes auto_renew=FALSE on the
   // subscriptions row; current_period_end is set 14 days out.
-  'com.aegiadial.ios.recovery.session': {
-    product_id: 'com.aegiadial.ios.recovery.session',
+  'com.aegisdial.app.recovery.session': {
+    product_id: 'com.aegisdial.app.recovery.session',
     included_lines: 1, // single-user, no family seats
     addon_lines: 0,
     period: 'one_time_14d',
@@ -81,16 +81,16 @@ export const PLANS: Record<string, Plan> = {
   // claim for now — backend doesn't yet gate any code path on this
   // tier specifically. Persona-level routing can be added later by
   // checking provider_product_id at /v1/recovery/* and SLA work.
-  'com.aegiadial.ios.recovery.monthly': {
-    product_id: 'com.aegiadial.ios.recovery.monthly',
+  'com.aegisdial.app.recovery.monthly': {
+    product_id: 'com.aegisdial.app.recovery.monthly',
     included_lines: 1,
     addon_lines: 0,
     period: 'monthly',
     display_name: 'AegisDial Recovery Concierge',
     price_usd_cents: 9900,
   },
-  'com.aegiadial.ios.recovery.yearly': {
-    product_id: 'com.aegiadial.ios.recovery.yearly',
+  'com.aegisdial.app.recovery.yearly': {
+    product_id: 'com.aegisdial.app.recovery.yearly',
     included_lines: 1,
     addon_lines: 0,
     period: 'yearly',
@@ -99,8 +99,8 @@ export const PLANS: Record<string, Plan> = {
   },
 
   // ── Deprecated (existing subs honored, not offered to new buyers) ──
-  'com.aegiadial.ios.pro.family_plus.monthly': {
-    product_id: 'com.aegiadial.ios.pro.family_plus.monthly',
+  'com.aegisdial.app.pro.family_plus.monthly': {
+    product_id: 'com.aegisdial.app.pro.family_plus.monthly',
     included_lines: 3,
     addon_lines: 2,
     period: 'monthly',
@@ -114,14 +114,14 @@ export const PLANS: Record<string, Plan> = {
 // Family+ is excluded — it's deprecated. Adding a new monthly SKU?
 // Append here AND in the iOS paywall.
 export const MONTHLY_SKUS = [
-  'com.aegiadial.ios.pro.monthly',
-  'com.aegiadial.ios.recovery.monthly',
+  'com.aegisdial.app.pro.monthly',
+  'com.aegisdial.app.recovery.monthly',
 ];
 
 // All annual-tier product IDs offered on the active paywall, low→high.
 export const YEARLY_SKUS = [
-  'com.aegiadial.ios.pro.yearly',
-  'com.aegiadial.ios.recovery.yearly',
+  'com.aegisdial.app.pro.yearly',
+  'com.aegisdial.app.recovery.yearly',
 ];
 
 export function planForProductId(productId: string): Plan | null {

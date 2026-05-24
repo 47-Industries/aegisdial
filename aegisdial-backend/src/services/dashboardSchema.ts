@@ -38,7 +38,7 @@ analytics_events(
 subscriptions(
   user_id              UUID,
   provider             TEXT,           -- 'apple_storekit' | 'stripe' | 'admin_grant'
-  provider_product_id  TEXT,           -- e.g. 'com.aegiadial.ios.pro.monthly'
+  provider_product_id  TEXT,           -- e.g. 'com.aegisdial.app.pro.monthly'
   status               TEXT,           -- 'active' | 'in_grace' | 'expired' | 'revoked' | 'cancelled'
   current_period_start TIMESTAMPTZ,
   current_period_end   TIMESTAMPTZ,

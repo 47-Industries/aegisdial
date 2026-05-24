@@ -20,7 +20,7 @@ process.env.DATA_ENCRYPTION_KEY ||= 'MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY
 process.env.API_SHARED_SECRET ||= 'test-shared-secret-12345';
 process.env.DATABASE_URL ||= 'postgres://u:p@localhost:5432/test';
 process.env.REDIS_URL ||= 'memory://apple-notifications-test';
-process.env.APPLE_BUNDLE_ID ||= 'com.aegiadial.ios';
+process.env.APPLE_BUNDLE_ID ||= 'com.aegisdial.app';
 process.env.APPLE_STOREKIT_ENV ||= 'sandbox';
 
 const db = await import('../src/lib/db.ts');
@@ -66,7 +66,7 @@ interface DbState {
 
 const USER_ID = '11111111-2222-3333-4444-555555555555';
 const ORIGINAL_TX_ID = '2000000987654321';
-const PRODUCT_ID = 'com.aegiadial.ios.pro.monthly';
+const PRODUCT_ID = 'com.aegisdial.app.pro.monthly';
 
 const dbState: DbState = { subs: new Map(), users: new Map(), queryLog: [] };
 
@@ -225,7 +225,7 @@ function buildTransaction(overrides: Partial<NonNullable<DecodedNotification['tr
     transactionId: ORIGINAL_TX_ID,
     originalTransactionId: ORIGINAL_TX_ID,
     productId: PRODUCT_ID,
-    bundleId: 'com.aegiadial.ios',
+    bundleId: 'com.aegisdial.app',
     purchaseDateMs: now,
     expiresDateMs: now + 30 * 24 * 3600 * 1000,
     revocationDateMs: null,

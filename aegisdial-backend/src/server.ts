@@ -12,10 +12,12 @@ initObservability();
 import { verdictRoutes } from './routes/verdict.js';
 import { reportRoutes } from './routes/report.js';
 import { healthRoutes } from './routes/health.js';
+import { publicWebRoutes } from './routes/publicWeb.js';
 import { adminRoutes } from './routes/admin.js';
 import { adminEmailShieldRoutes } from './routes/adminEmailShield.js';
 import { authRoutes } from './routes/auth.js';
 import { subscriptionRoutes } from './routes/subscription.js';
+import { revenueCatWebhookRoutes } from './routes/revenueCatWebhook.js';
 import { familyRoutes } from './routes/family.js';
 import { recoveryRoutes } from './routes/recovery.js';
 import { liveShieldRoutes } from './routes/liveShield.js';
@@ -146,8 +148,10 @@ await app.register(fastifyRawBody, {
 app.addHook('preHandler', optionalAppUser);
 
 await app.register(healthRoutes);
+await app.register(publicWebRoutes);
 await app.register(authRoutes);
 await app.register(subscriptionRoutes);
+await app.register(revenueCatWebhookRoutes);
 await app.register(familyRoutes);
 await app.register(recoveryRoutes);
 await app.register(liveShieldRoutes);

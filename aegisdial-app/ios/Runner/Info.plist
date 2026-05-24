@@ -67,7 +67,7 @@
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
-	<string>AegisDial uses your microphone only when Live Shield is active during a phone call to detect scam patterns on-device. Audio never leaves your phone.</string>
+	<string>AegisDial uses your microphone when you start a Live Shield session or record a family safe-word. The mic only runs while the relevant screen is in the foreground — no background listening.</string>
 	<key>NSSpeechRecognitionUsageDescription</key>
 	<string>AegisDial uses speech recognition once during safe word setup to register your voice. This helps verify family members during emergencies.</string>
 	<key>NSContactsUsageDescription</key>
@@ -80,12 +80,16 @@
 	<string>AegisDial uses your camera to capture evidence (e.g. fake check, scam letter) for your recovery report.</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
 	<!-- url_launcher schemes (iOS 9+ requires explicit declaration for
 	     canLaunchUrl). `tel` is for the bank fraud-line jumper in the
-	     Recovery chatbot; `sms` reserved for the future "report this
-	     scam to 7726" SHAFT flow; `mailto` for Settings → Email support;
-	     `https` for the auth screen's Terms / Privacy "Open full
-	     document" links. -->
+	     Recovery chatbot; `sms` is the Family screen "Text invite"
+	     composer; `mailto` for Settings → Email support; `https`
+	     for the auth screen's Terms / Privacy "Open full document"
+	     links. -->
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>tel</string>

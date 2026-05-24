@@ -53,14 +53,14 @@ The active tier (per Jesiah's locked pricing):
 
 | Product ID | Price | Notes |
 |---|---|---|
-| `com.aegiadial.ios.pro.monthly` | **$49.99/mo** | 3 lines |
-| `com.aegiadial.ios.pro.yearly` | **$399/yr** | 3 lines, "Save $200 vs monthly" |
-| `com.aegiadial.ios.recovery.session` | **$149 one-time** | Non-consumable IAP, grants 14-day Pro on verify |
-| `com.aegiadial.ios.recovery.monthly` | **$99/mo** | Recovery Concierge tier |
-| `com.aegiadial.ios.recovery.yearly` | **$899/yr** | Recovery Concierge tier |
+| `com.aegisdial.app.pro.monthly` | **$49.99/mo** | 3 lines |
+| `com.aegisdial.app.pro.yearly` | **$399/yr** | 3 lines, "Save $200 vs monthly" |
+| `com.aegisdial.app.recovery.session` | **$149 one-time** | Non-consumable IAP, grants 14-day Pro on verify |
+| `com.aegisdial.app.recovery.monthly` | **$99/mo** | Recovery Concierge tier |
+| `com.aegisdial.app.recovery.yearly` | **$899/yr** | Recovery Concierge tier |
 
 **Deprecated (existing subs honored, NOT offered to new buyers):**
-- `com.aegiadial.ios.pro.family_plus.monthly` ($69.99/mo, 3 + 2 add-on lines). Set in ASC Connect to "available for existing subscribers, not for new purchases."
+- `com.aegisdial.app.pro.family_plus.monthly` ($69.99/mo, 3 + 2 add-on lines). Set in ASC Connect to "available for existing subscribers, not for new purchases."
 
 App Store Connect → My Apps → AegisDial → Subscriptions → Price Schedule
 for each entry. Save + wait ~1 hr for propagation. StoreKit returns Apple's

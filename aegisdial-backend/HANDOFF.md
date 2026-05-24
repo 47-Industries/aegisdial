@@ -188,17 +188,17 @@ Optional but recommended: `TWILIO_ACCOUNT_SID/TOKEN`, `ENZOIC_API_KEY/SECRET`, `
 
 | SKU | Price | Lines | Product ID |
 |---|---|---|---|
-| Pro Monthly | **$49.99/mo** | 3 | `com.aegiadial.ios.pro.monthly` |
-| Pro Annual | **$399/yr** | 3 | `com.aegiadial.ios.pro.yearly` (save $200 vs monthly) |
-| Recovery Session (one-time) | **$149** | 1 | `com.aegiadial.ios.recovery.session` (NON-CONSUMABLE, grants **14-day Pro** on verify) |
-| Recovery Concierge Monthly | **$99/mo** | 1 | `com.aegiadial.ios.recovery.monthly` (dedicated agent + priority) |
-| Recovery Concierge Yearly | **$899/yr** | 1 | `com.aegiadial.ios.recovery.yearly` |
+| Pro Monthly | **$49.99/mo** | 3 | `com.aegisdial.app.pro.monthly` |
+| Pro Annual | **$399/yr** | 3 | `com.aegisdial.app.pro.yearly` (save $200 vs monthly) |
+| Recovery Session (one-time) | **$149** | 1 | `com.aegisdial.app.recovery.session` (NON-CONSUMABLE, grants **14-day Pro** on verify) |
+| Recovery Concierge Monthly | **$99/mo** | 1 | `com.aegisdial.app.recovery.monthly` (dedicated agent + priority) |
+| Recovery Concierge Yearly | **$899/yr** | 1 | `com.aegisdial.app.recovery.yearly` |
 
 **Deprecated (existing subs honored, NOT offered in active paywall):**
 
 | SKU | Price | Lines | Product ID |
 |---|---|---|---|
-| Pro Family+ | $69.99/mo | 5 | `com.aegiadial.ios.pro.family_plus.monthly` — mark "not available for new purchases" in ASC. No replacement 5-line tier yet. |
+| Pro Family+ | $69.99/mo | 5 | `com.aegisdial.app.pro.family_plus.monthly` — mark "not available for new purchases" in ASC. No replacement 5-line tier yet. |
 
 The $149 Recovery Session is the **wedge SKU** — backend grants 14-day Pro on verify, paywall offers it next to "$49.99/mo" as a "just need help once" option for new users. (Was $99 / 30-day pre-2026-05-12.)
 

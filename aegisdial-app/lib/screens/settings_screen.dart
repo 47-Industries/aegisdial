@@ -347,108 +347,13 @@ class SettingsScreen extends StatelessWidget {
   }
 
   void _showBilling(BuildContext context) {
-    // Backend `UserTier` vocab is currently coarse: 'pending' | 'pro' |
-    // 'expired' | 'cancelled' (per src/lib/subscription.ts). We don't
-    // yet receive the specific product_id back through /auth/me, so we
-    // can only show whether they're on a paid tier vs free — Apple owns
-    // the actual line-item charge history and is the source of truth
-    // for "which SKU did I buy" anyway.
-    final tier = auth.session?.tier ?? 'free';
-    final (productName, displayPrice, cadence) = switch (tier) {
-      'pro' || 'in_grace' => (
-          'AegisDial Pro',
-          'Active',
-          'See App Store for the price you signed up at',
-        ),
-      'expired' => (
-          'AegisDial Pro',
-          'Expired',
-          'Your subscription is no longer active',
-        ),
-      'cancelled' => (
-          'AegisDial Pro',
-          'Cancelled',
-          'Active until period end · See App Store',
-        ),
-      'guest' => (
-          'Guest session',
-          'Free',
-          'Sign in to start your 7-day trial',
-        ),
-      _ => (
-          'AegisDial — Free trial',
-          'Free',
-          '7-day trial — upgrade to keep protection active',
-        ),
-    };
-
     showModalBottomSheet(
       context: context,
       backgroundColor: AegisColors.surface,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (_) => Padding(
-        padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Billing',
-              style: Theme.of(context)
-                  .textTheme
-                  .titleLarge
-                  ?.copyWith(fontWeight: FontWeight.w700),
-            ),
-            const SizedBox(height: 20),
-            Container(
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: AegisColors.surfaceElevated,
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Row(
-                children: [
-                  const Icon(Icons.receipt_long_outlined,
-                      color: AegisColors.textTertiary, size: 20),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Text(
-                      productName,
-                      style: Theme.of(context)
-                          .textTheme
-                          .bodyMedium
-                          ?.copyWith(fontWeight: FontWeight.w600),
-                    ),
-                  ),
-                  Text(
-                    displayPrice,
-                    style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                          color: AegisColors.textSecondary,
-                        ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              cadence,
-              style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: AegisColors.textTertiary,
-                  ),
-            ),
-            const SizedBox(height: 20),
-            Text(
-              'Charge history and cancellation are managed by Apple. Open Settings → [Your Name] → Subscriptions → AegisDial.',
-              style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: AegisColors.textTertiary,
-                    height: 1.5,
-                  ),
-            ),
-          ],
-        ),
-      ),
+      builder: (_) => const _BillingSheet(),
     );
   }
 
@@ -551,15 +456,17 @@ class SettingsScreen extends StatelessWidget {
             const SizedBox(height: 16),
             ...[
               ('How does Live Shield work?',
-                  'AegisDial transcribes every call on-device using on-device AI. Nothing leaves your phone. If the transcript matches a scam pattern, you get an immediate alert.'),
+                  'Open Live Shield when you get a suspicious call. AegisDial transcribes the conversation in chunks, matches it against scam patterns (regex on the free tier; AI coaching on Pro), and surfaces a counter-script to steer the call away from the scam.'),
               ('What is the recovery chatbot?',
                   'The recovery companion walks you through the first 60 minutes after a scam — contacting your bank, filing FTC / IC3 reports, freezing credit, and more.'),
               ('What does the SMS Filter scan?',
-                  'It scans every incoming SMS and iMessage for phishing links, package-redelivery scams, fake bank alerts, and more. Paste any message in manually to scan it.'),
+                  'Paste any text message into the SMS Filter screen and AegisDial scans it for phishing links, package-redelivery scams, fake bank alerts, and more. iOS does not allow third-party apps to read inbound SMS automatically, so scanning is paste-driven.'),
               ('How do I add family members?',
                   'Go to the Family tab and tap "Add a family member." Pro covers up to 3 lines.'),
               ('How do I contact support?',
                   'Email us at $kSupportEmail. We respond within 24 hours.'),
+              ('Notifications not arriving?',
+                  'Tap "Push diagnostic" further up this screen to see whether iOS permission, the APNs token, and backend registration are all green. Most missing pushes are because iOS permission was declined during onboarding — re-enable it under iOS Settings → AegisDial → Notifications, then return here and tap Push diagnostic → "Retry registration."'),
             ].map(
               (faq) => Container(
                 margin: const EdgeInsets.only(bottom: 10),
@@ -925,6 +832,236 @@ class _SettingsTile extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _BillingSheet extends StatefulWidget {
+  const _BillingSheet();
+
+  @override
+  State<_BillingSheet> createState() => _BillingSheetState();
+}
+
+class _BillingSheetState extends State<_BillingSheet> {
+  bool _loading = true;
+  String? _error;
+  Map<String, dynamic>? _status;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetch();
+  }
+
+  Future<void> _fetch() async {
+    final session = auth.session;
+    if (session == null || session.userId == 'guest') {
+      setState(() => _loading = false);
+      return;
+    }
+    try {
+      final res = await api.get('/subscription/status');
+      if (!mounted) return;
+      setState(() {
+        _status = res;
+        _loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.toString();
+        _loading = false;
+      });
+    }
+  }
+
+  /// Map App Store product_id → display name + cadence label.
+  /// Falls back to a generic "AegisDial Pro" if the id isn't in the
+  /// catalog (e.g. legacy SKU from before the bundle ID rename).
+  (String name, String cadence) _displayForProduct(String? productId) {
+    switch (productId) {
+      case 'com.aegisdial.app.pro.monthly':
+        return ('AegisDial Pro Monthly', '\$49.99 / month');
+      case 'com.aegisdial.app.pro.yearly':
+        return ('AegisDial Pro Annual', '\$399 / year');
+      case 'com.aegisdial.app.recovery.session':
+        return ('Recovery Session', '\$149 one-time · 14-day Pro');
+      case 'com.aegisdial.app.recovery.monthly':
+        return ('Recovery Concierge Monthly', '\$99 / month');
+      case 'com.aegisdial.app.recovery.yearly':
+        return ('Recovery Concierge Annual', '\$899 / year');
+      case 'com.aegisdial.app.pro.family_plus.monthly':
+        return ('Pro Family+', '\$69.99 / month (legacy)');
+      default:
+        return ('AegisDial Pro', 'See App Store for plan details');
+    }
+  }
+
+  String _formatRenewal(String? iso, String? status) {
+    if (iso == null) return '';
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return '';
+    final m = const [
+      'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+      'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+    ][dt.month - 1];
+    final label = (status == 'cancelled' || status == 'expired')
+        ? 'Access until'
+        : 'Renews';
+    return '$label $m ${dt.day}, ${dt.year}';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 36),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Billing',
+            style: tt.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+          ),
+          const SizedBox(height: 20),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: Center(
+                  child: CircularProgressIndicator(
+                      color: AegisColors.turquoise, strokeWidth: 2)),
+            )
+          else
+            ..._buildBody(tt),
+        ],
+      ),
+    );
+  }
+
+  List<Widget> _buildBody(TextTheme tt) {
+    final session = auth.session;
+    if (session == null || session.userId == 'guest') {
+      return [
+        _row(tt, 'Guest session', 'Free'),
+        const SizedBox(height: 8),
+        Text(
+          'Sign in to start your 7-day trial.',
+          style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
+        ),
+      ];
+    }
+    if (_error != null) {
+      return [
+        Text(
+          "We couldn't load your billing details.",
+          style: tt.bodyMedium?.copyWith(color: AegisColors.textSecondary),
+        ),
+        const SizedBox(height: 16),
+        TextButton(
+          onPressed: () {
+            setState(() {
+              _loading = true;
+              _error = null;
+            });
+            _fetch();
+          },
+          style: TextButton.styleFrom(foregroundColor: AegisColors.turquoise),
+          child: const Text('Retry'),
+        ),
+      ];
+    }
+
+    final tier = (_status?['tier'] as String?) ?? session.tier;
+    final sub = _status?['subscription'] as Map<String, dynamic>?;
+    final productId = sub?['provider_product_id'] as String?;
+    final periodEnd = sub?['current_period_end'] as String?;
+    final status = sub?['status'] as String?;
+
+    if (tier != 'pro' && sub == null) {
+      return [
+        _row(tt, 'AegisDial — Free tier', 'Free'),
+        const SizedBox(height: 8),
+        Text(
+          '7-day trial — upgrade to keep protection active after it ends.',
+          style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
+        ),
+      ];
+    }
+
+    final (name, cadence) = _displayForProduct(productId);
+    final statusBadge = switch (status) {
+      'active' => 'Active',
+      'in_grace' => 'Grace period',
+      'cancelled' => 'Cancelled',
+      'expired' => 'Expired',
+      'revoked' => 'Revoked',
+      _ => 'Active',
+    };
+    final renewLine = _formatRenewal(periodEnd, status);
+
+    return [
+      _row(tt, name, statusBadge),
+      const SizedBox(height: 6),
+      Text(
+        cadence,
+        style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
+      ),
+      if (renewLine.isNotEmpty) ...[
+        const SizedBox(height: 4),
+        Text(
+          renewLine,
+          style: tt.labelSmall?.copyWith(color: AegisColors.textTertiary),
+        ),
+      ],
+      const SizedBox(height: 18),
+      OutlinedButton.icon(
+        onPressed: () async {
+          final uri = Uri.parse('https://apps.apple.com/account/subscriptions');
+          await launchUrl(uri, mode: LaunchMode.externalApplication);
+        },
+        icon: const Icon(Icons.open_in_new_rounded, size: 16),
+        label: const Text('Manage subscription'),
+        style: OutlinedButton.styleFrom(
+          foregroundColor: AegisColors.textPrimary,
+          side: const BorderSide(color: AegisColors.border, width: 0.8),
+          minimumSize: const Size.fromHeight(40),
+        ),
+      ),
+      const SizedBox(height: 12),
+      Text(
+        'Charge history and cancellation are managed by Apple. The button above opens iOS Settings → Subscriptions → AegisDial.',
+        style: tt.bodySmall?.copyWith(
+          color: AegisColors.textTertiary,
+          height: 1.5,
+        ),
+      ),
+    ];
+  }
+
+  Widget _row(TextTheme tt, String name, String trailing) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AegisColors.surfaceElevated,
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.receipt_long_outlined,
+              color: AegisColors.textTertiary, size: 20),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(name,
+                style:
+                    tt.bodyMedium?.copyWith(fontWeight: FontWeight.w600)),
+          ),
+          Text(trailing,
+              style:
+                  tt.bodyMedium?.copyWith(color: AegisColors.textSecondary)),
+        ],
       ),
     );
   }

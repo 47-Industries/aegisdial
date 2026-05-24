@@ -205,6 +205,21 @@ const schema = z.object({
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM: z.string().default('AegisDial <alerts@aegisdial.com>'),
 
+  // Comma-separated email allowlist for permanent Pro entitlement.
+  // Founders, full-time team, press/partner comp accounts, and the
+  // App Store reviewer test login all live here. currentTier() short-
+  // circuits to 'pro' for any user whose email matches (case-insensitive)
+  // without writing a subscriptions row — these are NOT StoreKit
+  // transactions, just a server-side override.
+  //
+  // Example: PRO_GRANT_EMAILS=jesiah@example.com,dean@example.com,review@aegisdial.com
+  PRO_GRANT_EMAILS: z.string().default('').transform((s) =>
+    s
+      .split(',')
+      .map((e) => e.trim().toLowerCase())
+      .filter((e) => e.length > 0),
+  ),
+
   // APNs (Apple Push). All four must be set for push to fire; absent
   // means the push worker runs but no-ops (alerts still land in-DB).
   APNS_KEY_ID: z.string().optional(),
@@ -229,12 +244,18 @@ const schema = z.object({
     .string()
     .default('ZGV2LW9ubHkta2V5LWRvLW5vdC11c2UtaW4tcHJvZC1lbnYtMzI='),
   JWT_SECRET: z.string().min(32).default('dev-only-jwt-secret-change-me-immediately-in-production-12345'),
-  APPLE_CLIENT_ID: z.string().default('com.aegiadial.ios'),
-  APP_ATTEST_BUNDLE_ID: z.string().default('com.aegiadial.ios'),
+  APPLE_CLIENT_ID: z.string().default('com.aegisdial.app'),
+  // App Attest: reserved for a future hardening pass. The config vars
+  // exist so a deploy doesn't have to add new env keys when the
+  // verification logic lands, but as of this commit there is NO
+  // /v1/app-attest/* route, no Flutter client integration, and no
+  // call site reading these values. Treat the iOS bearer token as
+  // the only client-side identity gate today.
+  APP_ATTEST_BUNDLE_ID: z.string().default('com.aegisdial.app'),
   APP_ATTEST_ENV: z.enum(['development', 'production']).default('development'),
 
   // Apple StoreKit verification — all optional until App Store Connect is wired.
-  APPLE_BUNDLE_ID: z.string().default('com.aegiadial.ios'),
+  APPLE_BUNDLE_ID: z.string().default('com.aegisdial.app'),
   APPLE_APP_APPLE_ID: z.coerce.number().int().optional(),
   APPLE_STOREKIT_ENV: z.enum(['sandbox', 'production']).default('sandbox'),
 
@@ -242,6 +263,13 @@ const schema = z.object({
   // is skipped (with a loud warning) when the secret is missing.
   STRIPE_SECRET_KEY: z.string().optional(),
   STRIPE_WEBHOOK_SECRET: z.string().optional(),
+
+  // Shared secret for the RevenueCat → backend webhook. Configure in
+  // RevenueCat dashboard → Project Settings → Integrations → Webhook,
+  // set Authorization header to `Bearer <this-value>`. Without this,
+  // /subscription/revenuecat/webhook 503's rather than silently
+  // accepting unsigned events as authentic.
+  REVENUECAT_WEBHOOK_SECRET: z.string().optional(),
   STRIPE_MONTHLY_PRICE_ID: z.string().optional(),
   STRIPE_YEARLY_PRICE_ID: z.string().optional(),
   STRIPE_FAMILY_PLUS_MONTHLY_PRICE_ID: z.string().optional(),
@@ -679,6 +707,29 @@ const parsed = schema.safeParse(process.env);
 if (!parsed.success) {
   console.error('Invalid environment configuration:', parsed.error.flatten().fieldErrors);
   process.exit(1);
+}
+
+// Production refuses to boot with dev-only defaults still in place. Each
+// of these has a permissive default so local dev works out of the box,
+// but shipping any of them to prod is a footgun (universal forge keys,
+// known-secret JWTs, "everyone is a pro user" bearer shortcut). Fail
+// loudly at boot rather than ship a deceptively-running app.
+if (parsed.data.NODE_ENV === 'production') {
+  const errors: string[] = [];
+  if (parsed.data.JWT_SECRET === 'dev-only-jwt-secret-change-me-immediately-in-production-12345') {
+    errors.push('JWT_SECRET is still the dev default — set a real 32+ byte secret');
+  }
+  if (parsed.data.DATA_ENCRYPTION_KEY === 'ZGV2LW9ubHkta2V5LWRvLW5vdC11c2UtaW4tcHJvZC1lbnYtMzI=') {
+    errors.push('DATA_ENCRYPTION_KEY is still the dev default — generate a real AES-256 key');
+  }
+  if (parsed.data.ALLOW_DEV_BEARER) {
+    errors.push('ALLOW_DEV_BEARER must be false in production (universal forge key)');
+  }
+  if (errors.length > 0) {
+    console.error('Refusing to boot in production with dev-only config:');
+    for (const e of errors) console.error('  - ' + e);
+    process.exit(1);
+  }
 }
 
 export const config = parsed.data;

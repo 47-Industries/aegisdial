@@ -39,7 +39,7 @@ const RECOVERY_GRANT_SCHEMA = z
     { message: 'exactly_one_of_email_or_user_id' },
   );
 
-const RECOVERY_GRANT_PRODUCT_ID = 'com.aegiadial.ios.recovery.session';
+const RECOVERY_GRANT_PRODUCT_ID = 'com.aegisdial.app.recovery.session';
 
 /**
  * Parse the `hours` query param for v4 admin dashboards. Strict regex

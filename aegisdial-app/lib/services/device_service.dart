@@ -208,7 +208,7 @@ class DeviceService {
     try {
       await api.post('/v1/device/register', {
         'apns_token': hex,
-        'bundle_id': 'com.aegiadial.ios',
+        'bundle_id': 'com.aegisdial.app',
         'environment': kReleaseMode ? 'production' : 'sandbox',
       });
       // Success — record the token preview + timestamp and clear any
