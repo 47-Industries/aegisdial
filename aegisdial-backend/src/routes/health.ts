@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import type { FastifyInstance } from 'fastify';
 import { query } from '../lib/db.js';
 import { redis } from '../lib/cache.js';
@@ -18,10 +19,18 @@ const GIT_SHA =
   process.env.HEROKU_SLUG_COMMIT ||
   'unknown';
 
-const PKG_VERSION =
-  process.env.npm_package_version ||
-  process.env.PACKAGE_VERSION ||
-  'unknown';
+// Read version from env, or from PKG_VERSION file written by Dockerfile,
+// or fall back to 'unknown'.
+function resolveVersion(): string {
+  if (process.env.npm_package_version) return process.env.npm_package_version;
+  if (process.env.PACKAGE_VERSION) return process.env.PACKAGE_VERSION;
+  try {
+    return readFileSync('PKG_VERSION', 'utf8').trim();
+  } catch {
+    return 'unknown';
+  }
+}
+const PKG_VERSION = resolveVersion();
 
 export async function healthRoutes(app: FastifyInstance): Promise<void> {
   app.get('/health', async (_req, reply) => {
