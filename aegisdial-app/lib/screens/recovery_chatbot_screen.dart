@@ -426,6 +426,23 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
               },
             ),
           IconButton(
+            icon: const Icon(Icons.history_rounded, size: 20),
+            color: AegisColors.textTertiary,
+            tooltip: 'Past sessions',
+            onPressed: _isGuest
+                ? null
+                : () => showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: AegisColors.surface,
+                      shape: const RoundedRectangleBorder(
+                        borderRadius:
+                            BorderRadius.vertical(top: Radius.circular(20)),
+                      ),
+                      builder: (_) => const _PastSessionsSheet(),
+                    ),
+          ),
+          IconButton(
             icon: const Icon(Icons.info_outline_rounded, size: 20),
             color: AegisColors.textTertiary,
             onPressed: () => Navigator.of(context).push(
@@ -941,6 +958,235 @@ class _DotsState extends State<_Dots> with SingleTickerProviderStateMixin {
           }),
         );
       },
+    );
+  }
+}
+
+class _PastSessionsSheet extends StatefulWidget {
+  const _PastSessionsSheet();
+
+  @override
+  State<_PastSessionsSheet> createState() => _PastSessionsSheetState();
+}
+
+class _PastSessionsSheetState extends State<_PastSessionsSheet> {
+  List<Map<String, dynamic>>? _sessions;
+  bool _loading = true;
+  String? _error;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    try {
+      final res = await api.get('/v1/recovery/sessions');
+      if (!mounted) return;
+      setState(() {
+        _sessions = (res['sessions'] as List<dynamic>?)
+                ?.cast<Map<String, dynamic>>() ??
+            [];
+        _loading = false;
+      });
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _error = e.message;
+        _loading = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() {
+        _error = 'Could not load sessions.';
+        _loading = false;
+      });
+    }
+  }
+
+  String _formatDate(String? iso) {
+    if (iso == null) return '';
+    final dt = DateTime.tryParse(iso);
+    if (dt == null) return iso;
+    final diff = DateTime.now().difference(dt);
+    if (diff.inDays == 0) return 'Today';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 30) return '${diff.inDays}d ago';
+    return '${dt.month}/${dt.day}/${dt.year}';
+  }
+
+  String _scamLabel(String? type) {
+    if (type == null || type.isEmpty) return 'Unknown scam';
+    return type
+        .replaceAll('_', ' ')
+        .replaceFirstMapped(RegExp(r'^.'), (m) => m[0]!.toUpperCase());
+  }
+
+  Color _statusColor(String status) => switch (status) {
+        'active' => AegisColors.turquoise,
+        'completed' => AegisColors.success,
+        'abandoned' => AegisColors.textTertiary,
+        _ => AegisColors.warning,
+      };
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return DraggableScrollableSheet(
+      initialChildSize: 0.55,
+      minChildSize: 0.3,
+      maxChildSize: 0.85,
+      expand: false,
+      builder: (_, scroll) => Column(
+        children: [
+          const SizedBox(height: 10),
+          Container(
+            width: 36,
+            height: 4,
+            decoration: BoxDecoration(
+              color: AegisColors.textTertiary,
+              borderRadius: BorderRadius.circular(2),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
+            child: Text(
+              'Past Sessions',
+              style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+            ),
+          ),
+          if (_loading)
+            const Padding(
+              padding: EdgeInsets.all(32),
+              child: CircularProgressIndicator(
+                  color: AegisColors.turquoise, strokeWidth: 2),
+            )
+          else if (_error != null)
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Text(
+                _error!,
+                style: tt.bodySmall
+                    ?.copyWith(color: AegisColors.textTertiary),
+                textAlign: TextAlign.center,
+              ),
+            )
+          else if (_sessions!.isEmpty)
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                children: [
+                  const Icon(Icons.healing_rounded,
+                      color: AegisColors.textTertiary, size: 32),
+                  const SizedBox(height: 10),
+                  Text(
+                    'No sessions yet',
+                    style: tt.bodyMedium
+                        ?.copyWith(color: AegisColors.textSecondary),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'When you start a recovery session, it will appear here.',
+                    style: tt.bodySmall
+                        ?.copyWith(color: AegisColors.textTertiary),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            )
+          else
+            Expanded(
+              child: ListView.builder(
+                controller: scroll,
+                padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+                itemCount: _sessions!.length,
+                itemBuilder: (_, i) {
+                  final s = _sessions![i];
+                  final status = (s['status'] as String?) ?? 'active';
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(14),
+                    decoration: BoxDecoration(
+                      color: AegisColors.surfaceElevated,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(
+                          color: AegisColors.border, width: 0.6),
+                    ),
+                    child: Row(
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: _statusColor(status)
+                                .withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Icon(
+                            status == 'completed'
+                                ? Icons.check_circle_outline
+                                : status == 'active'
+                                    ? Icons.play_circle_outline
+                                    : Icons.cancel_outlined,
+                            color: _statusColor(status),
+                            size: 18,
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                _scamLabel(s['scam_type'] as String?),
+                                style: tt.bodySmall?.copyWith(
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                              const SizedBox(height: 2),
+                              Row(
+                                children: [
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                        horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: _statusColor(status)
+                                          .withValues(alpha: 0.14),
+                                      borderRadius:
+                                          BorderRadius.circular(4),
+                                    ),
+                                    child: Text(
+                                      status.toUpperCase(),
+                                      style: TextStyle(
+                                        color: _statusColor(status),
+                                        fontSize: 9,
+                                        fontWeight: FontWeight.w700,
+                                        letterSpacing: 0.6,
+                                      ),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Text(
+                                    _formatDate(
+                                        s['started_at'] as String?),
+                                    style: tt.labelSmall?.copyWith(
+                                      color: AegisColors.textTertiary,
+                                      fontSize: 10,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 }

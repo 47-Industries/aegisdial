@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:speech_to_text/speech_to_text.dart' as stt;
 import '../theme/app_theme.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../services/live_shield_service.dart';
@@ -16,6 +17,7 @@ class LiveShieldActiveScreen extends StatefulWidget {
 }
 
 enum _DemoPhase { idle, ringing, transcribing, verdict, done }
+enum _LivePhase { idle, listening, stopped }
 
 // A single demo scenario. Plays a 5-line transcript with a rising fraud
 // score, then surfaces the v4 counter-script card (mid-call when the
@@ -282,11 +284,19 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
   late final AnimationController _wave;
 
   _DemoPhase _demoPhase = _DemoPhase.idle;
+  _LivePhase _livePhase = _LivePhase.idle;
+  bool _isLiveMode = false; // true = real mic, false = demo scenarios
   int _scenarioIndex = 0;
   final List<String> _transcript = [];
   int _fraudScore = 0;
   Timer? _demoTimer;
   final List<_DemoCall> _callHistory = [];
+
+  // Speech-to-text for live mode
+  final stt.SpeechToText _speech = stt.SpeechToText();
+  bool _speechAvailable = false;
+  String _currentPartial = ''; // partial recognition before finalization
+  String? _lastDetectedType; // scam type label for live verdict
 
   // Backend integration state. When `_sessionId` is non-null the demo is
   // also driving a real /v1/live-shield session — the score we render is
@@ -321,6 +331,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
     _pulse.dispose();
     _wave.dispose();
     _demoTimer?.cancel();
+    if (_speech.isListening) _speech.stop();
     super.dispose();
   }
 
@@ -490,9 +501,206 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
     }
   }
 
+  // ── Live listening mode ──────────────────────────────────────────────────
+
+  Future<void> _startListening() async {
+    await showLiveShieldConsentV2Sheet(context);
+    if (!mounted) return;
+
+    if (!_speechAvailable) {
+      _speechAvailable = await _speech.initialize(
+        onError: (e) {
+          if (!mounted) return;
+          // speech_not_recognized is not a real error — just silence
+          if (e.errorMsg == 'error_speech_timeout' ||
+              e.errorMsg == 'error_no_match') {
+            // Restart listening — the user may still be on the call
+            if (_livePhase == _LivePhase.listening) _restartListening();
+            return;
+          }
+        },
+        onStatus: (status) {
+          // Auto-restart when recognition completes a segment (iOS sends
+          // 'notListening' after each final result). This keeps the mic
+          // open continuously without the user having to re-tap.
+          if (status == 'notListening' &&
+              _livePhase == _LivePhase.listening &&
+              mounted) {
+            _restartListening();
+          }
+        },
+      );
+    }
+
+    if (!_speechAvailable) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Microphone unavailable. Check Settings > Privacy > Microphone.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    setState(() {
+      _isLiveMode = true;
+      _livePhase = _LivePhase.listening;
+      _demoPhase = _DemoPhase.idle;
+      _transcript.clear();
+      _fraudScore = 0;
+      _coachingLine = null;
+      _counterScripts = const [];
+      _v4PlaybookId = null;
+      _sessionId = null;
+      _backendChunkSeq = 0;
+      _currentPartial = '';
+      _lastDetectedType = null;
+    });
+    HapticFeedback.heavyImpact();
+
+    // Start a real backend session
+    final startResult = await liveShield.start();
+    if (mounted && startResult != null) {
+      _sessionId = startResult.sessionId;
+    }
+
+    _beginSpeechRecognition();
+  }
+
+  void _beginSpeechRecognition() {
+    _speech.listen(
+      onResult: (result) {
+        if (!mounted) return;
+        setState(() {
+          _currentPartial = result.recognizedWords;
+        });
+        if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
+          _onFinalizedUtterance(result.recognizedWords.trim());
+        }
+      },
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 3),
+      localeId: 'en_US',
+      listenOptions: stt.SpeechListenOptions(
+        partialResults: true,
+        listenMode: stt.ListenMode.dictation,
+      ),
+    );
+  }
+
+  void _restartListening() {
+    if (!mounted || _livePhase != _LivePhase.listening) return;
+    // Small delay to avoid rapid restart loops
+    Future.delayed(const Duration(milliseconds: 200), () {
+      if (!mounted || _livePhase != _LivePhase.listening) return;
+      _beginSpeechRecognition();
+    });
+  }
+
+  Future<void> _onFinalizedUtterance(String text) async {
+    setState(() {
+      _transcript.add(text);
+      _currentPartial = '';
+    });
+    HapticFeedback.selectionClick();
+
+    // Send to backend for real scoring
+    final sid = _sessionId;
+    if (sid != null) {
+      final chunkResult = await liveShield.sendChunk(
+        sessionId: sid,
+        seq: _backendChunkSeq++,
+        text: text,
+        speaker: 'caller',
+      );
+      if (chunkResult != null && mounted) {
+        setState(() {
+          _fraudScore = chunkResult.riskScore;
+          if (chunkResult.coachingLine != null) {
+            _coachingLine = chunkResult.coachingLine;
+          }
+          if (chunkResult.v4CounterScripts.isNotEmpty) {
+            _counterScripts = chunkResult.v4CounterScripts;
+            _v4PlaybookId = chunkResult.v4PlaybookId;
+          }
+          if (chunkResult.llmScamType != null) {
+            _lastDetectedType = chunkResult.llmScamType;
+          }
+        });
+      }
+    }
+  }
+
+  Future<void> _stopListening() async {
+    await _speech.stop();
+    final sid = _sessionId;
+    if (sid != null) {
+      liveShield.end(sessionId: sid, outcome: 'user_hung_up');
+    }
+    if (!mounted) return;
+    setState(() {
+      _livePhase = _LivePhase.stopped;
+      if (_transcript.isNotEmpty) {
+        _callHistory.insert(0, _DemoCall(
+          List.from(_transcript),
+          _fraudScore,
+          _lastDetectedType != null
+              ? _formatPlaybookLabel(_lastDetectedType!)
+              : 'Live call',
+        ));
+      }
+    });
+    HapticFeedback.heavyImpact();
+    // Return to idle after brief pause
+    Future.delayed(const Duration(milliseconds: 600), () {
+      if (mounted) {
+        setState(() {
+          _livePhase = _LivePhase.idle;
+          _isLiveMode = false;
+        });
+      }
+    });
+  }
+
+  void _openRecoveryFromLive() {
+    final sid = _sessionId;
+    if (sid != null) {
+      liveShield.end(sessionId: sid, outcome: 'handed_off_to_recovery');
+    }
+    _speech.stop();
+
+    final playbookLabel = _v4PlaybookId != null
+        ? _formatPlaybookLabel(_v4PlaybookId!)
+        : _lastDetectedType != null
+            ? _formatPlaybookLabel(_lastDetectedType!)
+            : null;
+    final lastLines = _transcript
+        .where((l) => l.trim().isNotEmpty)
+        .toList()
+        .reversed
+        .take(3)
+        .toList()
+        .reversed
+        .join(' · ');
+
+    final preload = playbookLabel != null
+        ? "I just got a $playbookLabel scam call. The scammer said: \"$lastLines\". What should I do first?"
+        : "I just got a scam call. The caller said: \"$lastLines\". What should I do first?";
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => RecoveryChatbotScreen(initialContext: preload),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final isLive = _isLiveMode && _livePhase == _LivePhase.listening;
     return Scaffold(
       backgroundColor: AegisColors.background,
       extendBodyBehindAppBar: true,
@@ -513,23 +721,24 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
               ),
             ),
             const SizedBox(width: 10),
-            // Demo badge — until on-device call audio capture ships,
-            // this screen plays scripted scenarios. Labeling it
-            // honestly avoids any reviewer/customer surprise.
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
               decoration: BoxDecoration(
-                color: AegisColors.warning.withValues(alpha: 0.18),
+                color: isLive
+                    ? AegisColors.success.withValues(alpha: 0.18)
+                    : AegisColors.warning.withValues(alpha: 0.18),
                 borderRadius: BorderRadius.circular(4),
                 border: Border.all(
-                  color: AegisColors.warning.withValues(alpha: 0.55),
+                  color: isLive
+                      ? AegisColors.success.withValues(alpha: 0.55)
+                      : AegisColors.warning.withValues(alpha: 0.55),
                   width: 1,
                 ),
               ),
               child: Text(
-                'DEMO',
+                isLive ? 'LIVE' : 'DEMO',
                 style: tt.labelSmall?.copyWith(
-                  color: AegisColors.warning,
+                  color: isLive ? AegisColors.success : AegisColors.warning,
                   letterSpacing: 1.6,
                   fontWeight: FontWeight.w800,
                   fontSize: 10,
@@ -563,7 +772,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
             child: ListView(
               padding: const EdgeInsets.only(top: 8, bottom: 28),
               children: [
-                _StatusHeader(),
+                _StatusHeader(isLive: isLive),
                 const SizedBox(height: 12),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 20),
@@ -580,17 +789,25 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                     ),
                     child: Row(
                       children: [
-                        const Icon(
-                          Icons.info_outline_rounded,
-                          color: AegisColors.textTertiary,
+                        Icon(
+                          isLive
+                              ? Icons.mic_rounded
+                              : Icons.info_outline_rounded,
+                          color: isLive
+                              ? AegisColors.success
+                              : AegisColors.textTertiary,
                           size: 16,
                         ),
                         const SizedBox(width: 10),
                         Expanded(
                           child: Text(
-                            'Sample call. Real-time protection activates automatically during actual phone calls.',
+                            isLive
+                                ? 'Listening via speakerphone. Put your call on speaker and AegisDial will analyze it live.'
+                                : 'Sample call. Tap "Start listening" to analyze a real call on speakerphone.',
                             style: tt.bodySmall?.copyWith(
-                              color: AegisColors.textSecondary,
+                              color: isLive
+                                  ? AegisColors.success
+                                  : AegisColors.textSecondary,
                               height: 1.3,
                             ),
                           ),
@@ -653,35 +870,60 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                 // Active call / demo panel
                 AnimatedSwitcher(
                   duration: const Duration(milliseconds: 300),
-                  child: _demoPhase == _DemoPhase.ringing
-                      ? _RingingCard(
-                          number: _kScenarios[_scenarioIndex].number,
-                          key: const ValueKey('ring'),
+                  child: isLive
+                      ? _LiveCallCard(
+                          key: const ValueKey('live-real'),
+                          number: 'Speakerphone',
+                          scenarioName: _lastDetectedType != null
+                              ? _formatPlaybookLabel(_lastDetectedType!)
+                              : 'Analyzing...',
+                          lines: [
+                            ..._transcript,
+                            if (_currentPartial.isNotEmpty) _currentPartial,
+                          ],
+                          score: _fraudScore,
+                          verdict: false,
+                          coachingLine: _coachingLine,
+                          counterScripts: _counterScripts,
+                          v4PlaybookId: _v4PlaybookId,
+                          tellTales: const [],
+                          onBlock: _stopListening,
+                          onAnswer: _stopListening,
+                          onRecovery: _openRecoveryFromLive,
+                          isLive: true,
+                          currentPartial: _currentPartial,
+                          onStop: _stopListening,
                         )
-                      : _demoPhase == _DemoPhase.transcribing ||
-                              _demoPhase == _DemoPhase.verdict
-                          ? _LiveCallCard(
-                              key: const ValueKey('live'),
+                      : _demoPhase == _DemoPhase.ringing
+                          ? _RingingCard(
                               number: _kScenarios[_scenarioIndex].number,
-                              scenarioName: _kScenarios[_scenarioIndex].name,
-                              lines: _transcript,
-                              score: _fraudScore,
-                              verdict: _demoPhase == _DemoPhase.verdict,
-                              coachingLine: _coachingLine,
-                              counterScripts: _counterScripts,
-                              v4PlaybookId: _v4PlaybookId,
-                              tellTales: _kScenarios[_scenarioIndex].tellTales,
-                              onBlock: _dismissDemo,
-                              onAnswer: _dismissDemo,
-                              onRecovery: _openRecovery,
+                              key: const ValueKey('ring'),
                             )
-                          : _IdleCard(
-                              key: const ValueKey('idle'),
-                              onRunDemo: _runDemo,
-                              selectedIndex: _scenarioIndex,
-                              onSelectScenario: (i) =>
-                                  setState(() => _scenarioIndex = i),
-                            ),
+                          : _demoPhase == _DemoPhase.transcribing ||
+                                  _demoPhase == _DemoPhase.verdict
+                              ? _LiveCallCard(
+                                  key: const ValueKey('live'),
+                                  number: _kScenarios[_scenarioIndex].number,
+                                  scenarioName: _kScenarios[_scenarioIndex].name,
+                                  lines: _transcript,
+                                  score: _fraudScore,
+                                  verdict: _demoPhase == _DemoPhase.verdict,
+                                  coachingLine: _coachingLine,
+                                  counterScripts: _counterScripts,
+                                  v4PlaybookId: _v4PlaybookId,
+                                  tellTales: _kScenarios[_scenarioIndex].tellTales,
+                                  onBlock: _dismissDemo,
+                                  onAnswer: _dismissDemo,
+                                  onRecovery: _openRecovery,
+                                )
+                              : _IdleCard(
+                                  key: const ValueKey('idle'),
+                                  onRunDemo: _runDemo,
+                                  onStartListening: _startListening,
+                                  selectedIndex: _scenarioIndex,
+                                  onSelectScenario: (i) =>
+                                      setState(() => _scenarioIndex = i),
+                                ),
                 ),
                 const SizedBox(height: 22),
                 Padding(
@@ -757,9 +999,13 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
 }
 
 class _StatusHeader extends StatelessWidget {
+  final bool isLive;
+  const _StatusHeader({this.isLive = false});
+
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
+    final accent = isLive ? AegisColors.success : AegisColors.turquoise;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Container(
@@ -767,7 +1013,12 @@ class _StatusHeader extends StatelessWidget {
         decoration: BoxDecoration(
           color: AegisColors.surface.withValues(alpha: 0.7),
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: AegisColors.border, width: 0.6),
+          border: Border.all(
+            color: isLive
+                ? AegisColors.success.withValues(alpha: 0.5)
+                : AegisColors.border,
+            width: isLive ? 1.2 : 0.6,
+          ),
         ),
         child: Row(
           children: [
@@ -776,12 +1027,12 @@ class _StatusHeader extends StatelessWidget {
               height: 44,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: AegisColors.turquoise.withValues(alpha: 0.15),
-                border: Border.all(color: AegisColors.turquoise, width: 1),
+                color: accent.withValues(alpha: 0.15),
+                border: Border.all(color: accent, width: 1),
               ),
-              child: const Icon(
-                Icons.graphic_eq_rounded,
-                color: AegisColors.turquoise,
+              child: Icon(
+                isLive ? Icons.mic_rounded : Icons.graphic_eq_rounded,
+                color: accent,
               ),
             ),
             const SizedBox(width: 12),
@@ -792,7 +1043,7 @@ class _StatusHeader extends StatelessWidget {
                   Row(
                     children: [
                       Text(
-                        'Shield is active',
+                        isLive ? 'Listening live' : 'Shield is active',
                         style: tt.titleMedium?.copyWith(
                           fontWeight: FontWeight.w700,
                         ),
@@ -802,13 +1053,17 @@ class _StatusHeader extends StatelessWidget {
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: AegisColors.warning.withValues(alpha: 0.18),
+                          color: isLive
+                              ? AegisColors.success.withValues(alpha: 0.18)
+                              : AegisColors.warning.withValues(alpha: 0.18),
                           borderRadius: BorderRadius.circular(5),
                         ),
-                        child: const Text(
-                          'DEMO',
+                        child: Text(
+                          isLive ? 'LIVE' : 'DEMO',
                           style: TextStyle(
-                            color: AegisColors.warning,
+                            color: isLive
+                                ? AegisColors.success
+                                : AegisColors.warning,
                             fontSize: 9,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 0.8,
@@ -819,7 +1074,9 @@ class _StatusHeader extends StatelessWidget {
                   ),
                   const SizedBox(height: 2),
                   Text(
-                    'Demo mode — tap "Run demo" to see how Live Shield detects a scam call.',
+                    isLive
+                        ? 'Analyzing speakerphone audio in real time. Keep the call on speaker.'
+                        : 'Tap "Start listening" for a real call, or run a demo to see how it works.',
                     style: tt.bodySmall?.copyWith(
                       color: AegisColors.textTertiary,
                       height: 1.35,
@@ -912,11 +1169,13 @@ class _PulseRingsPainter extends CustomPainter {
 
 class _IdleCard extends StatelessWidget {
   final VoidCallback onRunDemo;
+  final VoidCallback onStartListening;
   final int selectedIndex;
   final ValueChanged<int> onSelectScenario;
   const _IdleCard({
     super.key,
     required this.onRunDemo,
+    required this.onStartListening,
     required this.selectedIndex,
     required this.onSelectScenario,
   });
@@ -936,7 +1195,7 @@ class _IdleCard extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Listening — no active call',
+            'Ready to protect',
             style: tt.bodyMedium?.copyWith(
               color: AegisColors.textPrimary,
               fontWeight: FontWeight.w600,
@@ -944,15 +1203,32 @@ class _IdleCard extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'When a call comes in, the live transcript and verdict appear here.',
+            'Put your call on speakerphone and tap "Start listening" below. AegisDial will transcribe and analyze in real time.',
             style: tt.bodySmall?.copyWith(
               color: AegisColors.textTertiary,
               height: 1.45,
             ),
           ),
           const SizedBox(height: 14),
+          SizedBox(
+            width: double.infinity,
+            child: ElevatedButton.icon(
+              onPressed: onStartListening,
+              icon: const Icon(Icons.mic_rounded, size: 20),
+              label: const Text('Start listening'),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AegisColors.turquoise,
+                foregroundColor: Colors.black,
+                minimumSize: const Size.fromHeight(52),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 20),
           Text(
-            'DEMO SCENARIO',
+            'OR TRY A DEMO',
             style: tt.labelSmall?.copyWith(
               color: AegisColors.textTertiary,
               letterSpacing: 1.4,
@@ -1133,13 +1409,16 @@ class _LiveCallCard extends StatelessWidget {
   final int score;
   final bool verdict;
   final String scenarioName;
-  final String? coachingLine; // v2 LLM coaching — only set on Pro accounts post-consent-v2
-  final List<String> counterScripts; // v4 counter-scripts — playbook-aware, ≥0.7 confidence
-  final String? v4PlaybookId; // for the small "playbook detected" tag
-  final List<String> tellTales; // demo-only "why this was a scam" — surfaces below verdict
+  final String? coachingLine;
+  final List<String> counterScripts;
+  final String? v4PlaybookId;
+  final List<String> tellTales;
   final VoidCallback onBlock;
   final VoidCallback onAnswer;
-  final VoidCallback onRecovery; // v4 — opens Recovery Chatbot preloaded with scam context
+  final VoidCallback onRecovery;
+  final bool isLive;
+  final String? currentPartial;
+  final VoidCallback? onStop;
 
   const _LiveCallCard({
     super.key,
@@ -1155,6 +1434,9 @@ class _LiveCallCard extends StatelessWidget {
     required this.onBlock,
     required this.onAnswer,
     required this.onRecovery,
+    this.isLive = false,
+    this.currentPartial,
+    this.onStop,
   });
 
   Color get _scoreColor => score >= 70
@@ -1595,6 +1877,65 @@ class _LiveCallCard extends StatelessWidget {
                         ),
                         label: const Text(
                           'Get recovery help — talk to the AI companion',
+                          style: TextStyle(
+                            color: AegisColors.blueAccent,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        style: TextButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 10),
+                          backgroundColor:
+                              AegisColors.blueAccent.withValues(alpha: 0.08),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                            side: BorderSide(
+                              color: AegisColors.blueAccent
+                                  .withValues(alpha: 0.35),
+                              width: 0.8,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+          ] else if (isLive) ...[
+            const SizedBox(height: 12),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 0, 12, 14),
+              child: Column(
+                children: [
+                  SizedBox(
+                    width: double.infinity,
+                    child: ElevatedButton.icon(
+                      onPressed: onStop,
+                      icon: const Icon(Icons.stop_rounded, size: 18),
+                      label: const Text('Stop listening'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AegisColors.danger,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(vertical: 12),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                  ),
+                  if (score >= 70) ...[
+                    const SizedBox(height: 8),
+                    SizedBox(
+                      width: double.infinity,
+                      child: TextButton.icon(
+                        onPressed: onRecovery,
+                        icon: const Icon(
+                          Icons.healing_rounded,
+                          size: 16,
+                          color: AegisColors.blueAccent,
+                        ),
+                        label: const Text(
+                          'Get recovery help',
                           style: TextStyle(
                             color: AegisColors.blueAccent,
                             fontWeight: FontWeight.w600,

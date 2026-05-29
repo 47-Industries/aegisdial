@@ -499,6 +499,32 @@ export async function recoveryRoutes(app: FastifyInstance): Promise<void> {
     },
   );
 
+  // List the user's recovery sessions (most recent first). The Flutter
+  // app uses this to show past sessions in the Recovery tab.
+  app.get(
+    '/v1/recovery/sessions',
+    { preHandler: [requireAppUser] },
+    async (req, reply) => {
+      const user = req.appUser!;
+      const rows = await query<{
+        id: string;
+        scam_type: string | null;
+        status: string;
+        mode: string;
+        started_at: string;
+        completed_at: string | null;
+      }>(
+        `SELECT id, scam_type, status, mode, started_at, completed_at
+           FROM recovery_sessions
+          WHERE user_id = $1
+          ORDER BY started_at DESC
+          LIMIT 50`,
+        [user.id],
+      );
+      return reply.send({ sessions: rows.rows });
+    },
+  );
+
   // Mark a step completed / skipped / in_progress. If every step ends up
   // in {completed, skipped}, close the session.
   app.post(

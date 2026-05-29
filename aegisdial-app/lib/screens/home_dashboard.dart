@@ -5,10 +5,12 @@ import '../widgets/glass_card.dart';
 import '../widgets/hyperspace_stars.dart';
 import '../services/auth_service.dart';
 import '../services/api_service.dart';
+import '../services/device_service.dart';
 import '../services/identity_shield_service.dart';
 import 'live_shield_active.dart';
 import 'coverage_screen.dart';
 import 'breach_screen.dart';
+import 'number_check_screen.dart';
 import 'identity_shield_screen.dart';
 
 class HomeDashboard extends StatefulWidget {
@@ -25,6 +27,7 @@ class HomeDashboard extends StatefulWidget {
 
 class _HomeDashboardState extends State<HomeDashboard> {
   static const _kShieldKey = 'shield_on_v1';
+  static const _kChecklistDismissed = 'setup_checklist_dismissed_v1';
 
   // Neutral placeholder shown until /v1/stats/summary returns. The
   // app has no users yet — fabricating "2.4M calls screened / 847K
@@ -39,6 +42,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
   ];
 
   bool _shieldOn = true;
+  bool _checklistDismissed = true;
+  bool _pushEnabled = false;
+  int _monitorCount = 0;
   String _statsLabel = 'MY STATS';
   List<(int, String, Color)> _displayStats = _kInitialStats;
   IdentityShieldTile? _identityTile;
@@ -48,6 +54,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
     super.initState();
     _loadShieldState();
     _loadStats();
+    _loadChecklist();
   }
 
   Future<void> _loadShieldState() async {
@@ -60,6 +67,23 @@ class _HomeDashboardState extends State<HomeDashboard> {
     setState(() => _shieldOn = v);
     final p = await SharedPreferences.getInstance();
     await p.setBool(_kShieldKey, v);
+  }
+
+  Future<void> _loadChecklist() async {
+    final p = await SharedPreferences.getInstance();
+    final dismissed = p.getBool(_kChecklistDismissed) ?? false;
+    final diag = await deviceService.snapshot();
+    if (!mounted) return;
+    setState(() {
+      _checklistDismissed = dismissed;
+      _pushEnabled = diag.healthy;
+    });
+  }
+
+  Future<void> _dismissChecklist() async {
+    setState(() => _checklistDismissed = true);
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_kChecklistDismissed, true);
   }
 
   Future<void> _loadStats() async {
@@ -78,6 +102,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
       final identityTile = IdentityShieldTile.fromStats(res);
       setState(() {
         _identityTile = identityTile;
+        _monitorCount = identityTile.monitorsActive;
         _statsLabel = 'MY STATS';
         _displayStats = [
           (calls, 'Calls\nscreened', AegisColors.turquoise),
@@ -87,6 +112,9 @@ class _HomeDashboardState extends State<HomeDashboard> {
       });
     } catch (_) {}
   }
+
+  bool get _isGuest =>
+      auth.session == null || auth.session?.userId == 'guest';
 
   String _greeting() {
     final session = auth.session;
@@ -154,6 +182,17 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 ),
                 const SizedBox(height: 24),
                 _StatusBanner(on: _shieldOn),
+                if (!_checklistDismissed && !_isGuest) ...[
+                  const SizedBox(height: 16),
+                  _SetupChecklist(
+                    pushEnabled: _pushEnabled,
+                    monitorCount: _monitorCount,
+                    onDismiss: _dismissChecklist,
+                    onOpenBreach: () => Navigator.of(context).push(
+                      MaterialPageRoute(builder: (_) => const BreachScreen()),
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 16),
                 GlassCard(
                   key: HomeDashboard.liveShieldKey,
@@ -325,6 +364,59 @@ class _HomeDashboardState extends State<HomeDashboard> {
                       ),
                     ),
                   ],
+                ),
+                const SizedBox(height: 12),
+                GlassCard(
+                  accent: AegisColors.warning,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 16,
+                  ),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const NumberCheckScreen()),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AegisColors.warning.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.phone_callback_rounded,
+                          color: AegisColors.warning,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Check a Number',
+                              style: tt.bodyLarge?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Look up any caller for scam signals',
+                              style: tt.labelSmall?.copyWith(
+                                color: AegisColors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: AegisColors.textTertiary,
+                        size: 20,
+                      ),
+                    ],
+                  ),
                 ),
                 const SizedBox(height: 12),
                 KeyedSubtree(
@@ -561,6 +653,179 @@ class _IdentityShieldCard extends StatelessWidget {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+class _SetupChecklist extends StatelessWidget {
+  final bool pushEnabled;
+  final int monitorCount;
+  final VoidCallback onDismiss;
+  final VoidCallback onOpenBreach;
+
+  const _SetupChecklist({
+    required this.pushEnabled,
+    required this.monitorCount,
+    required this.onDismiss,
+    required this.onOpenBreach,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final items = <_CheckItem>[
+      _CheckItem(
+        done: pushEnabled,
+        label: 'Enable push notifications',
+        detail: 'Get alerted when scams target you',
+        onTap: pushEnabled
+            ? null
+            : () => deviceService.ensureRegistered(),
+      ),
+      _CheckItem(
+        done: false,
+        label: 'Enable SMS Filter in iOS Settings',
+        detail: 'Settings > Apps > Messages > SMS Filter > AegisDial',
+        onTap: null,
+      ),
+      _CheckItem(
+        done: monitorCount > 0,
+        label: 'Add a breach monitor',
+        detail: 'Watch your email on the dark web',
+        onTap: monitorCount > 0 ? null : onOpenBreach,
+      ),
+    ];
+    final doneCount = items.where((i) => i.done).length;
+    if (doneCount == items.length) {
+      // All done — auto-dismiss next paint
+      WidgetsBinding.instance.addPostFrameCallback((_) => onDismiss());
+      return const SizedBox.shrink();
+    }
+    return GlassCard(
+      accent: AegisColors.turquoise,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  'COMPLETE YOUR SETUP',
+                  style: tt.labelSmall?.copyWith(
+                    color: AegisColors.turquoise,
+                    letterSpacing: 1.4,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              ),
+              Text(
+                '$doneCount/${items.length}',
+                style: tt.labelSmall?.copyWith(
+                  color: AegisColors.textTertiary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+              const SizedBox(width: 8),
+              GestureDetector(
+                onTap: onDismiss,
+                child: const Icon(
+                  Icons.close_rounded,
+                  size: 16,
+                  color: AegisColors.textTertiary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(3),
+            child: LinearProgressIndicator(
+              value: doneCount / items.length,
+              minHeight: 3,
+              backgroundColor: AegisColors.border,
+              valueColor: const AlwaysStoppedAnimation(AegisColors.turquoise),
+            ),
+          ),
+          const SizedBox(height: 12),
+          ...items.map((item) => _CheckRow(item: item)),
+        ],
+      ),
+    );
+  }
+}
+
+class _CheckItem {
+  final bool done;
+  final String label;
+  final String detail;
+  final VoidCallback? onTap;
+  const _CheckItem({
+    required this.done,
+    required this.label,
+    required this.detail,
+    this.onTap,
+  });
+}
+
+class _CheckRow extends StatelessWidget {
+  final _CheckItem item;
+  const _CheckRow({required this.item});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return GestureDetector(
+      onTap: item.done ? null : item.onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(vertical: 6),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(
+              item.done
+                  ? Icons.check_circle_rounded
+                  : Icons.radio_button_unchecked_rounded,
+              size: 20,
+              color: item.done
+                  ? AegisColors.success
+                  : AegisColors.textTertiary,
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    item.label,
+                    style: tt.bodySmall?.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: item.done
+                          ? AegisColors.textTertiary
+                          : AegisColors.textPrimary,
+                      decoration:
+                          item.done ? TextDecoration.lineThrough : null,
+                    ),
+                  ),
+                  Text(
+                    item.detail,
+                    style: tt.labelSmall?.copyWith(
+                      color: AegisColors.textTertiary,
+                      fontSize: 11,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            if (!item.done && item.onTap != null)
+              const Icon(
+                Icons.chevron_right_rounded,
+                size: 16,
+                color: AegisColors.textTertiary,
+              ),
+          ],
+        ),
       ),
     );
   }

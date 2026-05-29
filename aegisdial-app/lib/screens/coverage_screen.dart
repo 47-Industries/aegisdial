@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/api_service.dart';
@@ -89,10 +90,11 @@ class _HistoryEntry {
 class _CoverageScreenState extends State<CoverageScreen> {
   static const _kHistoryKey = 'sms_scan_history_v1';
   static const _kMaxHistory = 20;
-
+  static const _kEnableGuideDismissed = 'sms_enable_guide_dismissed_v1';
 
   final _pasteCtrl = TextEditingController();
   bool _scanning = false;
+  bool _enableGuideDismissed = true;
   _ScanResult? _result;
   List<_HistoryEntry> _history = [];
 
@@ -127,6 +129,19 @@ class _CoverageScreenState extends State<CoverageScreen> {
   void initState() {
     super.initState();
     _loadHistory();
+    _loadGuideState();
+  }
+
+  Future<void> _loadGuideState() async {
+    final p = await SharedPreferences.getInstance();
+    if (!mounted) return;
+    setState(() => _enableGuideDismissed = p.getBool(_kEnableGuideDismissed) ?? false);
+  }
+
+  Future<void> _dismissGuide() async {
+    setState(() => _enableGuideDismissed = true);
+    final p = await SharedPreferences.getInstance();
+    await p.setBool(_kEnableGuideDismissed, true);
   }
 
   @override
@@ -398,6 +413,10 @@ class _CoverageScreenState extends State<CoverageScreen> {
       body: ListView(
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
+          if (!_enableGuideDismissed) ...[
+            _EnableGuideCard(onDismiss: _dismissGuide),
+            const SizedBox(height: 14),
+          ],
           GlassCard(
             accent: AegisColors.turquoise,
             child: Column(
@@ -912,4 +931,132 @@ class _RiskGaugePainter extends CustomPainter {
   @override
   bool shouldRepaint(covariant _RiskGaugePainter old) =>
       old.progress != progress || old.color != color;
+}
+
+class _EnableGuideCard extends StatelessWidget {
+  final VoidCallback onDismiss;
+  const _EnableGuideCard({required this.onDismiss});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return GlassCard(
+      accent: AegisColors.success,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: AegisColors.success.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: const Icon(
+                  Icons.filter_list_rounded,
+                  color: AegisColors.success,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Enable auto-filtering',
+                  style: tt.titleMedium
+                      ?.copyWith(fontWeight: FontWeight.w700),
+                ),
+              ),
+              GestureDetector(
+                onTap: onDismiss,
+                child: const Icon(
+                  Icons.close_rounded,
+                  size: 18,
+                  color: AegisColors.textTertiary,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
+          Text(
+            'AegisDial can automatically filter scam texts before they reach your inbox. Enable it in iOS Settings:',
+            style: tt.bodySmall?.copyWith(
+              color: AegisColors.textSecondary,
+              height: 1.4,
+            ),
+          ),
+          const SizedBox(height: 12),
+          _StepRow(num: '1', text: 'Open iOS Settings'),
+          _StepRow(num: '2', text: 'Tap Apps > Messages'),
+          _StepRow(num: '3', text: 'Tap SMS Filter (under Unknown & Spam)'),
+          _StepRow(num: '4', text: 'Turn on AegisDial'),
+          const SizedBox(height: 12),
+          SizedBox(
+            width: double.infinity,
+            child: OutlinedButton.icon(
+              onPressed: () =>
+                  launchUrl(Uri.parse('app-settings:'), mode: LaunchMode.externalApplication),
+              style: OutlinedButton.styleFrom(
+                minimumSize: const Size.fromHeight(42),
+                side: const BorderSide(
+                    color: AegisColors.success, width: 0.8),
+              ),
+              icon: const Icon(Icons.settings_rounded,
+                  color: AegisColors.success, size: 18),
+              label: Text(
+                'Open Settings',
+                style: tt.bodySmall?.copyWith(
+                  color: AegisColors.success,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _StepRow extends StatelessWidget {
+  final String num;
+  final String text;
+  const _StepRow({required this.num, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 3),
+      child: Row(
+        children: [
+          Container(
+            width: 22,
+            height: 22,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
+              color: AegisColors.success.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(6),
+            ),
+            child: Text(
+              num,
+              style: tt.labelSmall?.copyWith(
+                color: AegisColors.success,
+                fontWeight: FontWeight.w700,
+                fontSize: 11,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              text,
+              style: tt.bodySmall?.copyWith(
+                color: AegisColors.textPrimary,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 }

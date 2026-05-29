@@ -475,6 +475,36 @@ class _BreachScreenState extends State<BreachScreen> {
                     height: 1.5,
                   ),
                 ),
+                if (!breachMonitorService.canSync) ...[
+                  const SizedBox(height: 12),
+                  Container(
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 8, horizontal: 12),
+                    decoration: BoxDecoration(
+                      color: AegisColors.warning.withValues(alpha: 0.10),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                          color: AegisColors.warning.withValues(alpha: 0.35),
+                          width: 0.8),
+                    ),
+                    child: Row(
+                      children: [
+                        const Icon(Icons.lock_outline_rounded,
+                            color: AegisColors.warning, size: 16),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Free tier: one-time scans only. Upgrade to Pro for continuous monitoring.',
+                            style: tt.labelSmall?.copyWith(
+                              color: AegisColors.warning,
+                              height: 1.3,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -525,7 +555,10 @@ class _BreachScreenState extends State<BreachScreen> {
                         color: AegisColors.danger),
                   ),
                   onDismissed: (_) => _removeIdentifier(id),
-                  child: _IdentifierTile(id: id),
+                  child: _IdentifierTile(
+                    id: id,
+                    onRescan: () => _runScan(id),
+                  ),
                 )),
           const SizedBox(height: 10),
           _AddSlot(onTap: _showAddSheet),
@@ -618,12 +651,15 @@ class _BreachScreenState extends State<BreachScreen> {
 
 class _IdentifierTile extends StatelessWidget {
   final _Identifier id;
-  const _IdentifierTile({required this.id});
+  final VoidCallback onRescan;
+  const _IdentifierTile({required this.id, required this.onRescan});
 
   @override
   Widget build(BuildContext context) {
     final tt = Theme.of(context).textTheme;
-    return Container(
+    return GestureDetector(
+      onTap: (id.scanned && !id.scanning) ? onRescan : null,
+      child: Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
       decoration: BoxDecoration(
@@ -667,6 +703,9 @@ class _IdentifierTile extends StatelessWidget {
                 strokeWidth: 2,
               ),
             )
+          else if (id.scanError)
+            const Icon(Icons.error_outline_rounded,
+                color: AegisColors.danger, size: 18)
           else if (id.scanned)
             const Icon(Icons.check_circle_outline,
                 color: AegisColors.success, size: 18)
@@ -675,7 +714,7 @@ class _IdentifierTile extends StatelessWidget {
                 color: AegisColors.textTertiary, size: 18),
         ],
       ),
-    );
+    ));
   }
 }
 
