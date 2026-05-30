@@ -11,6 +11,7 @@ import 'live_shield_active.dart';
 import 'coverage_screen.dart';
 import 'breach_screen.dart';
 import 'number_check_screen.dart';
+import 'email_shield_screen.dart';
 import 'identity_shield_screen.dart';
 
 class HomeDashboard extends StatefulWidget {
@@ -403,6 +404,59 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             const SizedBox(height: 2),
                             Text(
                               'Look up any caller for scam signals',
+                              style: tt.labelSmall?.copyWith(
+                                color: AegisColors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: AegisColors.textTertiary,
+                        size: 20,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                GlassCard(
+                  accent: AegisColors.blueAccent,
+                  padding: const EdgeInsets.symmetric(
+                    vertical: 16,
+                    horizontal: 16,
+                  ),
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                        builder: (_) => const EmailShieldScreen()),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AegisColors.blueAccent.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.email_outlined,
+                          color: AegisColors.blueAccent,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Email Shield',
+                              style: tt.bodyLarge?.copyWith(
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Detect email compromise',
                               style: tt.labelSmall?.copyWith(
                                 color: AegisColors.textTertiary,
                               ),

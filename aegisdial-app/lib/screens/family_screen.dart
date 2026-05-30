@@ -254,9 +254,48 @@ class _FamilyScreenState extends State<FamilyScreen> {
         padding: const EdgeInsets.fromLTRB(20, 8, 20, 32),
         children: [
           GlassCard(
+            accent: AegisColors.turquoise,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                Row(
+                  children: [
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AegisColors.turquoise.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: const Icon(
+                        Icons.family_restroom_rounded,
+                        color: AegisColors.turquoise,
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Family Protection',
+                            style: tt.titleMedium?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            'Add loved ones to monitor scam exposure and get alerts when they need help.',
+                            style: tt.bodySmall?.copyWith(
+                              color: AegisColors.textTertiary,
+                              height: 1.35,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
                 Row(
                   children: [
                     Text(

@@ -456,11 +456,11 @@ class SettingsScreen extends StatelessWidget {
             const SizedBox(height: 16),
             ...[
               ('How does Live Shield work?',
-                  'Open Live Shield when you get a suspicious call. AegisDial transcribes the conversation in chunks, matches it against scam patterns (regex on the free tier; AI coaching on Pro), and surfaces a counter-script to steer the call away from the scam.'),
+                  'Put your call on speakerphone, then open Live Shield and tap "Start listening." AegisDial transcribes the call in real time using on-device speech recognition, sends each chunk to our backend for scam-pattern analysis, and surfaces a risk score + counter-script to help you disengage. You can also try a demo scenario to see it in action.'),
               ('What is the recovery chatbot?',
                   'The recovery companion walks you through the first 60 minutes after a scam — contacting your bank, filing FTC / IC3 reports, freezing credit, and more.'),
               ('What does the SMS Filter scan?',
-                  'Paste any text message into the SMS Filter screen and AegisDial scans it for phishing links, package-redelivery scams, fake bank alerts, and more. iOS does not allow third-party apps to read inbound SMS automatically, so scanning is paste-driven.'),
+                  'Paste any text message into the SMS Filter screen and AegisDial scans it for phishing links, package-redelivery scams, fake bank alerts, and more. You can also enable automatic filtering in iOS Settings > Apps > Messages > SMS Filter > AegisDial — this silently routes scam texts to your Junk folder before you see them.'),
               ('How do I add family members?',
                   'Go to the Family tab and tap "Add a family member." Pro covers up to 3 lines.'),
               ('How do I contact support?',

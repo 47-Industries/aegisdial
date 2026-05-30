@@ -39,8 +39,16 @@ coach that recognises the patterns scammers use ("transfer now",
 helps you intervene before money moves.
 
 PREVENT
-• Live Shield coaching during suspicious calls — see the playbook the
-  scammer is running and the exact counter-script to use
+• Live Shield — put your call on speaker and AegisDial listens in real
+  time via on-device speech recognition. It scores risk, identifies the
+  scam playbook, and surfaces counter-scripts to help you disengage
+• Number Check — look up any phone number for scam reports, spoofing
+  risk, carrier info, and community evidence
+• SMS Filter — paste suspicious texts for instant analysis, plus enable
+  automatic filtering in iOS Settings to junk scam texts before you
+  see them
+• Email Shield — link your Gmail or Outlook to detect compromise signs
+  like rogue forwarding rules and unusual sent activity
 • Bank fraud-line one-tap dialer — call your bank's real number the
   moment something feels off
 • Family alert escalation — your designated guardian gets pinged if
@@ -141,11 +149,14 @@ KEY USER FLOWS TO REVIEW
 
 1. Welcome → "See it work" → Live Shield demo
    Plays a scripted sample call with on-screen counter-scripts.
-   Clearly labeled DEMO with a sample-call disclaimer banner.
-   Real-time protection activates only when the user opens Live
-   Shield mid-call themselves (microphone use is foreground-only).
+   Users can also tap "Start listening" for real speakerphone
+   analysis — on-device speech-to-text transcribes the call and
+   sends chunks to the backend for live scam scoring. Microphone
+   use is foreground-only, user-initiated.
 
-2. Home → tap Live Shield card → same scripted demo experience
+2. Home → tap Live Shield card → real listening + demo mode
+   Home also features "Check a Number" (phone lookup via /v1/verdict)
+   and "Email Shield" (email compromise detection via OAuth linking).
 
 3. Settings → Help Center FAQ explains the actual on-device + Pro
    coaching engine boundaries. Privacy / Terms / Support URLs open
@@ -171,8 +182,8 @@ PERMISSIONS
 
 | Permission | When prompted | Why |
 |---|---|---|
-| Microphone | Open Live Shield or record family safe-word | Foreground audio only; no background listening |
-| Speech Recognition | Family safe-word setup | One-time on-device transcription of safe word |
+| Microphone | Open Live Shield "Start listening" or record family safe-word | Foreground speakerphone analysis; no background listening |
+| Speech Recognition | Live Shield real-time transcription + family safe-word setup | On-device speech-to-text only; audio never uploaded |
 | Contacts | User chooses "Pick from contacts" in Family flow | Resolve a name + number for emergency alerts |
 | Camera / Photo Library | Recovery evidence attachment | Capture screenshots of scam SMS, fake letters |
 | Face ID | Unlock recovery evidence + family controls | Sensitive data gate |

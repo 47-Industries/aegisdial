@@ -346,8 +346,8 @@ class _LiveShieldSlideState extends State<_LiveShieldSlide> {
     return _SlideShell(
       tag: 'LIVE SHIELD',
       tagColor: AegisColors.turquoise,
-      title: 'Coach yourself\noff the call.',
-      caption: 'Open Live Shield mid-call. The risk score climbs and a counter-script appears as the scammer talks.',
+      title: 'Real-time\ncall protection.',
+      caption: 'Put your call on speaker, open Live Shield, and it listens live — scoring risk and surfacing counter-scripts as the scammer talks.',
       preview: Center(
         child: Container(
           decoration: BoxDecoration(
