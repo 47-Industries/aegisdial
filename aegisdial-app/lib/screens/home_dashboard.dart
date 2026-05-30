@@ -18,6 +18,8 @@ class HomeDashboard extends StatefulWidget {
   static final liveShieldKey = GlobalKey();
   static final smsFilterKey = GlobalKey();
   static final breachKey = GlobalKey();
+  static final numberCheckKey = GlobalKey();
+  static final emailShieldKey = GlobalKey();
   static final identityShieldKey = GlobalKey();
 
   const HomeDashboard({super.key});
@@ -368,6 +370,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 ),
                 const SizedBox(height: 12),
                 GlassCard(
+                  key: HomeDashboard.numberCheckKey,
                   accent: AegisColors.warning,
                   padding: const EdgeInsets.symmetric(
                     vertical: 16,
@@ -421,6 +424,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                 ),
                 const SizedBox(height: 12),
                 GlassCard(
+                  key: HomeDashboard.emailShieldKey,
                   accent: AegisColors.blueAccent,
                   padding: const EdgeInsets.symmetric(
                     vertical: 16,

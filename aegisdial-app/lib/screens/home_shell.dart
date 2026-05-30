@@ -72,17 +72,27 @@ class _HomeShellState extends State<HomeShell> {
         CoachStep(
           targetKey: HomeDashboard.liveShieldKey,
           title: 'Live Shield',
-          body: 'Your AI call guard. Tap to start a live session when a suspicious call comes in.',
+          body: 'Put your call on speaker and tap "Start listening" — AegisDial transcribes and scores the call in real time.',
         ),
         CoachStep(
           targetKey: HomeDashboard.smsFilterKey,
           title: 'SMS Filter',
-          body: 'Paste any suspicious text and we\'ll detect scam patterns in seconds.',
+          body: 'Paste suspicious texts to scan them, or enable auto-filtering in iOS Settings to junk scam messages automatically.',
         ),
         CoachStep(
           targetKey: HomeDashboard.breachKey,
           title: 'Breach Monitor',
           body: 'Check if your email or phone has appeared in dark-web data leaks.',
+        ),
+        CoachStep(
+          targetKey: HomeDashboard.numberCheckKey,
+          title: 'Check a Number',
+          body: 'Got a call from an unknown number? Look it up for scam reports, spoofing risk, and carrier info.',
+        ),
+        CoachStep(
+          targetKey: HomeDashboard.emailShieldKey,
+          title: 'Email Shield',
+          body: 'Link your Gmail or Outlook to detect compromise — rogue forwarding rules, unusual sent activity, and more.',
         ),
         CoachStep(
           targetKey: HomeDashboard.identityShieldKey,
