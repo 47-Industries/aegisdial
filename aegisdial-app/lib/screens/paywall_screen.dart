@@ -75,9 +75,17 @@ class _PaywallScreenState extends State<PaywallScreen> {
       backgroundColor: AegisColors.background,
       body: SafeArea(
         child: SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(24, 32, 24, 32),
+          padding: const EdgeInsets.fromLTRB(24, 12, 24, 32),
           child: Column(
             children: [
+              Align(
+                alignment: Alignment.topRight,
+                child: IconButton(
+                  icon: const Icon(Icons.close_rounded,
+                      color: AegisColors.textTertiary),
+                  onPressed: () => Navigator.of(context).pop(false),
+                ),
+              ),
               Container(
                 width: 72,
                 height: 72,
@@ -101,8 +109,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
               const SizedBox(height: 10),
               Text(
                 widget.reason == PaywallReason.trialExpired
-                    ? 'Keep your protection active. Choose a plan to continue.'
-                    : 'Free trial includes 10 messages per day. Upgrade for unlimited access.',
+                    ? 'Your 7-day free trial gave you full access to every shield and the recovery companion. Choose a plan to keep your protection active.'
+                    : 'Your free trial includes 10 messages per day. Upgrade to Pro for unlimited messages and full access to every feature.',
                 style: tt.bodyMedium?.copyWith(
                   color: AegisColors.textSecondary,
                   height: 1.5,

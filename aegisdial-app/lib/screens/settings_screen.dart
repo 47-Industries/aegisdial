@@ -1004,10 +1004,47 @@ class _BillingSheetState extends State<_BillingSheet> {
       'revoked' => 'Revoked',
       _ => 'Active',
     };
+    final statusHint = switch (status) {
+      'in_grace' =>
+        'Your renewal date passed but Apple hasn\'t charged yet. You still have full access while Apple retries.',
+      'cancelled' =>
+        'You cancelled your subscription. You keep full access until the current billing period ends.',
+      'expired' =>
+        'Your subscription has ended. Renew to restore full protection.',
+      'revoked' => 'Apple revoked this subscription. Contact support if this is unexpected.',
+      _ => null,
+    };
     final renewLine = _formatRenewal(periodEnd, status);
 
     return [
       _row(tt, name, statusBadge),
+      if (statusHint != null) ...[
+        const SizedBox(height: 6),
+        Container(
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: AegisColors.warning.withValues(alpha: 0.08),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.info_outline_rounded,
+                  size: 14, color: AegisColors.warning),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  statusHint,
+                  style: tt.labelSmall?.copyWith(
+                    color: AegisColors.textSecondary,
+                    height: 1.4,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
       const SizedBox(height: 6),
       Text(
         cadence,

@@ -57,6 +57,7 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
   final _scroll = ScrollController();
   final List<_ChatMessage> _messages = [];
   bool _sending = false;
+  bool _offline = false;
 
   bool _trialActive = true;
   bool _isPro = false;
@@ -274,17 +275,16 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
         'message': message,
         'history': history,
       });
+      if (mounted && _offline) setState(() => _offline = false);
       return (res['reply'] as String?) ?? _respond(message);
     } on ApiException catch (e) {
       if (e.statusCode == 429) {
-        // Server-side daily limit hit (should match client limit, edge case).
         return "You've reached today's message limit. Upgrade to Pro for unlimited access.";
       }
-      // Other API errors → fall back to local pattern responses, but
-      // prefix so the user knows we lost the AI coach. Silent fallback
-      // makes a real outage look identical to a working backend.
+      if (mounted) setState(() => _offline = true);
       return '⚠️ Offline — using local guidance.\n\n${_respond(message)}';
     } catch (_) {
+      if (mounted) setState(() => _offline = true);
       return '⚠️ Offline — using local guidance.\n\n${_respond(message)}';
     }
   }
@@ -465,6 +465,26 @@ class _RecoveryChatbotScreenState extends State<RecoveryChatbotScreen> {
                   : PaywallReason.trialExpired,
             ),
           ),
+          if (_offline)
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 7),
+              color: AegisColors.warning.withValues(alpha: 0.1),
+              child: Row(
+                children: [
+                  const Icon(Icons.cloud_off_rounded,
+                      size: 13, color: AegisColors.warning),
+                  const SizedBox(width: 6),
+                  Text(
+                    'Offline — using local guidance until connection restores',
+                    style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: AegisColors.warning,
+                          fontWeight: FontWeight.w500,
+                        ),
+                  ),
+                ],
+              ),
+            ),
           Expanded(
             child: ListView.builder(
               controller: _scroll,
@@ -618,7 +638,7 @@ class _TrialBanner extends StatelessWidget {
       );
     }
 
-    final lowMessages = messagesLeft <= 3;
+    final lowMessages = messagesLeft <= 5;
     final accent = lowMessages ? AegisColors.warning : AegisColors.turquoise;
 
     return GestureDetector(
@@ -687,6 +707,8 @@ class _QuickPromptStrip extends StatelessWidget {
                   ),
                   child: Text(
                     label,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                     style: const TextStyle(
                       color: AegisColors.textPrimary,
                       fontSize: 13,
