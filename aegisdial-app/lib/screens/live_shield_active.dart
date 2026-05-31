@@ -297,6 +297,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
   bool _speechAvailable = false;
   String _currentPartial = ''; // partial recognition before finalization
   String? _lastDetectedType; // scam type label for live verdict
+  String _callDirection = 'inbound'; // 'inbound' | 'outbound'
 
   // Backend integration state. When `_sessionId` is non-null the demo is
   // also driving a real /v1/live-shield session — the score we render is
@@ -363,7 +364,10 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
     // animation. If this Pro-gated call fails (non-Pro, offline, 5xx)
     // we just won't have a session_id and the demo runs in fallback
     // mode with scripted scores. Never blocks the user-facing flow.
-    final startFuture = liveShield.start(peerNumber: scenario.number);
+    final startFuture = liveShield.start(
+      peerNumber: scenario.number,
+      direction: 'inbound', // demos are always inbound
+    );
 
     await Future.delayed(const Duration(milliseconds: 1800));
     if (!mounted) return;
@@ -562,7 +566,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
     HapticFeedback.heavyImpact();
 
     // Start a real backend session
-    final startResult = await liveShield.start();
+    final startResult = await liveShield.start(direction: _callDirection);
     if (mounted && startResult != null) {
       _sessionId = startResult.sessionId;
     }
@@ -923,6 +927,9 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                                   selectedIndex: _scenarioIndex,
                                   onSelectScenario: (i) =>
                                       setState(() => _scenarioIndex = i),
+                                  callDirection: _callDirection,
+                                  onDirectionChanged: (d) =>
+                                      setState(() => _callDirection = d),
                                 ),
                 ),
                 const SizedBox(height: 22),
@@ -1172,12 +1179,16 @@ class _IdleCard extends StatelessWidget {
   final VoidCallback onStartListening;
   final int selectedIndex;
   final ValueChanged<int> onSelectScenario;
+  final String callDirection;
+  final ValueChanged<String> onDirectionChanged;
   const _IdleCard({
     super.key,
     required this.onRunDemo,
     required this.onStartListening,
     required this.selectedIndex,
     required this.onSelectScenario,
+    required this.callDirection,
+    required this.onDirectionChanged,
   });
 
   @override
@@ -1210,6 +1221,100 @@ class _IdleCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 14),
+          // Call direction toggle
+          Row(
+            children: [
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => onDirectionChanged('inbound'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: callDirection == 'inbound'
+                          ? AegisColors.turquoise.withValues(alpha: 0.15)
+                          : AegisColors.surfaceElevated,
+                      borderRadius: const BorderRadius.horizontal(
+                          left: Radius.circular(10)),
+                      border: Border.all(
+                        color: callDirection == 'inbound'
+                            ? AegisColors.turquoise
+                            : AegisColors.border,
+                        width: callDirection == 'inbound' ? 1.2 : 0.6,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.phone_callback_rounded,
+                            size: 14,
+                            color: callDirection == 'inbound'
+                                ? AegisColors.turquoise
+                                : AegisColors.textTertiary),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Receiving call',
+                          style: TextStyle(
+                            color: callDirection == 'inbound'
+                                ? AegisColors.turquoise
+                                : AegisColors.textTertiary,
+                            fontSize: 12,
+                            fontWeight: callDirection == 'inbound'
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(
+                child: GestureDetector(
+                  onTap: () => onDirectionChanged('outbound'),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 10),
+                    decoration: BoxDecoration(
+                      color: callDirection == 'outbound'
+                          ? AegisColors.turquoise.withValues(alpha: 0.15)
+                          : AegisColors.surfaceElevated,
+                      borderRadius: const BorderRadius.horizontal(
+                          right: Radius.circular(10)),
+                      border: Border.all(
+                        color: callDirection == 'outbound'
+                            ? AegisColors.turquoise
+                            : AegisColors.border,
+                        width: callDirection == 'outbound' ? 1.2 : 0.6,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.phone_forwarded_rounded,
+                            size: 14,
+                            color: callDirection == 'outbound'
+                                ? AegisColors.turquoise
+                                : AegisColors.textTertiary),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Making call',
+                          style: TextStyle(
+                            color: callDirection == 'outbound'
+                                ? AegisColors.turquoise
+                                : AegisColors.textTertiary,
+                            fontSize: 12,
+                            fontWeight: callDirection == 'outbound'
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 10),
           SizedBox(
             width: double.infinity,
             child: ElevatedButton.icon(

@@ -12,11 +12,13 @@ class EmailShieldScreen extends StatefulWidget {
   State<EmailShieldScreen> createState() => _EmailShieldScreenState();
 }
 
-class _EmailShieldScreenState extends State<EmailShieldScreen> {
+class _EmailShieldScreenState extends State<EmailShieldScreen>
+    with WidgetsBindingObserver {
   List<_EmailAccount>? _accounts;
   bool _loading = true;
   String? _error;
   bool _linking = false;
+  bool _waitingForOAuth = false;
 
   bool get _isGuest =>
       auth.session == null || auth.session?.userId == 'guest';
@@ -24,7 +26,22 @@ class _EmailShieldScreenState extends State<EmailShieldScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadAccounts();
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _waitingForOAuth) {
+      _waitingForOAuth = false;
+      _loadAccounts();
+    }
   }
 
   Future<void> _loadAccounts() async {
@@ -32,6 +49,7 @@ class _EmailShieldScreenState extends State<EmailShieldScreen> {
       setState(() => _loading = false);
       return;
     }
+    final prevCount = _accounts?.length ?? 0;
     try {
       final res = await api.get('/v1/email/accounts');
       if (!mounted) return;
@@ -43,6 +61,11 @@ class _EmailShieldScreenState extends State<EmailShieldScreen> {
         _accounts = list;
         _loading = false;
       });
+      if (prevCount > 0 && list.length > prevCount && mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Email account linked successfully.')),
+        );
+      }
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -70,6 +93,7 @@ class _EmailShieldScreenState extends State<EmailShieldScreen> {
       });
       final url = res['authorize_url'] as String?;
       if (url != null && mounted) {
+        _waitingForOAuth = true;
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       }
     } on ApiException catch (e) {

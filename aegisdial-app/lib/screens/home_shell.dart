@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import '../theme/app_theme.dart';
 import '../widgets/coach_mark.dart';
+import '../widgets/guardian_challenge_sheet.dart';
 import '../services/auth_service.dart';
 import '../services/device_service.dart';
 import 'home_dashboard.dart';
@@ -54,6 +55,21 @@ class _HomeShellState extends State<HomeShell> {
   void _handleNotificationTap(Map<String, dynamic> payload) {
     if (!mounted) return;
     final kind = payload['kind']?.toString() ?? '';
+
+    // Guardian challenge gets a dedicated sheet instead of just switching tabs
+    if (kind == 'guardian_challenge') {
+      final challengeId = payload['challenge_id']?.toString();
+      if (challengeId != null) {
+        setState(() => _index = 2); // Family tab
+        showGuardianChallengeSheet(
+          context,
+          challengeId: challengeId,
+          prompt: payload['prompt']?.toString(),
+        );
+      }
+      return;
+    }
+
     final next = switch (kind) {
       'v3_takeover' || 'live_shield' || 'critical_alert' => 0, // Shield
       'recovery_followup' || 'recovery_alert' => 1, // Recovery

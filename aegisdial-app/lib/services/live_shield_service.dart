@@ -81,12 +81,15 @@ class LiveShieldService {
   /// `consent_version` is resolved from the on-device flag set by the
   /// v2 disclosure sheet. Until the user has explicitly accepted v2,
   /// this falls back to 1 and the backend keeps the session regex-only.
-  Future<LiveShieldStartResult?> start({String? peerNumber}) async {
+  Future<LiveShieldStartResult?> start({
+    String? peerNumber,
+    String direction = 'inbound',
+  }) async {
     try {
       final consentVersion = await consentService.activeConsentVersion();
       final res = await api.post('/v1/live-shield/start', {
         'peer_number': peerNumber,
-        'direction': 'inbound',
+        'direction': direction,
         'consent_given': true,
         'consent_version': consentVersion,
       });

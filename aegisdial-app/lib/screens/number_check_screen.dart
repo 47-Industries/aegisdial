@@ -1,5 +1,7 @@
+import 'dart:convert';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/api_service.dart';
@@ -12,15 +14,45 @@ class NumberCheckScreen extends StatefulWidget {
 }
 
 class _NumberCheckScreenState extends State<NumberCheckScreen> {
+  static const _kHistoryKey = 'number_check_history_v1';
+  static const _kMaxHistory = 10;
+
   final _ctrl = TextEditingController();
   bool _loading = false;
   String? _error;
   _VerdictResult? _result;
+  List<_LookupEntry> _history = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadHistory();
+  }
 
   @override
   void dispose() {
     _ctrl.dispose();
     super.dispose();
+  }
+
+  Future<void> _loadHistory() async {
+    final p = await SharedPreferences.getInstance();
+    final raw = p.getString(_kHistoryKey);
+    if (raw == null || !mounted) return;
+    try {
+      final list = jsonDecode(raw) as List<dynamic>;
+      setState(() {
+        _history = list
+            .map((e) => _LookupEntry.fromJson(e as Map<String, dynamic>))
+            .toList();
+      });
+    } catch (_) {}
+  }
+
+  Future<void> _saveHistory() async {
+    final p = await SharedPreferences.getInstance();
+    await p.setString(
+        _kHistoryKey, jsonEncode(_history.map((e) => e.toJson()).toList()));
   }
 
   Future<void> _lookup() async {
@@ -38,10 +70,24 @@ class _NumberCheckScreenState extends State<NumberCheckScreen> {
     try {
       final res = await api.post('/v1/verdict', {'number': raw});
       if (!mounted) return;
+      final verdict = _VerdictResult.fromJson(res);
       setState(() {
         _loading = false;
-        _result = _VerdictResult.fromJson(res);
+        _result = verdict;
+        _history.insert(
+          0,
+          _LookupEntry(
+            number: verdict.number.isNotEmpty ? verdict.number : raw,
+            trustScore: verdict.trustScore,
+            verdict: verdict.verdict,
+            action: verdict.recommendedAction,
+            displayColor: verdict.displayColor,
+            checkedAt: DateTime.now(),
+          ),
+        );
+        if (_history.length > _kMaxHistory) _history.removeLast();
       });
+      _saveHistory();
     } on ApiException catch (e) {
       if (!mounted) return;
       setState(() {
@@ -193,9 +239,186 @@ class _NumberCheckScreenState extends State<NumberCheckScreen> {
             const SizedBox(height: 20),
             _VerdictCard(result: _result!),
           ],
+          if (_history.isNotEmpty) ...[
+            const SizedBox(height: 24),
+            Row(
+              children: [
+                Text(
+                  'RECENT LOOKUPS',
+                  style: tt.labelSmall?.copyWith(
+                    color: AegisColors.textTertiary,
+                    letterSpacing: 1.6,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+                const Spacer(),
+                GestureDetector(
+                  onTap: () async {
+                    setState(() => _history.clear());
+                    final p = await SharedPreferences.getInstance();
+                    await p.remove(_kHistoryKey);
+                  },
+                  child: Text(
+                    'Clear',
+                    style: tt.labelSmall?.copyWith(
+                      color: AegisColors.textTertiary,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ..._history.map((e) => _LookupHistoryTile(
+                  entry: e,
+                  onTap: () {
+                    _ctrl.text = e.number;
+                    setState(() {});
+                    _lookup();
+                  },
+                )),
+          ],
         ],
       ),
     );
+  }
+}
+
+class _LookupEntry {
+  final String number;
+  final int trustScore;
+  final String verdict;
+  final String action;
+  final String displayColor;
+  final DateTime checkedAt;
+
+  _LookupEntry({
+    required this.number,
+    required this.trustScore,
+    required this.verdict,
+    required this.action,
+    required this.displayColor,
+    required this.checkedAt,
+  });
+
+  Map<String, dynamic> toJson() => {
+        'n': number,
+        'ts': trustScore,
+        'v': verdict,
+        'a': action,
+        'dc': displayColor,
+        'at': checkedAt.millisecondsSinceEpoch,
+      };
+
+  factory _LookupEntry.fromJson(Map<String, dynamic> j) => _LookupEntry(
+        number: j['n'] as String,
+        trustScore: (j['ts'] as num).toInt(),
+        verdict: j['v'] as String,
+        action: j['a'] as String,
+        displayColor: (j['dc'] as String?) ?? 'yellow',
+        checkedAt:
+            DateTime.fromMillisecondsSinceEpoch((j['at'] as num).toInt()),
+      );
+
+  Color get color => switch (displayColor) {
+        'green' => AegisColors.success,
+        'yellow' => AegisColors.warning,
+        'amber' => const Color(0xFFFF8C00),
+        'red' => AegisColors.danger,
+        _ => AegisColors.textTertiary,
+      };
+}
+
+class _LookupHistoryTile extends StatelessWidget {
+  final _LookupEntry entry;
+  final VoidCallback onTap;
+  const _LookupHistoryTile({required this.entry, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final ago = _timeAgo(entry.checkedAt);
+    return Container(
+      margin: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(12),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(12),
+          onTap: onTap,
+          child: Container(
+            padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
+            decoration: BoxDecoration(
+              color: AegisColors.surface.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: AegisColors.border, width: 0.6),
+            ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(7),
+                  decoration: BoxDecoration(
+                    color: entry.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Icon(
+                    entry.trustScore >= 70
+                        ? Icons.check_circle_rounded
+                        : entry.trustScore >= 40
+                            ? Icons.warning_amber_rounded
+                            : Icons.block_rounded,
+                    color: entry.color,
+                    size: 16,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        entry.number,
+                        style:
+                            tt.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                      ),
+                      Text(
+                        '${entry.trustScore}% trust · $ago',
+                        style: tt.labelSmall
+                            ?.copyWith(color: AegisColors.textTertiary),
+                      ),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: entry.color.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(6),
+                  ),
+                  child: Text(
+                    '${entry.trustScore}%',
+                    style: TextStyle(
+                      color: entry.color,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inMinutes < 1) return 'just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${dt.month}/${dt.day}';
   }
 }
 
