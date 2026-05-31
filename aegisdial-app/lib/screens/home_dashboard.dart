@@ -48,6 +48,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
   bool _shieldOn = true;
   bool _checklistDismissed = true;
   bool _pushEnabled = false;
+  bool _smsFilterEnabled = false;
+  bool _callDirEnabled = false;
   int _monitorCount = 0;
   String _statsLabel = 'MY STATS';
   List<(int, String, Color)> _displayStats = _kInitialStats;
@@ -78,10 +80,14 @@ class _HomeDashboardState extends State<HomeDashboard> {
     final p = await SharedPreferences.getInstance();
     final dismissed = p.getBool(_kChecklistDismissed) ?? false;
     final diag = await deviceService.snapshot();
+    final smsEnabled = await extensionBridge.isSMSFilterEnabled();
+    final callDirStatus = await extensionBridge.callDirectoryStatus();
     if (!mounted) return;
     setState(() {
       _checklistDismissed = dismissed;
       _pushEnabled = diag.healthy;
+      _smsFilterEnabled = smsEnabled;
+      _callDirEnabled = callDirStatus == 'enabled';
     });
   }
 
@@ -202,6 +208,8 @@ class _HomeDashboardState extends State<HomeDashboard> {
                   const SizedBox(height: 16),
                   _SetupChecklist(
                     pushEnabled: _pushEnabled,
+                    smsFilterEnabled: _smsFilterEnabled,
+                    callDirEnabled: _callDirEnabled,
                     monitorCount: _monitorCount,
                     onDismiss: _dismissChecklist,
                     onOpenBreach: () => Navigator.of(context).push(
@@ -731,12 +739,16 @@ class _IdentityShieldCard extends StatelessWidget {
 
 class _SetupChecklist extends StatelessWidget {
   final bool pushEnabled;
+  final bool smsFilterEnabled;
+  final bool callDirEnabled;
   final int monitorCount;
   final VoidCallback onDismiss;
   final VoidCallback onOpenBreach;
 
   const _SetupChecklist({
     required this.pushEnabled,
+    required this.smsFilterEnabled,
+    required this.callDirEnabled,
     required this.monitorCount,
     required this.onDismiss,
     required this.onOpenBreach,
@@ -755,9 +767,15 @@ class _SetupChecklist extends StatelessWidget {
             : () => deviceService.ensureRegistered(),
       ),
       _CheckItem(
-        done: false,
+        done: smsFilterEnabled,
         label: 'Enable SMS Filter in iOS Settings',
         detail: 'Settings > Apps > Messages > SMS Filter > AegisDial',
+        onTap: null,
+      ),
+      _CheckItem(
+        done: callDirEnabled,
+        label: 'Enable Caller ID in iOS Settings',
+        detail: 'Settings > Phone > Call Blocking & Identification > AegisDial',
         onTap: null,
       ),
       _CheckItem(

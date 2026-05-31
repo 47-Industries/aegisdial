@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/app_version.dart';
 import '../services/device_service.dart';
+import '../services/extension_bridge_service.dart';
 import 'welcome_screen.dart';
 import 'family_alert_privacy_screen.dart';
 
@@ -191,6 +192,84 @@ class SettingsScreen extends StatelessWidget {
         'No mail app is set up on this device.\n\nReach us at:\n$kSupportEmail\n\nWe respond within 24 hours.',
       );
     }
+  }
+
+  void _showExtensionDiagnostic(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AegisColors.surface,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+        title: const Text('Extension status'),
+        content: SizedBox(
+          width: 320,
+          child: FutureBuilder<(bool, String)>(
+            future: Future.wait([
+              extensionBridge.isSMSFilterEnabled(),
+              extensionBridge.callDirectoryStatus(),
+            ]).then((r) => (r[0] as bool, r[1] as String)),
+            builder: (c, snap) {
+              if (!snap.hasData) {
+                return const Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Center(
+                    child: CircularProgressIndicator(
+                      color: AegisColors.turquoise,
+                      strokeWidth: 2,
+                    ),
+                  ),
+                );
+              }
+              final (smsEnabled, callDirStatus) = snap.data!;
+              final callDirEnabled = callDirStatus == 'enabled';
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _ExtDiagRow(
+                    label: 'SMS Filter',
+                    detail: smsEnabled
+                        ? 'Active — scam texts are being filtered'
+                        : 'Not enabled',
+                    instruction: smsEnabled
+                        ? null
+                        : 'Settings > Apps > Messages > SMS Filter > AegisDial',
+                    ok: smsEnabled,
+                  ),
+                  const SizedBox(height: 12),
+                  _ExtDiagRow(
+                    label: 'Caller ID',
+                    detail: callDirEnabled
+                        ? 'Active — scam callers are labeled'
+                        : callDirStatus == 'disabled'
+                            ? 'Not enabled'
+                            : 'Unknown',
+                    instruction: callDirEnabled
+                        ? null
+                        : 'Settings > Phone > Call Blocking & Identification > AegisDial',
+                    ok: callDirEnabled,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Both extensions run on-device. No call audio or message content leaves your phone.',
+                    style: Theme.of(ctx).textTheme.labelSmall?.copyWith(
+                          color: AegisColors.textTertiary,
+                          height: 1.4,
+                        ),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              );
+            },
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Done'),
+          ),
+        ],
+      ),
+    );
   }
 
   void _showInfo(BuildContext context, String title, String body) {
@@ -717,6 +796,11 @@ class SettingsScreen extends StatelessWidget {
             onTap: () => _showPushDiagnostic(context),
           ),
           _SettingsTile(
+            icon: Icons.shield_outlined,
+            title: 'Extension status',
+            onTap: () => _showExtensionDiagnostic(context),
+          ),
+          _SettingsTile(
             icon: Icons.info_outline,
             title: 'About AegisDial',
             trailing: AppVersion.current.short,
@@ -1102,6 +1186,71 @@ class _BillingSheetState extends State<_BillingSheet> {
           Text(trailing,
               style:
                   tt.bodyMedium?.copyWith(color: AegisColors.textSecondary)),
+        ],
+      ),
+    );
+  }
+}
+
+class _ExtDiagRow extends StatelessWidget {
+  final String label;
+  final String detail;
+  final String? instruction;
+  final bool ok;
+
+  const _ExtDiagRow({
+    required this.label,
+    required this.detail,
+    this.instruction,
+    required this.ok,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final tt = Theme.of(context).textTheme;
+    final color = ok ? AegisColors.success : AegisColors.warning;
+    return Container(
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: color.withValues(alpha: 0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withValues(alpha: 0.3), width: 0.8),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            ok ? Icons.check_circle_rounded : Icons.warning_amber_rounded,
+            color: color,
+            size: 20,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  label,
+                  style: tt.bodySmall?.copyWith(fontWeight: FontWeight.w600),
+                ),
+                Text(
+                  detail,
+                  style: tt.labelSmall?.copyWith(
+                    color: AegisColors.textSecondary,
+                  ),
+                ),
+                if (instruction != null) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    instruction!,
+                    style: tt.labelSmall?.copyWith(
+                      color: AegisColors.textTertiary,
+                      fontSize: 10,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
         ],
       ),
     );

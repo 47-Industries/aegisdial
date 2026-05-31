@@ -7,6 +7,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
 import '../widgets/glass_card.dart';
 import '../services/api_service.dart';
+import '../services/extension_bridge_service.dart';
 
 class CoverageScreen extends StatefulWidget {
   const CoverageScreen({super.key});
@@ -134,8 +135,11 @@ class _CoverageScreenState extends State<CoverageScreen> {
 
   Future<void> _loadGuideState() async {
     final p = await SharedPreferences.getInstance();
+    final dismissed = p.getBool(_kEnableGuideDismissed) ?? false;
+    // Auto-hide the guide if the extension is already enabled in iOS Settings
+    final enabled = await extensionBridge.isSMSFilterEnabled();
     if (!mounted) return;
-    setState(() => _enableGuideDismissed = p.getBool(_kEnableGuideDismissed) ?? false);
+    setState(() => _enableGuideDismissed = dismissed || enabled);
   }
 
   Future<void> _dismissGuide() async {
