@@ -15,6 +15,10 @@
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		AD10000200000000000001 /* MessageFilterExtension.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD10000100000000000001 /* MessageFilterExtension.swift */; };
+		AD20000200000000000001 /* CallDirectoryHandler.swift in Sources */ = {isa = PBXBuildFile; fileRef = AD20000100000000000001 /* CallDirectoryHandler.swift */; };
+		ADE0000200000000000001 /* SMSFilter.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = AD10000100000000000004 /* SMSFilter.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		ADE0000200000000000002 /* CallDirectory.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = AD20000100000000000004 /* CallDirectory.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -24,6 +28,20 @@
 			proxyType = 1;
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
+		};
+		AD10000600000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AD10000500000000000001;
+			remoteInfo = SMSFilter;
+		};
+		AD20000600000000000001 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = AD20000500000000000001;
+			remoteInfo = CallDirectory;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -36,6 +54,18 @@
 			files = (
 			);
 			name = "Embed Frameworks";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		ADE0000100000000000001 /* Embed App Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				ADE0000200000000000001 /* SMSFilter.appex in Embed App Extensions */,
+				ADE0000200000000000002 /* CallDirectory.appex in Embed App Extensions */,
+			);
+			name = "Embed App Extensions";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXCopyFilesBuildPhase section */
@@ -57,10 +87,32 @@
 		97C146FD1CF9000F007C117D /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AD10000100000000000001 /* MessageFilterExtension.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessageFilterExtension.swift; sourceTree = "<group>"; };
+		AD10000100000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AD10000100000000000003 /* SMSFilter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = SMSFilter.entitlements; sourceTree = "<group>"; };
+		AD10000100000000000004 /* SMSFilter.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = SMSFilter.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		AD20000100000000000001 /* CallDirectoryHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallDirectoryHandler.swift; sourceTree = "<group>"; };
+		AD20000100000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		AD20000100000000000003 /* CallDirectory.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CallDirectory.entitlements; sourceTree = "<group>"; };
+		AD20000100000000000004 /* CallDirectory.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CallDirectory.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		97C146EB1CF9000F007C117D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AD10000400000000000002 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AD20000400000000000002 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -96,6 +148,8 @@
 				97C146F01CF9000F007C117D /* Runner */,
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
+				AD10000300000000000001 /* SMSFilter */,
+				AD20000300000000000001 /* CallDirectory */,
 			);
 			sourceTree = "<group>";
 		};
@@ -104,6 +158,8 @@
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
+				AD10000100000000000004 /* SMSFilter.appex */,
+				AD20000100000000000004 /* CallDirectory.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -122,6 +178,26 @@
 				74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		AD10000300000000000001 /* SMSFilter */ = {
+			isa = PBXGroup;
+			children = (
+				AD10000100000000000001 /* MessageFilterExtension.swift */,
+				AD10000100000000000002 /* Info.plist */,
+				AD10000100000000000003 /* SMSFilter.entitlements */,
+			);
+			path = SMSFilter;
+			sourceTree = "<group>";
+		};
+		AD20000300000000000001 /* CallDirectory */ = {
+			isa = PBXGroup;
+			children = (
+				AD20000100000000000001 /* CallDirectoryHandler.swift */,
+				AD20000100000000000002 /* Info.plist */,
+				AD20000100000000000003 /* CallDirectory.entitlements */,
+			);
+			path = CallDirectory;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -153,16 +229,53 @@
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
+				ADE0000100000000000001 /* Embed App Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				AD10000700000000000001 /* PBXTargetDependency */,
+				AD20000700000000000001 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			productName = Runner;
 			productReference = 97C146EE1CF9000F007C117D /* Runner.app */;
 			productType = "com.apple.product-type.application";
+		};
+		AD10000500000000000001 /* SMSFilter */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AD10000900000000000001 /* Build configuration list for PBXNativeTarget "SMSFilter" */;
+			buildPhases = (
+				AD10000400000000000001 /* Sources */,
+				AD10000400000000000002 /* Frameworks */,
+				AD10000400000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = SMSFilter;
+			productName = SMSFilter;
+			productReference = AD10000100000000000004 /* SMSFilter.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		AD20000500000000000001 /* CallDirectory */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = AD20000900000000000001 /* Build configuration list for PBXNativeTarget "CallDirectory" */;
+			buildPhases = (
+				AD20000400000000000001 /* Sources */,
+				AD20000400000000000002 /* Frameworks */,
+				AD20000400000000000003 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CallDirectory;
+			productName = CallDirectory;
+			productReference = AD20000100000000000004 /* CallDirectory.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -177,6 +290,12 @@
 					331C8080294A63A400263BE5 = {
 						CreatedOnToolsVersion = 14.0;
 						TestTargetID = 97C146ED1CF9000F007C117D;
+					};
+					AD10000500000000000001 = {
+						CreatedOnToolsVersion = 15.0;
+					};
+					AD20000500000000000001 = {
+						CreatedOnToolsVersion = 15.0;
 					};
 					97C146ED1CF9000F007C117D = {
 						CreatedOnToolsVersion = 7.3.1;
@@ -199,6 +318,8 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
+				AD10000500000000000001 /* SMSFilter */,
+				AD20000500000000000001 /* CallDirectory */,
 			);
 		};
 /* End PBXProject section */
@@ -219,6 +340,20 @@
 				3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */,
 				97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */,
 				97C146FC1CF9000F007C117D /* Main.storyboard in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AD10000400000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AD20000400000000000003 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -277,6 +412,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		AD10000400000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AD10000200000000000001 /* MessageFilterExtension.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		AD20000400000000000001 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				AD20000200000000000001 /* CallDirectoryHandler.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -284,6 +435,16 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		AD10000700000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AD10000500000000000001 /* SMSFilter */;
+			targetProxy = AD10000600000000000001 /* PBXContainerItemProxy */;
+		};
+		AD20000700000000000001 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = AD20000500000000000001 /* CallDirectory */;
+			targetProxy = AD20000600000000000001 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -584,6 +745,170 @@
 			};
 			name = Release;
 		};
+		AD10000800000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SMSFilter/SMSFilter.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SMSFilter/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AegisDial SMS Filter";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aegisdial.app.SMSFilter;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AD10000800000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SMSFilter/SMSFilter.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SMSFilter/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AegisDial SMS Filter";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aegisdial.app.SMSFilter;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		AD10000800000000000003 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = SMSFilter/SMSFilter.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = SMSFilter/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AegisDial SMS Filter";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aegisdial.app.SMSFilter;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Profile;
+		};
+		AD20000800000000000001 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = CallDirectory/CallDirectory.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CallDirectory/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AegisDial Caller ID";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aegisdial.app.CallDirectory;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+			};
+			name = Debug;
+		};
+		AD20000800000000000002 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = CallDirectory/CallDirectory.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CallDirectory/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AegisDial Caller ID";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aegisdial.app.CallDirectory;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Release;
+		};
+		AD20000800000000000003 /* Profile */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = CallDirectory/CallDirectory.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CallDirectory/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "AegisDial Caller ID";
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				IPHONEOS_DEPLOYMENT_TARGET = 14.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.aegisdial.app.CallDirectory;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+			};
+			name = Profile;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -613,6 +938,26 @@
 				97C147061CF9000F007C117D /* Debug */,
 				97C147071CF9000F007C117D /* Release */,
 				249021D4217E4FDB00AE95B9 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AD10000900000000000001 /* Build configuration list for PBXNativeTarget "SMSFilter" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AD10000800000000000001 /* Debug */,
+				AD10000800000000000002 /* Release */,
+				AD10000800000000000003 /* Profile */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		AD20000900000000000001 /* Build configuration list for PBXNativeTarget "CallDirectory" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				AD20000800000000000001 /* Debug */,
+				AD20000800000000000002 /* Release */,
+				AD20000800000000000003 /* Profile */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

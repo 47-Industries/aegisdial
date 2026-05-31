@@ -1,6 +1,7 @@
 import Flutter
 import UIKit
 import UserNotifications
+import CallKit
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -16,7 +17,10 @@ import UserNotifications
   // Permission and registration are triggered from Flutter after the
   // home dashboard mounts.
   private let pushChannelName = "aegisdial/push"
+  private let extChannelName = "aegisdial/extensions"
   private var pushChannel: FlutterMethodChannel?
+  private var extChannel: FlutterMethodChannel?
+  private let appGroupSuite = "group.com.aegisdial.app"
   // Buffered tap so a notification opening the app from terminated
   // state still routes correctly — the Flutter channel may not be
   // wired yet at the moment the OS hands us the userInfo.
@@ -85,6 +89,89 @@ import UserNotifications
         } else {
           result(nil)
         }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    // ── Extensions bridge channel ──
+    let ext = FlutterMethodChannel(
+      name: extChannelName,
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    extChannel = ext
+    ext.setMethodCallHandler { [weak self] call, result in
+      guard let self = self else { return }
+      guard let defaults = UserDefaults(suiteName: self.appGroupSuite) else {
+        result(false)
+        return
+      }
+
+      switch call.method {
+      case "pushScamPhrases":
+        let args = call.arguments as? [String: Any]
+        let phrases = args?["phrases"] as? [String] ?? []
+        defaults.set(phrases, forKey: "aegis_scam_phrases")
+        result(true)
+
+      case "pushBlockedSenders":
+        let args = call.arguments as? [String: Any]
+        let senders = args?["senders"] as? [String] ?? []
+        defaults.set(senders, forKey: "aegis_blocked_senders")
+        result(true)
+
+      case "pushBlockedNumbers":
+        let args = call.arguments as? [String: Any]
+        let numbers = args?["numbers"] as? [Int64] ?? []
+        defaults.set(numbers, forKey: "aegis_blocked_numbers")
+        // Trigger Call Directory reload
+        CXCallDirectoryManager.sharedInstance.reloadExtension(
+          withIdentifier: "com.aegisdial.app.CallDirectory"
+        ) { error in
+          // Best-effort — errors logged to shared container by the extension
+        }
+        result(true)
+
+      case "pushLabeledNumbers":
+        let args = call.arguments as? [String: Any]
+        let entries = args?["entries"] as? [[String: Any]] ?? []
+        defaults.set(entries, forKey: "aegis_labeled_numbers")
+        CXCallDirectoryManager.sharedInstance.reloadExtension(
+          withIdentifier: "com.aegisdial.app.CallDirectory"
+        ) { _ in }
+        result(true)
+
+      case "reloadCallDirectory":
+        CXCallDirectoryManager.sharedInstance.reloadExtension(
+          withIdentifier: "com.aegisdial.app.CallDirectory"
+        ) { error in
+          DispatchQueue.main.async {
+            result(error == nil)
+          }
+        }
+
+      case "isSMSFilterEnabled":
+        // There's no public API to check SMS filter status directly.
+        // We check if the app group defaults have been read by the
+        // extension (it writes a timestamp on each filter pass).
+        let lastRun = defaults.double(forKey: "aegis_smsfilter_last_run")
+        let recent = lastRun > 0 && (Date().timeIntervalSince1970 - lastRun) < 86400 * 7
+        result(recent)
+
+      case "callDirectoryStatus":
+        CXCallDirectoryManager.sharedInstance.getEnabledStatusForExtension(
+          withIdentifier: "com.aegisdial.app.CallDirectory"
+        ) { status, _ in
+          let label: String
+          switch status {
+          case .enabled: label = "enabled"
+          case .disabled: label = "disabled"
+          case .unknown: label = "unknown"
+          @unknown default: label = "unknown"
+          }
+          DispatchQueue.main.async { result(label) }
+        }
+
       default:
         result(FlutterMethodNotImplemented)
       }

@@ -7,6 +7,7 @@ import '../services/auth_service.dart';
 import '../services/api_service.dart';
 import '../services/device_service.dart';
 import '../services/identity_shield_service.dart';
+import '../services/extension_bridge_service.dart';
 import 'live_shield_active.dart';
 import 'coverage_screen.dart';
 import 'breach_screen.dart';
@@ -58,6 +59,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
     _loadShieldState();
     _loadStats();
     _loadChecklist();
+    _syncExtensionData();
   }
 
   Future<void> _loadShieldState() async {
@@ -87,6 +89,17 @@ class _HomeDashboardState extends State<HomeDashboard> {
     setState(() => _checklistDismissed = true);
     final p = await SharedPreferences.getInstance();
     await p.setBool(_kChecklistDismissed, true);
+  }
+
+  /// Push scam data to the App Group shared container so the SMS Filter
+  /// and Call Directory extensions have up-to-date data. Best-effort —
+  /// the extensions have built-in phrase lists as a fallback.
+  Future<void> _syncExtensionData() async {
+    // Push any backend-sourced scam phrases the user has accumulated.
+    // For now we use the built-in set — the extension already has these
+    // compiled in, but this ensures the pipeline works for when the
+    // backend starts pushing custom phrases per-user.
+    await extensionBridge.reloadCallDirectory();
   }
 
   Future<void> _loadStats() async {
