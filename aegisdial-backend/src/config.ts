@@ -16,6 +16,17 @@ const schema = z.object({
   // fallback when a critical alert has gone unread for 15+ minutes.
   // Absent → escalator no-ops (alerts still land in-DB + push).
   TWILIO_MESSAGING_FROM: z.string().optional(),
+  // Call Screener — Twilio Programmable Voice. When enabled, AegisDial
+  // provisions a local US phone number per Pro user and answers
+  // forwarded calls with an AI screener that classifies scam intent.
+  // Requires TWILIO_ACCOUNT_SID + TWILIO_AUTH_TOKEN above.
+  TWILIO_CALL_SCREENER_ENABLED: z
+    .string()
+    .default('false')
+    .transform((v) => v === 'true'),
+  // The base URL the Twilio webhook hits for voice callbacks.
+  // e.g. https://api.aegisdial.com — Twilio appends the route path.
+  TWILIO_VOICE_WEBHOOK_BASE: z.string().optional(),
   ANTHROPIC_API_KEY: z.string().optional(),
 
   REDDIT_CLIENT_ID: z.string().optional(),

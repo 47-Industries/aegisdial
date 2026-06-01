@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -271,11 +272,12 @@ const _kScenarios = [
   ),
 ];
 
-class _DemoCall {
+class _CallRecord {
   final List<String> lines;
   final int score;
   final String scenarioName;
-  _DemoCall(this.lines, this.score, this.scenarioName);
+  final bool isDemo;
+  _CallRecord(this.lines, this.score, this.scenarioName, {this.isDemo = false});
 }
 
 class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
@@ -290,7 +292,10 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
   final List<String> _transcript = [];
   int _fraudScore = 0;
   Timer? _demoTimer;
-  final List<_DemoCall> _callHistory = [];
+  final List<_CallRecord> _callHistory = [];
+
+  // Audio session bridge — configures AVAudioSession for speakerphone capture
+  static const _audioChannel = MethodChannel('aegisdial/audio');
 
   // Speech-to-text for live mode
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -487,9 +492,10 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
         liveShield.end(sessionId: sid, outcome: 'user_hung_up');
       }
       setState(() {
-        _callHistory.insert(0, _DemoCall(
+        _callHistory.insert(0, _CallRecord(
           List.from(_transcript), _fraudScore,
           _kScenarios[_scenarioIndex].name,
+          isDemo: true,
         ));
         _demoPhase = _DemoPhase.done;
         _transcript.clear();
@@ -507,9 +513,139 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
 
   // ── Live listening mode ──────────────────────────────────────────────────
 
+  /// Bottom-sheet that instructs the user to switch their phone call to
+  /// speaker mode so the mic can pick up both sides. Returns true if the
+  /// user tapped "I'm on speaker — start listening", false if dismissed.
+  Future<bool> _showSpeakerInstructionSheet() async {
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      backgroundColor: AegisColors.surface,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      builder: (ctx) {
+        final tt = Theme.of(ctx).textTheme;
+        return SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(24, 20, 24, 24),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AegisColors.textTertiary.withValues(alpha: 0.3),
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 20),
+                Container(
+                  width: 64,
+                  height: 64,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AegisColors.turquoise.withValues(alpha: 0.12),
+                    border: Border.all(
+                      color: AegisColors.turquoise.withValues(alpha: 0.4),
+                      width: 1.5,
+                    ),
+                  ),
+                  child: const Icon(
+                    Icons.volume_up_rounded,
+                    color: AegisColors.turquoise,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  'Switch to speaker',
+                  style: tt.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                ),
+                const SizedBox(height: 8),
+                Text(
+                  'Put your phone call on speaker so AegisDial can hear both sides of the conversation. '
+                  'The AI will analyze what\'s being said and coach you in real time.',
+                  textAlign: TextAlign.center,
+                  style: tt.bodySmall?.copyWith(
+                    color: AegisColors.textSecondary,
+                    height: 1.5,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.lock_outline_rounded,
+                        size: 12, color: AegisColors.textTertiary),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Audio is processed on-device. Never stored or uploaded.',
+                      style: tt.labelSmall?.copyWith(
+                        color: AegisColors.textTertiary,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.gavel_rounded,
+                        size: 12, color: AegisColors.textTertiary),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Recording laws vary by state — check local consent rules.',
+                      style: tt.labelSmall?.copyWith(
+                        color: AegisColors.textTertiary,
+                        fontSize: 10,
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 20),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed: () => Navigator.of(ctx).pop(true),
+                    icon: const Icon(Icons.mic_rounded, size: 20),
+                    label: const Text("I'm on speaker — start listening"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: AegisColors.turquoise,
+                      foregroundColor: Colors.black,
+                      minimumSize: const Size.fromHeight(52),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                TextButton(
+                  onPressed: () => Navigator.of(ctx).pop(false),
+                  child: Text(
+                    'Cancel',
+                    style: TextStyle(color: AegisColors.textTertiary),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+    return result == true;
+  }
+
   Future<void> _startListening() async {
     await showLiveShieldConsentV2Sheet(context);
     if (!mounted) return;
+
+    // Show speaker-phone instruction card. User must confirm they've
+    // switched to speaker before we activate the mic.
+    final confirmed = await _showSpeakerInstructionSheet();
+    if (!confirmed || !mounted) return;
 
     if (!_speechAvailable) {
       _speechAvailable = await _speech.initialize(
@@ -564,6 +700,18 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
       _lastDetectedType = null;
     });
     HapticFeedback.heavyImpact();
+
+    // Configure AVAudioSession for speakerphone capture. This sets
+    // .playAndRecord + .defaultToSpeaker + .mixWithOthers so the mic
+    // stays active alongside the phone call audio.
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      try {
+        await _audioChannel.invokeMethod('configureForLiveShield');
+      } catch (e) {
+        // Non-fatal — speech_to_text may still work with default session
+        debugPrint('AVAudioSession config failed: $e');
+      }
+    }
 
     // Start a real backend session
     final startResult = await liveShield.start(direction: _callDirection);
@@ -640,6 +788,12 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
 
   Future<void> _stopListening() async {
     await _speech.stop();
+    // Deactivate the Live Shield audio session
+    if (defaultTargetPlatform == TargetPlatform.iOS) {
+      try {
+        await _audioChannel.invokeMethod('deactivateLiveShield');
+      } catch (_) {}
+    }
     final sid = _sessionId;
     if (sid != null) {
       liveShield.end(sessionId: sid, outcome: 'user_hung_up');
@@ -648,7 +802,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
     setState(() {
       _livePhase = _LivePhase.stopped;
       if (_transcript.isNotEmpty) {
-        _callHistory.insert(0, _DemoCall(
+        _callHistory.insert(0, _CallRecord(
           List.from(_transcript),
           _fraudScore,
           _lastDetectedType != null
@@ -725,30 +879,39 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
               ),
             ),
             const SizedBox(width: 10),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: isLive
-                    ? AegisColors.success.withValues(alpha: 0.18)
-                    : AegisColors.warning.withValues(alpha: 0.18),
-                borderRadius: BorderRadius.circular(4),
-                border: Border.all(
+            if (isLive || (_isLiveMode && _livePhase != _LivePhase.idle) || _demoPhase == _DemoPhase.transcribing || _demoPhase == _DemoPhase.verdict)
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
                   color: isLive
-                      ? AegisColors.success.withValues(alpha: 0.55)
-                      : AegisColors.warning.withValues(alpha: 0.55),
-                  width: 1,
+                      ? AegisColors.success.withValues(alpha: 0.18)
+                      : _demoPhase != _DemoPhase.idle && _demoPhase != _DemoPhase.done
+                          ? AegisColors.warning.withValues(alpha: 0.18)
+                          : AegisColors.turquoise.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(4),
+                  border: Border.all(
+                    color: isLive
+                        ? AegisColors.success.withValues(alpha: 0.55)
+                        : _demoPhase != _DemoPhase.idle && _demoPhase != _DemoPhase.done
+                            ? AegisColors.warning.withValues(alpha: 0.55)
+                            : AegisColors.turquoise.withValues(alpha: 0.55),
+                    width: 1,
+                  ),
+                ),
+                child: Text(
+                  isLive ? 'LIVE' : _demoPhase != _DemoPhase.idle && _demoPhase != _DemoPhase.done ? 'DEMO' : 'READY',
+                  style: tt.labelSmall?.copyWith(
+                    color: isLive
+                        ? AegisColors.success
+                        : _demoPhase != _DemoPhase.idle && _demoPhase != _DemoPhase.done
+                            ? AegisColors.warning
+                            : AegisColors.turquoise,
+                    letterSpacing: 1.6,
+                    fontWeight: FontWeight.w800,
+                    fontSize: 10,
+                  ),
                 ),
               ),
-              child: Text(
-                isLive ? 'LIVE' : 'DEMO',
-                style: tt.labelSmall?.copyWith(
-                  color: isLive ? AegisColors.success : AegisColors.warning,
-                  letterSpacing: 1.6,
-                  fontWeight: FontWeight.w800,
-                  fontSize: 10,
-                ),
-              ),
-            ),
           ],
         ),
       ),
@@ -806,8 +969,8 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                         Expanded(
                           child: Text(
                             isLive
-                                ? 'Listening via speakerphone. Put your call on speaker and AegisDial will analyze it live.'
-                                : 'Sample call. Tap "Start listening" to analyze a real call on speakerphone.',
+                                ? 'Listening via speakerphone. AegisDial is analyzing your call in real time.'
+                                : 'On a suspicious call? Put it on speaker, tap Start, and let AI coach you through it.',
                             style: tt.bodySmall?.copyWith(
                               color: isLive
                                   ? AegisColors.success
@@ -961,7 +1124,7 @@ class _LiveShieldActiveScreenState extends State<LiveShieldActiveScreen>
                         const SizedBox(width: 12),
                         Expanded(
                           child: Text(
-                            'Run a demo below to see how AegisDial stops a scam call in real time.',
+                            'No calls analyzed yet. Start Live Shield during a suspicious call to see results here.',
                             style: tt.bodySmall?.copyWith(
                               color: AegisColors.textTertiary,
                               height: 1.4,
@@ -1023,7 +1186,7 @@ class _StatusHeader extends StatelessWidget {
           border: Border.all(
             color: isLive
                 ? AegisColors.success.withValues(alpha: 0.5)
-                : AegisColors.border,
+                : AegisColors.turquoise.withValues(alpha: 0.3),
             width: isLive ? 1.2 : 0.6,
           ),
         ),
@@ -1038,7 +1201,7 @@ class _StatusHeader extends StatelessWidget {
                 border: Border.all(color: accent, width: 1),
               ),
               child: Icon(
-                isLive ? Icons.mic_rounded : Icons.graphic_eq_rounded,
+                isLive ? Icons.mic_rounded : Icons.shield_rounded,
                 color: accent,
               ),
             ),
@@ -1047,43 +1210,17 @@ class _StatusHeader extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Text(
-                        isLive ? 'Listening live' : 'Shield is active',
-                        style: tt.titleMedium?.copyWith(
-                          fontWeight: FontWeight.w700,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                            horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: isLive
-                              ? AegisColors.success.withValues(alpha: 0.18)
-                              : AegisColors.warning.withValues(alpha: 0.18),
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        child: Text(
-                          isLive ? 'LIVE' : 'DEMO',
-                          style: TextStyle(
-                            color: isLive
-                                ? AegisColors.success
-                                : AegisColors.warning,
-                            fontSize: 9,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 0.8,
-                          ),
-                        ),
-                      ),
-                    ],
+                  Text(
+                    isLive ? 'Listening live' : 'Ready to protect',
+                    style: tt.titleMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                   const SizedBox(height: 2),
                   Text(
                     isLive
                         ? 'Analyzing speakerphone audio in real time. Keep the call on speaker.'
-                        : 'Tap "Start listening" for a real call, or run a demo to see how it works.',
+                        : 'Put your call on speaker and tap Start — AI will listen and coach you in real time.',
                     style: tt.bodySmall?.copyWith(
                       color: AegisColors.textTertiary,
                       height: 1.35,
@@ -2074,7 +2211,7 @@ class _LiveCallCard extends StatelessWidget {
 }
 
 class _CallHistoryTile extends StatelessWidget {
-  final _DemoCall call;
+  final _CallRecord call;
   const _CallHistoryTile({required this.call});
 
   @override
@@ -2108,11 +2245,11 @@ class _CallHistoryTile extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  '${call.scenarioName} · BLOCKED',
+                  '${call.scenarioName} · ${call.isDemo ? 'BLOCKED' : 'ANALYZED'}',
                   style: tt.bodySmall?.copyWith(fontWeight: FontWeight.w600),
                 ),
                 Text(
-                  '${call.score}% fraud score · demo',
+                  '${call.score}% fraud score · ${call.isDemo ? 'demo' : 'live'}',
                   style: tt.labelSmall
                       ?.copyWith(color: AegisColors.textTertiary),
                 ),

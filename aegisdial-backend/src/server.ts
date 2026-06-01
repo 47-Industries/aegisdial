@@ -65,6 +65,10 @@ import { seedV4Playbooks } from './scripts/seedV4Playbooks.js';
 // what the producers (transcript route, emitSystemEvent) emit, which
 // are themselves flag-gated upstream.
 import { familyTranscriptStreamRoutes } from './routes/familyTranscriptStream.js';
+// Call Screener — Twilio Programmable Voice AI call screening.
+// Routes are always registered; when TWILIO_CALL_SCREENER_ENABLED is
+// OFF, each endpoint returns 501 so the iOS client degrades cleanly.
+import { callScreenerRoutes } from './routes/callScreener.js';
 import { startPushDispatcher, stopPushDispatcher } from './workers/pushDispatcher.js';
 import { optionalAppUser } from './lib/auth.js';
 import { shutdownDb } from './lib/db.js';
@@ -166,6 +170,7 @@ await app.register(supportRoutes);
 await app.register(statsRoutes);
 await app.register(heatmapRoutes);
 await app.register(banksRoutes);
+await app.register(callScreenerRoutes);
 await app.register(verdictRoutes);
 await app.register(reportRoutes);
 await app.register(adminRoutes);

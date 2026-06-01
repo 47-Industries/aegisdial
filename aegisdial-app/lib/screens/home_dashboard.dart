@@ -14,6 +14,7 @@ import 'breach_screen.dart';
 import 'number_check_screen.dart';
 import 'email_shield_screen.dart';
 import 'identity_shield_screen.dart';
+import 'call_screener_screen.dart';
 
 class HomeDashboard extends StatefulWidget {
   static final liveShieldKey = GlobalKey();
@@ -255,7 +256,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                                 ),
                                 const SizedBox(height: 2),
                                 Text(
-                                  'Scam-call coach — tap to open',
+                                  'Real-time AI call protection',
                                   style: tt.bodySmall?.copyWith(
                                     color: AegisColors.textTertiary,
                                   ),
@@ -293,7 +294,7 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             Expanded(
                               child: Text(
                                 _shieldOn
-                                    ? 'Ready — open during a suspicious call'
+                                    ? 'Ready — put call on speaker, tap to activate'
                                     : 'Shield paused — tap to resume',
                                 style: tt.bodySmall?.copyWith(
                                   color: AegisColors.textSecondary,
@@ -307,6 +308,56 @@ class _HomeDashboardState extends State<HomeDashboard> {
                             ),
                           ],
                         ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 14),
+                // Call Screener card
+                GlassCard(
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => const CallScreenerScreen(),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: AegisColors.blue.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(
+                          Icons.phone_forwarded_rounded,
+                          color: AegisColors.blueAccent,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Call Screener',
+                              style: tt.titleMedium?.copyWith(
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'AI screens calls you miss — blocks scams, forwards the rest',
+                              style: tt.bodySmall?.copyWith(
+                                color: AegisColors.textTertiary,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(
+                        Icons.chevron_right_rounded,
+                        color: AegisColors.textTertiary,
+                        size: 18,
                       ),
                     ],
                   ),

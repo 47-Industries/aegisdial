@@ -2,6 +2,7 @@ import Flutter
 import UIKit
 import UserNotifications
 import CallKit
+import AVFoundation
 
 @main
 @objc class AppDelegate: FlutterAppDelegate, FlutterImplicitEngineDelegate {
@@ -18,8 +19,10 @@ import CallKit
   // home dashboard mounts.
   private let pushChannelName = "aegisdial/push"
   private let extChannelName = "aegisdial/extensions"
+  private let audioChannelName = "aegisdial/audio"
   private var pushChannel: FlutterMethodChannel?
   private var extChannel: FlutterMethodChannel?
+  private var audioChannel: FlutterMethodChannel?
   private let appGroupSuite = "group.com.aegisdial.app"
   // Buffered tap so a notification opening the app from terminated
   // state still routes correctly — the Flutter channel may not be
@@ -170,6 +173,50 @@ import CallKit
           @unknown default: label = "unknown"
           }
           DispatchQueue.main.async { result(label) }
+        }
+
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
+    // ── Audio session channel ──
+    // Configures AVAudioSession for Live Shield speakerphone analysis.
+    // playAndRecord category with defaultToSpeaker lets the mic capture
+    // both sides of a phone call when the user has speaker enabled.
+    let audio = FlutterMethodChannel(
+      name: audioChannelName,
+      binaryMessenger: engineBridge.applicationRegistrar.messenger()
+    )
+    audioChannel = audio
+    audio.setMethodCallHandler { call, result in
+      switch call.method {
+      case "configureForLiveShield":
+        do {
+          let session = AVAudioSession.sharedInstance()
+          try session.setCategory(
+            .playAndRecord,
+            mode: .voiceChat,
+            options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers]
+          )
+          try session.setActive(true, options: .notifyOthersOnDeactivation)
+          result(true)
+        } catch {
+          result(FlutterError(
+            code: "AUDIO_SESSION_ERROR",
+            message: error.localizedDescription,
+            details: nil
+          ))
+        }
+
+      case "deactivateLiveShield":
+        do {
+          try AVAudioSession.sharedInstance().setActive(
+            false, options: .notifyOthersOnDeactivation
+          )
+          result(true)
+        } catch {
+          result(true) // Best-effort deactivation
         }
 
       default:
