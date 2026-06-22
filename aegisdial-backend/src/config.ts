@@ -27,6 +27,33 @@ const schema = z.object({
   // The base URL the Twilio webhook hits for voice callbacks.
   // e.g. https://api.aegisdial.com — Twilio appends the route path.
   TWILIO_VOICE_WEBHOOK_BASE: z.string().optional(),
+
+  // ── Telnyx (Twilio replacement — voice screening, SMS, lookup) ──────────
+  // Telnyx is the target provider for the Call Screener, guardian-alert SMS,
+  // and number lookup. Per-minute voice is ~$0.002 vs Twilio's ~$0.0085 —
+  // 3-4x cheaper, which is the whole reason for the cutover (screening burns
+  // inbound minutes on every call). All optional until the Telnyx account +
+  // API key exist; CALL_PROVIDER selects which backend is live so we can flip
+  // per-env without a code change. Until creds are present the Telnyx paths
+  // throw a clear "not configured" error, exactly like the Twilio block.
+  TELNYX_API_KEY: z.string().optional(),
+  // Messaging Profile ID that owns the SMS "from" number (Telnyx groups
+  // outbound numbers under a profile rather than a bare From string).
+  TELNYX_MESSAGING_PROFILE_ID: z.string().optional(),
+  TELNYX_MESSAGING_FROM: z.string().optional(),
+  // TeXML Application ID — Telnyx's TwiML-compatible voice app. Numbers we
+  // order get attached to this app; it points voice webhooks at our
+  // /telnyx/voice/* routes. This is the one value that must be created in the
+  // Telnyx portal against the live account before voice cutover.
+  TELNYX_TEXML_APP_ID: z.string().optional(),
+  // Connection/Outbound Voice Profile the ordered numbers bill against.
+  TELNYX_CONNECTION_ID: z.string().optional(),
+  // Base URL Telnyx voice webhooks hit — mirrors TWILIO_VOICE_WEBHOOK_BASE.
+  TELNYX_VOICE_WEBHOOK_BASE: z.string().optional(),
+  // Selects the live telephony backend: 'twilio' (default, current) or
+  // 'telnyx'. Flip to 'telnyx' once the account + numbers are provisioned.
+  CALL_PROVIDER: z.enum(['twilio', 'telnyx']).default('twilio'),
+
   ANTHROPIC_API_KEY: z.string().optional(),
 
   REDDIT_CLIENT_ID: z.string().optional(),
