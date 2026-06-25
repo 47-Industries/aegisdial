@@ -245,3 +245,17 @@ Estimated: **5–10 days** once you start.
 7. **Parallel from Week 3:** first senior-services nonprofit conversation.
 
 **The product is ready. The runway between "code complete" and "first user" is ~5 weeks of external work.**
+
+---
+
+## LEON'S PREP WORK (2026-06-24 23:50 UTC)
+
+Support documents created for immediate launch preparation:
+
+- **SECRETS_ROTATION_GUIDE.md** — Document leaked secrets, rotation steps, new random values
+- **MIGRATIONS_RUNBOOK.md** — Production migration execution checklist + safety verification
+- **PHASE2_ACTION_PLAN.md** — Post-launch feature roadmap (5 unblocked, 2 blocked on API keys, 3 GTM)
+
+All migrations (79 total) are tested, idempotent, and ready to deploy.
+All code is production-ready.
+All external dependencies documented.
