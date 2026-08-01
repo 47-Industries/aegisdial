@@ -2,6 +2,7 @@ import cron from 'node-cron';
 import { config } from '../config.js';
 import { withTx } from '../lib/db.js';
 import { captureError, emitMetric } from '../lib/observability.js';
+import { sendTelnyxSms } from '../lib/telnyx.js';
 
 // Guardian alert SMS escalator.
 //
@@ -108,7 +109,13 @@ export async function runEscalator(): Promise<{ considered: number; sent: number
       continue;
     }
     try {
-      const ok = await sendTwilioSms({
+      // Provider is selected per-env by CALL_PROVIDER (default 'twilio').
+      // Both senders share the same contract — resolve true/false, never
+      // throw for a delivery failure — so the switch is a single ternary and
+      // Twilio stays fully intact as the fallback until Telnyx is verified
+      // live. See TELNYX_MIGRATION.md.
+      const send = config.CALL_PROVIDER === 'telnyx' ? sendTelnyxSms : sendTwilioSms;
+      const ok = await send({
         to: r.phone_number,
         body: buildSmsBody(r.title, r.body),
       });

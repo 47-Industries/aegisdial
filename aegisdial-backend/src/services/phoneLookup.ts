@@ -3,6 +3,7 @@ import { query } from '../lib/db.js';
 import { encryptString, readMaybeEncrypted } from '../lib/crypto.js';
 import { cacheGet, cacheSet } from '../lib/cache.js';
 import { emitMetric } from '../lib/observability.js';
+import { telnyxNumberLookup, telnyxLookupConfigured } from '../lib/telnyx.js';
 
 // Default per-instance daily cap on billable phone lookups. Any combo of
 // Twilio + Ekata + IPQS lookups for a distinct e164 that misses cache
@@ -181,7 +182,15 @@ export async function lookupPhone(e164: string): Promise<PublicPhoneInfo | null>
   // Run every configured provider in parallel. They're independent —
   // Twilio gives caller name + carrier, IPQS gives risk score.
   const providers: Array<Promise<Partial<PublicPhoneInfo> & { sources: string[] }>> = [];
-  if (
+  // Identity provider: Telnyx when CALL_PROVIDER says so and a key exists,
+  // otherwise Twilio Lookup v2. Exactly one of the two runs — they return the
+  // same fields (owner_name / line_type / carrier_name / country_code) and
+  // paying both for the same answer is the one thing this migration exists to
+  // stop. Telnyx has no 429-cooldown branch because it isn't rate-limited the
+  // way Twilio Lookup is; if that changes, mirror the cooldown here.
+  if (config.CALL_PROVIDER === 'telnyx' && telnyxLookupConfigured()) {
+    providers.push(runTelnyxLookup(e164));
+  } else if (
     config.ENABLE_TWILIO_LOOKUP &&
     config.TWILIO_ACCOUNT_SID &&
     config.TWILIO_AUTH_TOKEN &&
@@ -258,6 +267,29 @@ export async function lookupPhone(e164: string): Promise<PublicPhoneInfo | null>
   // occasionally than to miss a lookup.
   await writeCache(merged).catch(() => { /* best effort */ });
   return merged;
+}
+
+// ---------- Telnyx Number Lookup ----------
+//
+// Same shape as runTwilioLookup so the two are interchangeable at the call
+// site. Cost: ~$0.003 for carrier + caller-name in one request, vs Twilio's
+// ~$0.015 for the equivalent two Fields.
+
+async function runTelnyxLookup(
+  e164: string,
+): Promise<Partial<PublicPhoneInfo> & { sources: string[] }> {
+  const r = await telnyxNumberLookup(e164);
+  // ok=false covers missing creds, non-2xx, timeout and network error alike —
+  // all of which mean "this provider contributed nothing", not "this number
+  // has no carrier". Returning empty sources keeps it out of the merge.
+  if (!r.ok) return { sources: [] };
+  return {
+    owner_name: r.owner_name,
+    line_type: (r.line_type ?? 'unknown') as PublicPhoneInfo['line_type'],
+    carrier_name: r.carrier_name,
+    country_code: r.country_code,
+    sources: ['telnyx_number_lookup'],
+  };
 }
 
 // ---------- Twilio Lookup V2 ----------
