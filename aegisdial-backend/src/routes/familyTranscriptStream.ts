@@ -24,7 +24,8 @@ import { familyPlanMembersFor } from '../services/guardianAlerts.js';
 // Transport: SSE (Server-Sent Events). Single GET, long-lived response
 // with `content-type: text/event-stream`. Each event is a
 // `data: <json>\n\n` frame. Heartbeat every 30s so the client can
-// detect a dead connection (Fly.io load balancer idle-timeout is 60s).
+// detect a dead connection (most managed load balancers — Railway
+// included — idle out at 60s without bytes on the wire).
 // Resume on disconnect is the client's responsibility (browser
 // EventSource auto-reconnects; iOS clients can rely on Last-Event-ID).
 //

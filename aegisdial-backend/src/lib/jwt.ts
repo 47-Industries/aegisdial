@@ -14,7 +14,7 @@ const DEV_JWT_DEFAULT = 'dev-only-jwt-secret-change-me-immediately-in-production
 if (config.NODE_ENV === 'production' && config.JWT_SECRET === DEV_JWT_DEFAULT) {
   throw new Error(
     'FATAL: JWT_SECRET is still the dev default in production. ' +
-      'Set a real secret before boot: `fly secrets set JWT_SECRET=$(openssl rand -hex 32)`. ' +
+      'Set a real secret before boot: in Railway, Variables → Add → `JWT_SECRET` = $(openssl rand -hex 32). ' +
       'Refusing to start — any attacker with the code can otherwise mint valid user tokens.',
   );
 }

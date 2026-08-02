@@ -22,7 +22,7 @@ const KEY = (() => {
   if (config.NODE_ENV === 'production' && config.DATA_ENCRYPTION_KEY === DEV_DEFAULT_KEY) {
     throw new Error(
       'FATAL: DATA_ENCRYPTION_KEY is still the dev default in production. ' +
-        'Set a real key before boot: `fly secrets set DATA_ENCRYPTION_KEY=$(openssl rand -base64 32)`. ' +
+        'Set a real key before boot: in Railway, Variables → Add → `DATA_ENCRYPTION_KEY` = $(openssl rand -base64 32). ' +
         'Refusing to start — every PII column would otherwise be encrypted with a publicly-known key.',
     );
   }

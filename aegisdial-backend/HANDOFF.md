@@ -1,5 +1,14 @@
 # AegisDial — Backend Handoff
 
+> ⚠️ **Hosting section is stale.** This doc lists "Hosting: Fly.io" and
+> describes `fly.toml` / `scripts/setup-fly-secrets.sh`. Production is on
+> **Railway** (single platform for app + Postgres + Redis). The
+> `fly.toml` may still live in-repo as archaeology, but it's not the
+> source of truth — Railway's UI is. iOS API base is
+> `https://aegisdial-api-production.up.railway.app`. Everything outside
+> the hosting paragraphs (Fastify shape, schema, routing, auth, dual-write
+> pattern, etc.) is still accurate.
+
 This document is the single source of truth for getting a new engineer productive on the AegisDial backend in under a day. Read top to bottom before touching code.
 
 ---
